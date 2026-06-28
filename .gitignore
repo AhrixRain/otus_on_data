@@ -1,0 +1,32 @@
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Ignore all data folders anywhere
+data/
+
+# Ignore data generation code
+dataGenerationCode/
+
+# Ignore all saves folders anywhere
+saves/
+
+# Ignore HDF5 / H5 data files
+*.hdf5
+*.h5
+
+# Ignore model checkpoints
+*.pt
+*.pth
+*.ckpt
+
+# Specifically ignore data under zpeak
+cms_zpeak/data/
+
+
+# Optional: logs / experiment outputs
+runs/
+wandb/
+logs/
+*.log
