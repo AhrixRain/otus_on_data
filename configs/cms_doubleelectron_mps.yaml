@@ -1,0 +1,155 @@
+paths:
+  repo_root: .
+  data_root: .
+  cms_root_file: experiments/cms_zpeak/data/Run2012B_DoubleElectron.root
+  theory_prior_file: experiments/cms_doubleelectron/cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5
+  output_root: outputs/cms_doubleelectron
+
+device: auto
+seed: 0
+float_type: float32
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+
+electron_selection:
+  electron_pt_min: 20.0
+  electron_abs_eta_max: 2.5
+  electron_iso_max: 0.15
+  electron_dxy_max: 0.05
+  electron_dz_max: 0.1
+  z_mass_min: 70.0
+  z_mass_max: 110.0
+
+model:
+  class: CondNoiseAutoencoder
+  num_hidden_layers: 2
+  dim_per_hidden_layer: 256
+  activation: ReLU
+  sigma_fun: softplus
+  stoch_enc: true
+  stoch_dec: true
+  raw_io: true
+
+loss:
+  lambda_z8: 0.5
+  lambda_marginal: 0.8
+  lambda_mass: 1.8
+  lambda_phys: 0.7
+  lambda_transverse: 0.8
+  lambda_longitudinal: 0.8
+  lambda_tail: 0.2
+
+loaders:
+  train_batch_size: 4096
+  eval_batch_size: 20000
+  preload_data_to_accelerator: false
+
+evaluation:
+  min_truth_count: 20
+
+stages:
+  - name: stage1_anchor_warmup
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.001
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.0
+    rho: 0.0
+    nu_e: 50.0
+    nu_d: 50.0
+    num_slices: 500
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage2_joint_transport
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.0005
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 800
+    log_freq: 20
+    lr_decay: true
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage3_decoder_response_mass_protected
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.0001
+    beta: 0.8
+    lamb: 1.0
+    tau: 1.5
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1500
+    log_freq: 20
+    lr_decay: true
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage4_encoder_distribution_polish
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.00003
+    beta: 1.0
+    lamb: 4.0
+    tau: 0.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1500
+    log_freq: 10
+    lr_decay: true
+    freeze_encoder: false
+    freeze_decoder: true
+
+  - name: stage5_z_cycle_inverse_polish_gentle
+    mode: z_cycle
+    enabled: true
+    epochs: 40
+    lr: 0.00001
+    beta: 1.0
+    lamb: 2.0
+    tau: 0.0
+    z_cycle_weight: 4.0
+    transverse_weight: 1.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1500
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: true
+
+  - name: stage6_optional_balanced_finetune
+    mode: standard
+    enabled: false
+    epochs: 30
+    lr: 0.000005
+    beta: 1.0
+    lamb: 1.5
+    tau: 0.3
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 500
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false

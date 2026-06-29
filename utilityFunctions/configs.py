@@ -1,6 +1,11 @@
 import torch
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
 
 float_type = 'float32'
 
@@ -13,4 +18,3 @@ data_dims = {
 
 TRAIN_NUM_SLICES = 1000
 EVAL_NUM_SLICES = 1000  
-

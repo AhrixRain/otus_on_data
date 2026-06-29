@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+.DS_Store
 
 # Ignore all data folders anywhere
 data/
@@ -29,4 +30,5 @@ cms_zpeak/data/
 runs/
 wandb/
 logs/
-*.log   
+outputs/
+*.log
