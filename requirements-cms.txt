@@ -1,0 +1,25 @@
+# CMS DoubleElectron environment dependencies.
+# Captured from the local conda env named "cms".
+#
+# The installed PyTorch packages are CUDA 12.6 builds. When installing with pip,
+# use the PyTorch CUDA wheel index, for example:
+#   pip install --extra-index-url https://download.pytorch.org/whl/cu126 -r requirements-cms.txt
+
+awkward==2.9.0
+boost-histogram==1.7.2
+h5py==3.16.0
+hist==2.10.1
+ipykernel==7.2.0
+jupyter==1.1.1
+jupyterlab==4.5.7
+matplotlib==3.10.9
+mplhep==1.2.0
+numpy==2.2.5
+pandas==2.3.3
+scipy==1.15.3
+seaborn==0.13.2
+torch==2.12.0+cu126
+torchaudio==2.11.0+cu126
+torchvision==0.27.0+cu126
+uproot==5.7.4
+vector==1.8.1
