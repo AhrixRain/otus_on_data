@@ -46,6 +46,7 @@ Training outputs:
 ```text
 config.resolved.json
 train_log.csv
+status.json
 history.json
 best_model.pt
 last_model.pt
@@ -83,7 +84,21 @@ Run full training with a unique run name:
 
 ```bash
 RUN_NAME=full_mps_$(date +%Y%m%d_%H%M%S)
-python scripts/train.py --config configs/cms_doubleelectron_mps.yaml --device auto --run-name "$RUN_NAME" 2>&1 | tee "outputs/cms_doubleelectron/${RUN_NAME}.log"
+python scripts/train.py --config configs/cms_doubleelectron_mps.yaml --device auto --run-name "$RUN_NAME"
+```
+
+For a detached full run that keeps the Mac awake and writes a readable log:
+
+```bash
+RUN_NAME=full_mps_$(date +%Y%m%d_%H%M%S)
+RUN_DIR=outputs/cms_doubleelectron/$RUN_NAME
+mkdir -p "$RUN_DIR"
+nohup caffeinate -dims env PYTHONUNBUFFERED=1 python scripts/train.py \
+  --config configs/cms_doubleelectron_mps.yaml \
+  --device auto \
+  --run-name "$RUN_NAME" \
+  --progress auto \
+  > "$RUN_DIR/full_run.log" 2>&1 &
 ```
 
 Evaluate the best checkpoint from that run:
@@ -92,10 +107,24 @@ Evaluate the best checkpoint from that run:
 python scripts/eval.py --config configs/cms_doubleelectron_mps.yaml --checkpoint "outputs/cms_doubleelectron/${RUN_NAME}/best_model.pt" --device auto
 ```
 
-To monitor progress from another terminal:
+To check progress without watching continuously:
 
 ```bash
-tail -f "outputs/cms_doubleelectron/${RUN_NAME}.log"
+RUN_DIR=outputs/cms_doubleelectron/<run_name>
+cat "$RUN_DIR/status.json"
+tail -n 40 "$RUN_DIR/full_run.log"
+```
+
+For a nicer live local Terminal view, use `watch` if it is installed:
+
+```bash
+watch -n 30 'cat outputs/cms_doubleelectron/<run_name>/status.json'
+```
+
+macOS may not have `watch` by default. This shell loop works without extra packages:
+
+```bash
+while true; do clear; date; cat outputs/cms_doubleelectron/<run_name>/status.json; sleep 30; done
 ```
 
 Use a new `--run-name` for each run. The training script refuses to overwrite an existing directory that already contains `best_model.pt` or `last_model.pt`.

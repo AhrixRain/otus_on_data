@@ -522,12 +522,17 @@ def train_all_stages(
     device,
     logger: HistoryLogger,
     save_callback,
+    progress_callback=None,
 ) -> tuple[dict[str, list[Any]], float | None, int]:
     history_epoch = 0
     best_eval_loss: float | None = None
+    total_epochs = sum(
+        int(stage["epochs"]) for stage in config["stages"] if stage.get("enabled", True)
+    )
     for stage in config["stages"]:
         if not stage.get("enabled", True):
             continue
+        stage_epochs = int(stage["epochs"])
         loss_factory.set_num_slices(stage["num_slices"])
         set_trainable(
             model,
@@ -545,7 +550,7 @@ def train_all_stages(
                 lr_lambda=lambda epoch: 1 / (1 + 0.1 * epoch),
             )
 
-        for local_epoch in range(1, int(stage["epochs"]) + 1):
+        for local_epoch in range(1, stage_epochs + 1):
             if stage.get("mode", "standard") == "z_cycle":
                 train_losses = train_z_cycle_epoch(
                     model,
@@ -575,53 +580,70 @@ def train_all_stages(
             history_epoch += 1
             should_log = (
                 local_epoch == 1
-                or local_epoch == int(stage["epochs"])
+                or local_epoch == stage_epochs
                 or local_epoch % int(stage.get("log_freq", 10)) == 0
             )
-            if not should_log:
-                continue
+            eval_losses = None
+            eval_loss = None
+            if should_log:
+                if stage.get("mode", "standard") == "z_cycle":
+                    eval_losses = eval_fn(
+                        model,
+                        eval_loaders[0],
+                        eval_loaders[1],
+                        stage,
+                        loss_factory,
+                        device,
+                    )
+                    eval_alt_x_loss = ""
+                else:
+                    eval_losses = eval_fn(
+                        model,
+                        eval_loaders[0],
+                        eval_loaders[1],
+                        loss_factory,
+                        device,
+                    )
+                    eval_alt_x_loss = eval_losses["alt_x_loss"]
 
-            if stage.get("mode", "standard") == "z_cycle":
-                eval_losses = eval_fn(
-                    model,
-                    eval_loaders[0],
-                    eval_loaders[1],
-                    stage,
-                    loss_factory,
-                    device,
-                )
-                eval_alt_x_loss = ""
-            else:
-                eval_losses = eval_fn(
-                    model,
-                    eval_loaders[0],
-                    eval_loaders[1],
-                    loss_factory,
-                    device,
-                )
-                eval_alt_x_loss = eval_losses["alt_x_loss"]
+                eval_loss = float(eval_losses["loss"])
+                row = {
+                    "epoch": history_epoch,
+                    "stage": stage["name"],
+                    "train_loss": train_losses["loss"],
+                    "train_x_loss": train_losses["x_loss"],
+                    "train_z_loss": train_losses["z_loss"],
+                    "train_alt_x_loss": train_losses.get("alt_x_loss", ""),
+                    "train_x_constraint_loss": train_losses.get("x_constraint_loss", ""),
+                    "eval_loss": eval_loss,
+                    "eval_x_loss": eval_losses["x_loss"],
+                    "eval_z_loss": eval_losses["z_loss"],
+                    "eval_alt_x_loss": eval_alt_x_loss,
+                }
+                logger.append(row)
+                is_best = best_eval_loss is None or eval_loss < best_eval_loss
+                if is_best:
+                    best_eval_loss = eval_loss
+                save_callback(history_epoch, eval_loss, is_best)
 
-            eval_loss = float(eval_losses["loss"])
-            row = {
-                "epoch": history_epoch,
-                "stage": stage["name"],
-                "train_loss": train_losses["loss"],
-                "train_x_loss": train_losses["x_loss"],
-                "train_z_loss": train_losses["z_loss"],
-                "train_alt_x_loss": train_losses.get("alt_x_loss", ""),
-                "train_x_constraint_loss": train_losses.get("x_constraint_loss", ""),
-                "eval_loss": eval_loss,
-                "eval_x_loss": eval_losses["x_loss"],
-                "eval_z_loss": eval_losses["z_loss"],
-                "eval_alt_x_loss": eval_alt_x_loss,
-            }
-            logger.append(row)
-            is_best = best_eval_loss is None or eval_loss < best_eval_loss
-            if is_best:
-                best_eval_loss = eval_loss
-            save_callback(history_epoch, eval_loss, is_best)
-            print(
-                f"epoch {history_epoch:04d} | {stage['name']} | "
-                f"train_loss={train_losses['loss']:.4e} | eval_loss={eval_loss:.4e}"
-            )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "stage": stage["name"],
+                        "epoch": local_epoch,
+                        "epochs_in_stage": stage_epochs,
+                        "global_epoch": history_epoch,
+                        "total_epochs": total_epochs,
+                        "percent": (100.0 * history_epoch / total_epochs) if total_epochs else 100.0,
+                        "train_loss": float(train_losses["loss"]),
+                        "eval_loss": eval_loss,
+                        "best_eval_loss": best_eval_loss,
+                        "evaluated": should_log,
+                    }
+                )
+            elif should_log:
+                print(
+                    f"epoch {history_epoch:04d} | {stage['name']} | "
+                    f"train_loss={train_losses['loss']:.4e} | eval_loss={eval_loss:.4e}"
+                )
     return logger.history(), best_eval_loss, history_epoch

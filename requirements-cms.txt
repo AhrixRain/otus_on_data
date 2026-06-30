@@ -21,5 +21,6 @@ seaborn==0.13.2
 torch==2.12.0+cu126
 torchaudio==2.11.0+cu126
 torchvision==0.27.0+cu126
+tqdm==4.67.1
 uproot==5.7.4
 vector==1.8.1

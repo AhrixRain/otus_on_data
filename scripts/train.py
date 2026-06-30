@@ -5,9 +5,12 @@ import json
 import os
 import random
 import shutil
+import sys
 import time
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -29,6 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-samples", type=int, default=None, help="Limit selected CMS and MG5 rows.")
     parser.add_argument("--seed", type=int, default=None, help="Override config seed.")
     parser.add_argument("--dry-run", action="store_true", help="Load data, build model/loaders, then exit.")
+    parser.add_argument(
+        "--progress",
+        choices=("auto", "bar", "log", "none"),
+        default="auto",
+        help="Progress reporting mode. auto uses a tqdm bar only for an interactive terminal.",
+    )
     parser.add_argument(
         "--smoke-test",
         action="store_true",
@@ -94,6 +103,136 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def clean_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
+def format_loss(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.4e}"
+
+
+class ProgressReporter:
+    def __init__(self, run_dir: Path, run_name: str, device: torch.device, progress_mode: str):
+        self.run_dir = run_dir
+        self.run_name = run_name
+        self.device = str(device)
+        self.requested_mode = progress_mode
+        self.mode = self._resolve_mode(progress_mode)
+        self.status_path = run_dir / "status.json"
+        self.latest_train_loss: float | None = None
+        self.latest_eval_loss: float | None = None
+        self.best_eval_loss: float | None = None
+        self._bar = None
+        self._bar_epoch = 0
+
+    @staticmethod
+    def _resolve_mode(progress_mode: str) -> str:
+        if progress_mode == "auto":
+            return "bar" if sys.stdout.isatty() else "log"
+        return progress_mode
+
+    def __enter__(self) -> "ProgressReporter":
+        if self.mode == "bar":
+            try:
+                from tqdm import tqdm
+            except ImportError as exc:
+                if self.requested_mode != "bar":
+                    self.mode = "log"
+                    return self
+                raise RuntimeError(
+                    "--progress bar requires tqdm. Install it with `python -m pip install tqdm`."
+                ) from exc
+            self._bar_factory = tqdm
+        return self
+
+    def start(self, total_epochs: int) -> None:
+        if self.mode == "bar" and self._bar is None:
+            self._bar = self._bar_factory(
+                total=total_epochs,
+                unit="epoch",
+                dynamic_ncols=True,
+                file=sys.stdout,
+            )
+
+    def close(self) -> None:
+        if self._bar is not None:
+            self._bar.close()
+            self._bar = None
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.close()
+
+    def update(self, progress: dict[str, Any]) -> None:
+        total_epochs = int(progress["total_epochs"])
+        if total_epochs and self._bar is None:
+            self.start(total_epochs)
+
+        self.latest_train_loss = clean_float(progress["train_loss"])
+        if progress["eval_loss"] is not None:
+            self.latest_eval_loss = clean_float(progress["eval_loss"])
+        self.best_eval_loss = clean_float(progress["best_eval_loss"])
+
+        status = {
+            "run_name": self.run_name,
+            "stage": progress["stage"],
+            "epoch": int(progress["epoch"]),
+            "epochs_in_stage": int(progress["epochs_in_stage"]),
+            "global_epoch": int(progress["global_epoch"]),
+            "total_epochs": total_epochs,
+            "percent": round(float(progress["percent"]), 1),
+            "latest_train_loss": self.latest_train_loss,
+            "latest_eval_loss": self.latest_eval_loss,
+            "best_eval_loss": self.best_eval_loss,
+            "device": self.device,
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "progress_mode": self.mode,
+            "evaluated_this_epoch": bool(progress["evaluated"]),
+        }
+        self.write_status(status)
+        self.report(status)
+
+    def write_status(self, status: dict[str, Any]) -> None:
+        tmp_path = self.status_path.with_name(f"{self.status_path.name}.tmp")
+        tmp_path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp_path.replace(self.status_path)
+
+    def report(self, status: dict[str, Any]) -> None:
+        if self.mode == "none":
+            return
+        if self.mode == "bar":
+            if self._bar is None:
+                self.start(int(status["total_epochs"]))
+            delta = int(status["global_epoch"]) - self._bar_epoch
+            if delta > 0:
+                self._bar.update(delta)
+                self._bar_epoch = int(status["global_epoch"])
+            self._bar.set_description(str(status["stage"]))
+            self._bar.set_postfix(
+                train_loss=format_loss(status["latest_train_loss"]),
+                eval_loss=format_loss(status["latest_eval_loss"]),
+                best_eval=format_loss(status["best_eval_loss"]),
+            )
+            return
+
+        epoch_width = len(str(status["epochs_in_stage"]))
+        global_width = len(str(status["total_epochs"]))
+        print(
+            "[progress] "
+            f"stage={status['stage']} "
+            f"epoch={status['epoch']:0{epoch_width}d}/{status['epochs_in_stage']} "
+            f"global={status['global_epoch']:0{global_width}d}/{status['total_epochs']} "
+            f"pct={status['percent']:.1f} "
+            f"train_loss={format_loss(status['latest_train_loss'])} "
+            f"eval_loss={format_loss(status['latest_eval_loss'])} "
+            f"best_eval={format_loss(status['best_eval_loss'])}",
+            flush=True,
+        )
+
+
 def main() -> None:
     args = parse_args()
     raw_config = load_config(args.config)
@@ -108,6 +247,7 @@ def main() -> None:
     device = select_device(args.device)
     report = device_report(device)
     run_dir = make_run_dir(config, args.run_name, args.dry_run)
+    config["run_name"] = run_dir.name
 
     print("Using device:", device)
     print("Device report:", json.dumps(report, sort_keys=True))
@@ -146,6 +286,7 @@ def main() -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(config, run_dir / "config.resolved.json")
     logger = HistoryLogger(run_dir / "train_log.csv")
+    progress_reporter = ProgressReporter(run_dir, run_dir.name, device, args.progress)
 
     def save_checkpoint(epoch: int, best_eval_loss: float | None, is_best: bool) -> None:
         payload = checkpoint_payload(model, config, stats, epoch, best_eval_loss, report)
@@ -153,16 +294,21 @@ def main() -> None:
         if is_best:
             shutil.copy2(run_dir / "last_model.pt", run_dir / "best_model.pt")
 
-    history, best_eval_loss, final_epoch = train_all_stages(
-        model,
-        config,
-        train_loaders,
-        eval_loaders,
-        loss_factory,
-        device,
-        logger,
-        save_checkpoint,
-    )
+    with progress_reporter:
+        progress_reporter.start(
+            sum(int(stage["epochs"]) for stage in config["stages"] if stage.get("enabled", True))
+        )
+        history, best_eval_loss, final_epoch = train_all_stages(
+            model,
+            config,
+            train_loaders,
+            eval_loaders,
+            loss_factory,
+            device,
+            logger,
+            save_checkpoint,
+            progress_reporter.update,
+        )
     if final_epoch == 0:
         save_checkpoint(0, None, is_best=True)
 
