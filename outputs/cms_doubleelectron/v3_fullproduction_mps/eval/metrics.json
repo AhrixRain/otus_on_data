@@ -1,0 +1,26 @@
+{
+  "bins": 80,
+  "checkpoint": "/Users/ahrimarin/Desktop/otus_on_data/outputs/cms_doubleelectron/v3_fullproduction_mps/best_model.pt",
+  "checkpoint_epoch": 240,
+  "checkpoint_eval_loss": 0.8872235502515521,
+  "chi2_like": 0.00010869501208155277,
+  "device_report": {
+    "cuda_available": false,
+    "mps_available": true,
+    "mps_built": true,
+    "pytorch_enable_mps_fallback": null,
+    "selected": "mps"
+  },
+  "mass_range": [
+    70.0,
+    110.0
+  ],
+  "max_abs_residual": 0.6843138670396748,
+  "mean_abs_residual": 0.13257289793486682,
+  "min_truth_count": 20,
+  "pred_entries": 62395,
+  "rms_residual": 0.21647825418430086,
+  "split": "test",
+  "truth_entries": 134469,
+  "valid_bins": 80
+}
