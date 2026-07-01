@@ -18,6 +18,7 @@ saves/
 *.h5
 
 # Ignore model checkpoints
+*.pt
 *.npz
 *.pth
 *.ckpt
