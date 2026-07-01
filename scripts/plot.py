@@ -3,9 +3,56 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
 import time
 from typing import Any
+
+
+def available_thread_count() -> int:
+    return max(1, int(os.cpu_count() or 1))
+
+
+def parse_thread_count(value: str | int | None, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return max(1, value)
+    text = str(value).strip().lower()
+    if text in {"", "auto", "max", "all"}:
+        return default
+    count = int(text)
+    if count < 1:
+        raise ValueError(f"Thread count must be >= 1, got {value!r}.")
+    return count
+
+
+def thread_value_from_argv(flag: str, argv: list[str], default: str = "auto") -> str:
+    prefix = f"{flag}="
+    for idx, item in enumerate(argv):
+        if item == flag and idx + 1 < len(argv):
+            return argv[idx + 1]
+        if item.startswith(prefix):
+            return item[len(prefix) :]
+    return default
+
+
+MAX_THREADS = available_thread_count()
+PLOT_THREAD_COUNT = parse_thread_count(thread_value_from_argv("--threads", sys.argv), MAX_THREADS)
+PLOT_INTEROP_THREAD_COUNT = parse_thread_count(
+    thread_value_from_argv("--interop-threads", sys.argv),
+    MAX_THREADS,
+)
+
+for env_name in (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ[env_name] = str(PLOT_THREAD_COUNT)
 
 import matplotlib
 
@@ -86,6 +133,16 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help="Log inference progress every N batches. Use 0 to log only phase boundaries.",
     )
+    parser.add_argument(
+        "--threads",
+        default="auto",
+        help="CPU worker threads for NumPy/OpenMP/Torch. Use auto/max/all for all logical CPUs.",
+    )
+    parser.add_argument(
+        "--interop-threads",
+        default="auto",
+        help="PyTorch inter-op threads. Use auto/max/all for all logical CPUs.",
+    )
     parser.add_argument("--seed", type=int, default=None, help="Plot subsampling seed.")
     parser.add_argument(
         "--counts",
@@ -105,6 +162,32 @@ def finite_values(a: np.ndarray) -> np.ndarray:
 
 def log_progress(message: str) -> None:
     print(f"[plot {time.strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def configure_torch_threads(threads: int, interop_threads: int) -> dict[str, int | str]:
+    result: dict[str, int | str] = {
+        "requested_threads": int(threads),
+        "requested_interop_threads": int(interop_threads),
+    }
+    try:
+        torch.set_num_threads(int(threads))
+    except RuntimeError as exc:
+        result["set_num_threads_error"] = str(exc)
+    try:
+        torch.set_num_interop_threads(int(interop_threads))
+    except RuntimeError as exc:
+        result["set_num_interop_threads_error"] = str(exc)
+    result["torch_num_threads"] = int(torch.get_num_threads())
+    result["torch_num_interop_threads"] = int(torch.get_num_interop_threads())
+    for env_name in (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ):
+        result[env_name] = os.environ.get(env_name, "")
+    return result
 
 
 def finite_8d(a: np.ndarray, name: str) -> np.ndarray:
@@ -775,7 +858,16 @@ def json_safe(value: Any) -> Any:
 
 def main() -> None:
     args = parse_args()
+    threads = parse_thread_count(args.threads, MAX_THREADS)
+    interop_threads = parse_thread_count(args.interop_threads, MAX_THREADS)
+    thread_report = configure_torch_threads(threads, interop_threads)
     log_progress("Starting CMS DoubleElectron plot generation.")
+    log_progress(
+        "Thread configuration: "
+        f"threads={thread_report['torch_num_threads']}, "
+        f"interop_threads={thread_report['torch_num_interop_threads']}, "
+        f"max_available={MAX_THREADS}"
+    )
     config = resolve_config(load_config(args.config))
     seed = int(config.get("seed", 0) if args.seed is None else args.seed)
     density = not args.counts
@@ -1019,6 +1111,7 @@ def main() -> None:
         f"SPLIT: {split}",
         f"DATA_CACHE: {cache_info}",
         f"DEVICE: {device}",
+        f"THREADS: {thread_report}",
         f"HAS_SCIPY: {HAS_SCIPY}",
         f"z_mg5 shape: {z_plot.shape}",
         f"z_encoded shape: {z_encoded.shape}",
@@ -1064,6 +1157,7 @@ def main() -> None:
         "checkpoint_epoch": checkpoint.get("epoch"),
         "checkpoint_eval_loss": checkpoint.get("eval_loss"),
         "device_report": report,
+        "thread_report": thread_report,
         "split": split,
         "data_cache": cache_info,
         "density": density,
