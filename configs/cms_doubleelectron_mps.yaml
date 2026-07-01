@@ -24,8 +24,8 @@ electron_selection:
 
 model:
   class: CondNoiseAutoencoder
-  num_hidden_layers: 4
-  dim_per_hidden_layer: 512
+  num_hidden_layers: 6
+  dim_per_hidden_layer: 768
   activation: ReLU
   sigma_fun: softplus
   sigma_floor: 0.001
@@ -57,7 +57,7 @@ loss:
     x_reco: 0.05
 
 loaders:
-  train_batch_size: 4096
+  train_batch_size: 8192
   eval_batch_size: 20000
   preload_data_to_accelerator: false
 
@@ -93,7 +93,7 @@ stages:
     rho: 0.0
     nu_e: 0.0
     nu_d: 0.0
-    num_slices: 800
+    num_slices: 1000
     log_freq: 20
     lr_decay: true
     freeze_encoder: false
@@ -113,5 +113,5 @@ stages:
     num_slices: 1500
     log_freq: 20
     lr_decay: true
-    freeze_encoder: false
+    freeze_encoder: true
     freeze_decoder: false

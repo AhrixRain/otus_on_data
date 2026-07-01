@@ -61,7 +61,7 @@ class CmsLossSmokeTest(unittest.TestCase):
 
     def test_new_config_loads_with_three_stages(self) -> None:
         config = resolve_config(
-            load_config(REPO_ROOT / "configs/cms_doubleelectron/v6_pairloss_decoder_protected.yaml")
+            load_config(REPO_ROOT / "configs/cms_doubleelectron_mps.yaml")
         )
         self.assertEqual(config["loss"]["kind"], CANONICAL_LOSS_KIND)
         self.assertEqual(
