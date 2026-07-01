@@ -1,0 +1,29 @@
+{
+  "cms_root_file": {
+    "mtime_ns": 1779959342508349600,
+    "path": "C:\\Users\\AhrixMarin\\Desktop\\otus\\experiments\\cms_zpeak\\data\\Run2012B_DoubleElectron.root",
+    "size": 1817796893
+  },
+  "data_split": {
+    "train_ratio": 0.8,
+    "val_ratio": 0.1
+  },
+  "electron_selection": {
+    "electron_abs_eta_max": 2.5,
+    "electron_dxy_max": 0.05,
+    "electron_dz_max": 0.1,
+    "electron_iso_max": 0.15,
+    "electron_pt_min": 20.0,
+    "z_mass_max": 110.0,
+    "z_mass_min": 70.0
+  },
+  "float_type": "float32",
+  "num_samples": null,
+  "seed": 0,
+  "theory_prior_file": {
+    "mtime_ns": 1780548202000000000,
+    "path": "C:\\Users\\AhrixMarin\\Desktop\\otus\\experiments\\cms_doubleelectron\\cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5",
+    "size": 18367160
+  },
+  "version": 1
+}
