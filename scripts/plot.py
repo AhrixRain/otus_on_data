@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 import matplotlib
@@ -58,10 +60,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Plot output directory.")
     parser.add_argument("--num-samples", type=int, default=None, help="Limit selected CMS and MG5 rows before splitting.")
-    parser.add_argument("--split", choices=("val", "test"), default="test", help="Held-out split to plot.")
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Directory for selected/split data cache. Defaults to <output_root>/.plot_cache.",
+    )
+    parser.add_argument(
+        "--no-data-cache",
+        action="store_true",
+        help="Disable selected/split data caching and reread ROOT/HDF5 inputs.",
+    )
+    parser.add_argument(
+        "--split",
+        choices=("all", "val", "test"),
+        default="all",
+        help="Data split to plot. Use all selected rows by default.",
+    )
     parser.add_argument("--max-x-events", type=int, default=5000000, help="Maximum CMS x events to plot.")
     parser.add_argument("--max-z-events", type=int, default=5000000, help="Maximum MG5 z events to plot.")
     parser.add_argument("--batch-size", type=int, default=None, help="Inference batch size.")
+    parser.add_argument(
+        "--progress-log-steps",
+        type=int,
+        default=10,
+        help="Log inference progress every N batches. Use 0 to log only phase boundaries.",
+    )
     parser.add_argument("--seed", type=int, default=None, help="Plot subsampling seed.")
     parser.add_argument(
         "--counts",
@@ -77,6 +101,10 @@ def parse_args() -> argparse.Namespace:
 def finite_values(a: np.ndarray) -> np.ndarray:
     values = np.asarray(a).reshape(-1)
     return values[np.isfinite(values)]
+
+
+def log_progress(message: str) -> None:
+    print(f"[plot {time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
 def finite_8d(a: np.ndarray, name: str) -> np.ndarray:
@@ -97,6 +125,93 @@ def random_subset(a: np.ndarray, n: int | None, seed: int) -> np.ndarray:
     rng = np.random.default_rng(seed)
     idx = rng.choice(len(values), size=int(n), replace=False)
     return values[idx]
+
+
+def select_split(arrays: dict[str, np.ndarray], prefix: str, split: str) -> np.ndarray:
+    if split == "all":
+        return np.concatenate(
+            [arrays[f"{prefix}_train"], arrays[f"{prefix}_val"], arrays[f"{prefix}_test"]],
+            axis=0,
+        )
+    return arrays[f"{prefix}_{split}"]
+
+
+def file_fingerprint(path: str | Path) -> dict[str, Any]:
+    resolved = Path(path).expanduser().resolve()
+    stat = resolved.stat()
+    return {
+        "path": str(resolved),
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
+
+
+def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict[str, Any]:
+    paths = config["paths"]
+    metadata: dict[str, Any] = {
+        "version": 1,
+        "num_samples": None if num_samples is None else int(num_samples),
+        "float_type": config.get("float_type", "float32"),
+        "seed": int(config.get("seed", 0)),
+        "data_split": config["data_split"],
+        "electron_selection": config["electron_selection"],
+        "cms_root_file": file_fingerprint(paths["cms_root_file"]),
+    }
+    if paths.get("theory_prior_files"):
+        metadata["theory_prior_files"] = [
+            file_fingerprint(item) for item in paths["theory_prior_files"]
+        ]
+        metadata["theory_prior_weights"] = paths.get("theory_prior_weights")
+        metadata["theory_prior_mixture_seed"] = int(config.get("seed", 0)) + 17
+    else:
+        metadata["theory_prior_file"] = file_fingerprint(paths["theory_prior_file"])
+    return metadata
+
+
+def data_cache_key(metadata: dict[str, Any]) -> str:
+    payload = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:20]
+
+
+def load_and_split_cached(
+    config: dict[str, Any],
+    num_samples: int | None,
+    cache_dir: Path | None,
+    use_cache: bool,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    if not use_cache:
+        log_progress("Data cache disabled; loading selected CMS and MG5 rows from source files.")
+        return load_and_split(config, num_samples=num_samples), {"enabled": False, "hit": False}
+
+    if cache_dir is None:
+        cache_dir = Path(config["paths"]["output_root"]) / ".plot_cache"
+    cache_dir = cache_dir.expanduser().resolve()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata = data_cache_metadata(config, num_samples)
+    key = data_cache_key(metadata)
+    cache_path = cache_dir / f"selected_split_{key}.npz"
+    metadata_path = cache_dir / f"selected_split_{key}.json"
+    expected_keys = ("x_train", "x_val", "x_test", "z_train", "z_val", "z_test")
+
+    if cache_path.exists():
+        log_progress(f"Loading selected/split data cache: {cache_path}")
+        with np.load(cache_path, allow_pickle=False) as cached:
+            arrays = {key: cached[key] for key in expected_keys}
+        log_progress(
+            "Loaded cache shapes: "
+            + ", ".join(f"{key}={value.shape}" for key, value in arrays.items())
+        )
+        return arrays, {"enabled": True, "hit": True, "path": str(cache_path), "key": key}
+
+    log_progress("Data cache miss; reading ROOT/HDF5 inputs and applying selection.")
+    arrays = load_and_split(config, num_samples=num_samples)
+    tmp_path = cache_dir / f".selected_split_{key}.tmp.npz"
+    log_progress(f"Writing selected/split data cache: {cache_path}")
+    np.savez(tmp_path, **{key: arrays[key] for key in expected_keys})
+    tmp_path.replace(cache_path)
+    metadata_path.write_text(json.dumps(json_safe(metadata), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return arrays, {"enabled": True, "hit": False, "path": str(cache_path), "key": key}
 
 
 def inv_mass_ee(a: np.ndarray, eps: float = 0.0) -> np.ndarray:
@@ -566,11 +681,20 @@ def paper_ratio_plot_double(
     }
 
 
-def predict_batches(model: torch.nn.Module, mode: str, arr: np.ndarray, device: torch.device, batch_size: int) -> np.ndarray:
+def predict_batches(
+    model: torch.nn.Module,
+    mode: str,
+    arr: np.ndarray,
+    device: torch.device,
+    batch_size: int,
+    progress_log_steps: int,
+) -> np.ndarray:
     outputs = []
     model.eval()
+    total_batches = (len(arr) + batch_size - 1) // batch_size
+    log_progress(f"Starting {mode} inference: rows={len(arr)}, batch_size={batch_size}, batches={total_batches}")
     with torch.no_grad():
-        for start in range(0, len(arr), batch_size):
+        for batch_idx, start in enumerate(range(0, len(arr), batch_size), start=1):
             batch_np = np.asarray(arr[start : start + batch_size], dtype=np.float32)
             batch = torch.as_tensor(batch_np, dtype=torch.float32, device=device)
             if mode == "encode":
@@ -582,6 +706,9 @@ def predict_batches(model: torch.nn.Module, mode: str, arr: np.ndarray, device: 
             else:
                 raise ValueError(f"Unknown prediction mode: {mode}")
             outputs.append(first_tensor(out).detach().cpu().numpy())
+            if progress_log_steps > 0 and (batch_idx == 1 or batch_idx == total_batches or batch_idx % progress_log_steps == 0):
+                log_progress(f"{mode} inference batch {batch_idx}/{total_batches}")
+    log_progress(f"Finished {mode} inference.")
     return np.concatenate(outputs, axis=0)
 
 
@@ -648,6 +775,7 @@ def json_safe(value: Any) -> Any:
 
 def main() -> None:
     args = parse_args()
+    log_progress("Starting CMS DoubleElectron plot generation.")
     config = resolve_config(load_config(args.config))
     seed = int(config.get("seed", 0) if args.seed is None else args.seed)
     density = not args.counts
@@ -655,33 +783,42 @@ def main() -> None:
 
     device = select_device(args.device)
     report = device_report(device)
+    log_progress(f"Using device: {device}")
     checkpoint_path = args.checkpoint.expanduser().resolve()
+    output_dir = args.output_dir.expanduser().resolve() if args.output_dir else checkpoint_path.parent / "plots"
+    output_dir.mkdir(parents=True, exist_ok=True)
     model, model_config, _stats, checkpoint = load_model_from_checkpoint(
         checkpoint_path,
         config=config,
         map_location=torch.device("cpu"),
     )
     model.to(device)
+    save_resolved_config(model_config, output_dir / "config.resolved.json")
 
-    arrays = load_and_split(model_config, num_samples=args.num_samples)
+    arrays, cache_info = load_and_split_cached(
+        model_config,
+        num_samples=args.num_samples,
+        cache_dir=args.cache_dir,
+        use_cache=not args.no_data_cache,
+    )
     split = args.split
-    x_split = finite_8d(arrays[f"x_{split}"], f"x_{split}")
-    z_split = finite_8d(arrays[f"z_{split}"], f"z_{split}")
+    log_progress(f"Selecting split={split}.")
+    x_split = finite_8d(select_split(arrays, "x", split), f"x_{split}")
+    z_split = finite_8d(select_split(arrays, "z", split), f"z_{split}")
+    log_progress(f"Selected rows before caps: x={x_split.shape}, z={z_split.shape}")
 
     x_plot = random_subset(x_split, args.max_x_events, seed=seed)
     z_plot = random_subset(z_split, args.max_z_events, seed=seed + 1)
     z_for_x = random_subset(z_split, len(x_plot), seed=seed + 2)
+    log_progress(f"Rows after caps/subsampling: x_plot={x_plot.shape}, z_plot={z_plot.shape}, z_for_x={z_for_x.shape}")
 
     batch_size = int(args.batch_size or model_config.get("loaders", {}).get("eval_batch_size", 20000))
     batch_size = max(1, batch_size)
-    z_encoded = predict_batches(model, "encode", x_plot, device, batch_size)
-    x_reco = predict_batches(model, "reconstruct", x_plot, device, batch_size)
-    x_from_z = predict_batches(model, "decode", z_for_x, device, batch_size)
+    z_encoded = predict_batches(model, "encode", x_plot, device, batch_size, args.progress_log_steps)
+    x_reco = predict_batches(model, "reconstruct", x_plot, device, batch_size, args.progress_log_steps)
+    x_from_z = predict_batches(model, "decode", z_for_x, device, batch_size, args.progress_log_steps)
 
-    output_dir = args.output_dir.expanduser().resolve() if args.output_dir else checkpoint_path.parent / "plots"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    save_resolved_config(model_config, output_dir / "config.resolved.json")
-
+    log_progress("Computing observables.")
     mass_bins = np.arange(args.mass_low, args.mass_high + args.mass_bin_width, args.mass_bin_width)
     pt_bins = np.linspace(0.0, 100.0, 101)
     bins_y = np.array([-100, -60] + [-50 + 5 * i for i in range(21)] + [60, 100], dtype=float)
@@ -691,6 +828,7 @@ def main() -> None:
     m_x = inv_mass_ee(x_plot)
     m_x_reco = inv_mass_ee(x_reco)
     m_x_from_z = inv_mass_ee(x_from_z)
+    log_progress("Writing x-space mass plot.")
     xmass_info = paper_ratio_plot_double(
         truth=m_x,
         pred1=m_x_reco,
@@ -711,6 +849,7 @@ def main() -> None:
     pt_x = pt_ee(x_plot)
     pt_x_reco = pt_ee(x_reco)
     pt_x_from_z = pt_ee(x_from_z)
+    log_progress("Writing x-space pT plot.")
     paper_ratio_plot_double(
         truth=pt_x,
         pred1=pt_x_reco,
@@ -729,6 +868,7 @@ def main() -> None:
         (6, bins_z, r"Positron $p_z$ [GeV]", (-400.0, 400.0), (0.5, 1.5), "paperstyle_zspace_pos_pz_ratio.png"),
         (7, bins_e, r"Positron $E$ [GeV]", (0.0, 400.0), (0.5, 1.5), "paperstyle_zspace_pos_E_ratio.png"),
     ]
+    log_progress("Writing selected z-space component plots.")
     for idx, bins, xlabel, xlim, ratio_ylim, filename in principal_specs_z:
         paper_ratio_plot_single(
             truth=z_plot[:, idx],
@@ -747,6 +887,7 @@ def main() -> None:
         (6, bins_z, r"Positron $p_z$ [GeV]", (-400.0, 400.0), (0.5, 1.5), "paperstyle_xspace_pos_pz_ratio.png"),
         (7, bins_e, r"Positron $E$ [GeV]", (0.0, 400.0), (0.5, 1.5), "paperstyle_xspace_pos_E_ratio.png"),
     ]
+    log_progress("Writing selected x-space component plots.")
     for idx, bins, xlabel, xlim, ratio_ylim, filename in principal_specs_x:
         paper_ratio_plot_double(
             truth=x_plot[:, idx],
@@ -763,6 +904,7 @@ def main() -> None:
 
     m_z_prior = inv_mass_ee(z_plot)
     m_x_to_z = inv_mass_ee(z_encoded)
+    log_progress("Writing z-space mass plot.")
     paper_ratio_plot_single(
         truth=m_z_prior,
         pred=m_x_to_z,
@@ -777,6 +919,7 @@ def main() -> None:
         reference_label=fr"$m_Z={MZ_REF:.4f}$ GeV",
     )
 
+    log_progress("Writing all-component density checks.")
     plot_all_components(
         arrays=[(z_plot, "MG5 z", TRUTH_STYLE), (z_encoded, r"CMS x $\rightarrow$ z", ENC_STYLE)],
         title="z-space component check: MG5 z vs OTUS x -> z",
@@ -797,6 +940,7 @@ def main() -> None:
     )
 
     zspace_validation_dir = output_dir / "zspace_validation"
+    log_progress("Writing z-space validation plots.")
     paper_ratio_plot_single(
         truth=m_z_prior,
         pred=m_x_to_z,
@@ -818,6 +962,7 @@ def main() -> None:
         density=density,
     )
 
+    log_progress("Computing residual and statistical summaries.")
     ks_mass, p_mass = maybe_ks(m_z_prior, m_x_to_z)
     ks_pt_reco, p_pt_reco = maybe_ks(pt_x, pt_x_reco)
     ks_pt_zx, p_pt_zx = maybe_ks(pt_x, pt_x_from_z)
@@ -872,6 +1017,7 @@ def main() -> None:
         f"CHECKPOINT_EPOCH: {checkpoint.get('epoch')}",
         f"CHECKPOINT_EVAL_LOSS: {checkpoint.get('eval_loss')}",
         f"SPLIT: {split}",
+        f"DATA_CACHE: {cache_info}",
         f"DEVICE: {device}",
         f"HAS_SCIPY: {HAS_SCIPY}",
         f"z_mg5 shape: {z_plot.shape}",

@@ -18,7 +18,7 @@
   },
   "float_type": "float32",
   "loaders": {
-    "eval_batch_size": 20000,
+    "eval_batch_size": 60000,
     "preload_data_to_accelerator": false,
     "train_batch_size": 8192
   },

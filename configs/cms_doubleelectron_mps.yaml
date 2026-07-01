@@ -24,8 +24,8 @@ electron_selection:
 
 model:
   class: CondNoiseAutoencoder
-  num_hidden_layers: 6
-  dim_per_hidden_layer: 768
+  num_hidden_layers: 4
+  dim_per_hidden_layer: 512
   activation: ReLU
   sigma_fun: softplus
   sigma_floor: 0.001
@@ -58,7 +58,7 @@ loss:
 
 loaders:
   train_batch_size: 8192
-  eval_batch_size: 20000
+  eval_batch_size: 60000
   preload_data_to_accelerator: false
 
 evaluation:
