@@ -1,0 +1,18 @@
+{
+  "bins": 80,
+  "chi2_like": 0.0007392026524908704,
+  "comparison": "reconstruction",
+  "mass_range": [
+    70.0,
+    110.0
+  ],
+  "max_abs_residual": 0.9711027001099712,
+  "mean_abs_residual": 0.34995220494353557,
+  "min_truth_count": 20,
+  "pred_entries": 134469,
+  "pred_label": "D(E(x_test CMS))",
+  "rms_residual": 0.4240918696305396,
+  "truth_entries": 134469,
+  "truth_label": "x_test CMS",
+  "valid_bins": 80
+}

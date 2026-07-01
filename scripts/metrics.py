@@ -9,6 +9,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+try:
+    from scipy.stats import ks_2samp, wasserstein_distance
+
+    HAS_SCIPY = True
+except Exception:
+    HAS_SCIPY = False
+
 
 def invariant_mass(pairs: np.ndarray) -> np.ndarray:
     p4 = pairs[:, 0:4] + pairs[:, 4:8]
@@ -29,30 +36,56 @@ def residual_metrics(
 
     truth_norm = truth_counts / max(1, truth_counts.sum())
     pred_norm = pred_counts / max(1, pred_counts.sum())
-    valid = truth_counts >= int(min_truth_count)
+    valid = (
+        (truth_counts >= int(min_truth_count))
+        & np.isfinite(truth_norm)
+        & (truth_norm != 0.0)
+    )
     residual = np.full_like(truth_norm, np.nan, dtype=float)
     residual[valid] = (pred_norm[valid] - truth_norm[valid]) / truth_norm[valid]
     ratio = np.full_like(truth_norm, np.nan, dtype=float)
     ratio[valid] = pred_norm[valid] / truth_norm[valid]
     valid_residual = residual[valid]
 
-    chi2_like = None
+    stat_error = np.full_like(truth_norm, np.nan, dtype=float)
+    stat_mask = valid & (pred_counts > 0)
+    stat_error[stat_mask] = np.sqrt(1.0 / pred_counts[stat_mask] + 1.0 / truth_counts[stat_mask])
+
+    chi2_ndf = None
     if np.any(valid):
-        chi2_like = float(
-            np.sum((pred_norm[valid] - truth_norm[valid]) ** 2 / (truth_norm[valid] + 1e-12))
+        chi2_ndf = float(
+            np.sum((pred_counts[valid] - truth_counts[valid]) ** 2 / (truth_counts[valid] + 1e-12))
             / max(1, int(valid.sum()) - 1)
         )
+    ks_statistic = None
+    ks_pvalue = None
+    w1_distance = None
+    if HAS_SCIPY:
+        ks = ks_2samp(truth_mass, pred_mass)
+        ks_statistic = float(ks.statistic)
+        ks_pvalue = float(ks.pvalue)
+        w1_distance = float(wasserstein_distance(truth_mass, pred_mass))
     metrics = {
         "mass_range": [float(mass_range[0]), float(mass_range[1])],
         "bins": int(bins),
+        "total_bins": int(len(truth_counts)),
         "min_truth_count": int(min_truth_count),
         "truth_entries": int(len(truth_mass)),
         "pred_entries": int(len(pred_mass)),
         "valid_bins": int(valid.sum()),
+        "frac_within_1pct": None if valid_residual.size == 0 else float(np.mean(np.abs(valid_residual) <= 0.01)),
+        "rms_rel_residual": None if valid_residual.size == 0 else float(np.sqrt(np.nanmean(valid_residual**2))),
+        "mae_rel_residual": None if valid_residual.size == 0 else float(np.nanmean(np.abs(valid_residual))),
+        "max_abs_rel_residual": None if valid_residual.size == 0 else float(np.nanmax(np.abs(valid_residual))),
+        "median_stat_error": None if not np.any(np.isfinite(stat_error[valid])) else float(np.nanmedian(stat_error[valid])),
+        "ks_statistic": ks_statistic,
+        "ks_pvalue": ks_pvalue,
+        "w1_distance": w1_distance,
+        "chi2_ndf": chi2_ndf,
         "max_abs_residual": None if valid_residual.size == 0 else float(np.nanmax(np.abs(valid_residual))),
         "mean_abs_residual": None if valid_residual.size == 0 else float(np.nanmean(np.abs(valid_residual))),
         "rms_residual": None if valid_residual.size == 0 else float(np.sqrt(np.nanmean(valid_residual**2))),
-        "chi2_like": chi2_like,
+        "chi2_like": chi2_ndf,
     }
     arrays = {
         "edges": edges,

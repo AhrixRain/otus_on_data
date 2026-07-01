@@ -33,7 +33,7 @@ class CondNoiseMLP(nn.Module):
     def __init__(self, input_dim, output_dim, hidden_layer_dims, stoch,
                  activation=nn.ReLU, noise_activation=nn.ReLU, input_stats=None,
                  inv_masses=None, output_stats=None, output_raw=False,
-                 sigma_fun='exp'):
+                 sigma_fun='exp', sigma_floor=0.0):
         """
         Generic model of an implicit and sample-able conditional distribution, p(output | input), parameterized by MLP.
         In the deterministic case (stoch=False), output = nn(input).
@@ -75,6 +75,7 @@ class CondNoiseMLP(nn.Module):
         else:
             raise NotImplementedError
         self.sigma_fun = sigma_fun
+        self.sigma_floor = float(sigma_floor)
 
         if isinstance(input_stats, np.ndarray):
             input_stats = torch.Tensor(input_stats)
@@ -129,7 +130,7 @@ class CondNoiseMLP(nn.Module):
             mean, logsigma = self.cond_noise_nn(input).split(noise_dim, dim=-1)
             # sigma = torch.exp(logsigma)
             # sigma = torch_softplus(logsigma)
-            sigma = self.sigma_fun(logsigma)
+            sigma = self.sigma_floor + self.sigma_fun(logsigma)
             input_shape = input.shape
             eps = torch.randn([*input_shape[:-1], noise_dim], dtype=input.dtype, device=input.device)
             eps = mean + eps * sigma
@@ -553,4 +554,3 @@ class Autoencoder(nn.Module):
         z_tilde = self.encode(x)
         x_tilde = self.decode(z_tilde)
         return z_tilde, x_tilde
-

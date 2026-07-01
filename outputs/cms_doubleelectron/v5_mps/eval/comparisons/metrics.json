@@ -1,0 +1,67 @@
+{
+  "reconstruction": {
+    "bins": 80,
+    "chi2_like": 0.0007392026524908704,
+    "comparison": "reconstruction",
+    "mass_range": [
+      70.0,
+      110.0
+    ],
+    "max_abs_residual": 0.9711027001099712,
+    "mean_abs_residual": 0.34995220494353557,
+    "min_truth_count": 20,
+    "pred_entries": 134469,
+    "pred_label": "D(E(x_test CMS))",
+    "rms_residual": 0.4240918696305396,
+    "truth_entries": 134469,
+    "truth_label": "x_test CMS",
+    "valid_bins": 80
+  },
+  "simulation": {
+    "bins": 80,
+    "checkpoint": "/Users/ahrimarin/Desktop/otus_on_data/outputs/cms_doubleelectron/v5_mps/best_model.pt",
+    "checkpoint_epoch": 160,
+    "checkpoint_eval_loss": 0.12806099653244019,
+    "chi2_like": 4.189482276449962e-05,
+    "comparison": "simulation",
+    "device_report": {
+      "cuda_available": false,
+      "mps_available": true,
+      "mps_built": true,
+      "pytorch_enable_mps_fallback": null,
+      "selected": "mps"
+    },
+    "mass_range": [
+      70.0,
+      110.0
+    ],
+    "max_abs_residual": 0.6886657467261851,
+    "mean_abs_residual": 0.07770524773393514,
+    "min_truth_count": 20,
+    "pred_entries": 62395,
+    "pred_label": "D(z_test MG5)",
+    "rms_residual": 0.13268195866711063,
+    "split": "test",
+    "truth_entries": 134469,
+    "truth_label": "x_test CMS",
+    "valid_bins": 80
+  },
+  "unfolding": {
+    "bins": 80,
+    "chi2_like": 2.7994031194071994e-05,
+    "comparison": "unfolding",
+    "mass_range": [
+      70.0,
+      110.0
+    ],
+    "max_abs_residual": 0.4581025618120279,
+    "mean_abs_residual": 0.09327137742947691,
+    "min_truth_count": 20,
+    "pred_entries": 134469,
+    "pred_label": "E(x_test CMS)",
+    "rms_residual": 0.1388489892508599,
+    "truth_entries": 62395,
+    "truth_label": "z_test MG5",
+    "valid_bins": 80
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "checkpoint": "/Users/ahrimarin/Desktop/otus_on_data/outputs/cms_doubleelectron/v5_mps/best_model.pt",
+  "checkpoint_epoch": 160,
+  "checkpoint_eval_loss": 0.12806099653244019,
+  "density": true,
+  "device_report": {
+    "cuda_available": false,
+    "mps_available": true,
+    "mps_built": true,
+    "pytorch_enable_mps_fallback": null,
+    "selected": "mps"
+  },
+  "has_scipy": true,
+  "mass": {
+    "x_from_z_mean": 90.61647033691406,
+    "x_from_z_std": 5.83577299118042,
+    "x_mean": 90.63328552246094,
+    "x_reco_mean": 90.3402099609375,
+    "x_reco_std": 4.84074592590332,
+    "x_std": 5.854138374328613,
+    "x_to_z_mean": 91.0680923461914,
+    "x_to_z_std": 4.110313415527344,
+    "z_mg5_mean": 91.07438659667969,
+    "z_mg5_std": 4.007553577423096,
+    "zspace_ks_pvalue": 0.3873037538402664,
+    "zspace_ks_statistic": 0.004374756323774376
+  },
+  "pt": {
+    "x_vs_reco_ks_pvalue": 0.0,
+    "x_vs_reco_ks_statistic": 0.16922115878009059,
+    "x_vs_zx_ks_pvalue": 0.00013207066127900012,
+    "x_vs_zx_ks_statistic": 0.010622502401465839
+  },
+  "shapes": {
+    "x_from_z": [
+      62395,
+      8
+    ],
+    "x_plot": [
+      134469,
+      8
+    ],
+    "x_reco": [
+      134469,
+      8
+    ],
+    "z_encoded": [
+      134469,
+      8
+    ],
+    "z_plot": [
+      62395,
+      8
+    ]
+  },
+  "split": "test",
+  "xspace_mass_residual": {
+    "x_to_z_to_x": {
+      "frac_within_target": null,
+      "mae": null,
+      "max_abs": null,
+      "median_sigma": null,
+      "rms": null,
+      "total_bins": 40,
+      "valid_bins": 0
+    },
+    "z_to_x": {
+      "frac_within_target": null,
+      "mae": null,
+      "max_abs": null,
+      "median_sigma": null,
+      "rms": null,
+      "total_bins": 40,
+      "valid_bins": 0
+    }
+  }
+}

@@ -1,0 +1,28 @@
+NORMALIZE_DENSITY: True
+CHECKPOINT: /Users/ahrimarin/Desktop/otus_on_data/outputs/cms_doubleelectron/v5_mps/best_model.pt
+CHECKPOINT_EPOCH: 160
+CHECKPOINT_EVAL_LOSS: 0.12806099653244019
+SPLIT: test
+DEVICE: mps
+HAS_SCIPY: True
+z_mg5 shape: (62395, 8)
+z_encoded shape: (134469, 8)
+x_plot shape: (134469, 8)
+x_reco shape: (134469, 8)
+x_from_z shape: (62395, 8)
+m_mg5 mean/std: 91.0744 / 4.00755
+m_x_to_z mean/std: 91.0681 / 4.11031
+m_x mean/std: 90.6333 / 5.85414
+m_x_reco mean/std: 90.3402 / 4.84075
+m_x_from_z mean/std: 90.6165 / 5.83577
+mass KS statistic/pvalue: 0.00437476 / 0.387304
+pT KS x vs x->z->x: 0.169221 / 0
+pT KS x vs z->x: 0.0106225 / 0.000132071
+z dim 00 KS statistic/pvalue: 0.00324185 / 0.760314
+z dim 01 KS statistic/pvalue: 0.00435747 / 0.392209
+z dim 02 KS statistic/pvalue: 0.00536044 / 0.171989
+z dim 03 KS statistic/pvalue: 0.0054464 / 0.158909
+z dim 04 KS statistic/pvalue: 0.00578678 / 0.114721
+z dim 05 KS statistic/pvalue: 0.00302525 / 0.829048
+z dim 06 KS statistic/pvalue: 0.00654436 / 0.051722
+z dim 07 KS statistic/pvalue: 0.00837478 / 0.0050376

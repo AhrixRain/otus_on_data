@@ -19,7 +19,7 @@ if str(UTILITY_DIR) not in sys.path:
     sys.path.insert(0, str(UTILITY_DIR))
 
 from func_utils import anchor_loss, data_loss, sliced_wd  # noqa: E402
-from feature_ot_loss import OriginalOtusFeatureLossFactory  # noqa: E402
+from loss import CANONICAL_LOSS_KIND, CmsDoubleElectronLossFactory  # noqa: E402
 
 
 P = 2
@@ -351,8 +351,9 @@ class ZLossFactory:
 
 
 def build_loss_factory(x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
-    if loss_config.get("kind") == "original_feature_ot_v1":
-        return OriginalOtusFeatureLossFactory(x_train, z_train, loss_config)
+    kind = loss_config.get("kind", CANONICAL_LOSS_KIND)
+    if kind in {None, CANONICAL_LOSS_KIND, "original_feature_ot_v1"}:
+        return CmsDoubleElectronLossFactory(x_train, z_train, loss_config)
     return ZLossFactory(x_train, z_train, loss_config)
 
 
@@ -374,6 +375,19 @@ def make_stage_config(config: dict[str, Any], stage: dict[str, Any]) -> dict[str
 
 
 class HistoryLogger:
+    component_fields = [
+        f"train_{space}_{component}"
+        for space in ("x", "z")
+        for component in (
+            "pair_mass_w1",
+            "pair_pt_w1",
+            "lepton_pt_w1",
+            "delta_phi_w1",
+            "delta_eta_w1",
+            "pair_rapidity_w1",
+            "physics_coord_swd",
+        )
+    ]
     fieldnames = [
         "epoch",
         "stage",
@@ -387,7 +401,7 @@ class HistoryLogger:
         "eval_z_loss",
         "eval_alt_x_loss",
         "eval_selection_score",
-    ]
+    ] + component_fields
 
     def __init__(self, csv_path: Path):
         self.csv_path = csv_path
@@ -408,7 +422,16 @@ class HistoryLogger:
         return {key: [row[key] for row in self.rows] for key in self.fieldnames}
 
 
-def train_standard_epoch(model, optimizer, x_loader, z_loader, stage, loss_factory, device):
+def train_standard_epoch(
+    model,
+    optimizer,
+    x_loader,
+    z_loader,
+    stage,
+    loss_factory,
+    device,
+    step_callback=None,
+):
     model.train()
     sums = {
         "loss": 0.0,
@@ -418,9 +441,12 @@ def train_standard_epoch(model, optimizer, x_loader, z_loader, stage, loss_facto
         "x_constraint_loss": 0.0,
     }
     nbatches = 0
+    steps_in_epoch = min(len(x_loader), len(z_loader))
     for x, z in zip(x_loader, z_loader):
         x = x.to(device)
         z = z.to(device)
+        if hasattr(loss_factory, "reset_components"):
+            loss_factory.reset_components()
         optimizer.zero_grad()
         z_tilde = first_tensor(model.encode(x))
         z_loss = loss_factory.z_prior_loss(z, z_tilde) if stage["lamb"] > 0 else x.new_tensor(0.0)
@@ -438,14 +464,23 @@ def train_standard_epoch(model, optimizer, x_loader, z_loader, stage, loss_facto
         alt_x_loss = x.new_tensor(0.0)
         x_constraint_loss = x.new_tensor(0.0)
         if stage["tau"] > 0 or stage["rho"] > 0 or stage["nu_d"] > 0:
-            model_x = first_tensor(model.decode(z))
+            decoder_samples = max(1, int(getattr(loss_factory, "decoder_num_noise_samples", 1)))
+            if decoder_samples > 1 and stage["tau"] > 0:
+                model_x = torch.cat(
+                    [first_tensor(model.decode(z)) for _ in range(decoder_samples)],
+                    dim=0,
+                )
+                x_for_distribution = x.repeat((decoder_samples, 1))
+            else:
+                model_x = first_tensor(model.decode(z))
+                x_for_distribution = x
             alt_x_loss = (
-                loss_factory.x_sim_loss(x, model_x)
+                loss_factory.x_sim_loss(x_for_distribution, model_x)
                 if stage["tau"] > 0
                 else x.new_tensor(0.0)
             )
             decoder_anchor = (
-                loss_factory.decoder_anchor_loss(z, model_x)
+                loss_factory.decoder_anchor_loss(z, model_x[: len(z)])
                 if stage["nu_d"] > 0
                 else x.new_tensor(0.0)
             )
@@ -464,8 +499,22 @@ def train_standard_epoch(model, optimizer, x_loader, z_loader, stage, loss_facto
         sums["z_loss"] += as_float(z_loss)
         sums["alt_x_loss"] += as_float(alt_x_loss)
         sums["x_constraint_loss"] += as_float(x_constraint_loss)
+        for key, value in getattr(loss_factory, "latest_components", {}).items():
+            log_key = f"{key}"
+            sums.setdefault(log_key, 0.0)
+            sums[log_key] += as_float(value)
         nbatches += 1
-    return {key: value / max(1, nbatches) for key, value in sums.items()}
+        if step_callback is not None:
+            step_callback(
+                {
+                    key: value / max(1, nbatches)
+                    for key, value in sums.items()
+                },
+                nbatches,
+                steps_in_epoch,
+            )
+    averaged = {key: value / max(1, nbatches) for key, value in sums.items()}
+    return averaged
 
 
 def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
@@ -536,10 +585,21 @@ def z_cycle_losses_for_batch(model, x_batch, z_batch, stage, loss_factory):
     }
 
 
-def train_z_cycle_epoch(model, optimizer, trainable_params, x_loader, z_loader, stage, loss_factory, device):
+def train_z_cycle_epoch(
+    model,
+    optimizer,
+    trainable_params,
+    x_loader,
+    z_loader,
+    stage,
+    loss_factory,
+    device,
+    step_callback=None,
+):
     model.train()
     sums = {"loss": 0.0, "x_loss": 0.0, "z_loss": 0.0}
     nbatches = 0
+    steps_in_epoch = min(len(x_loader), len(z_loader))
     for x, z in zip(x_loader, z_loader):
         x = x.to(device)
         z = z.to(device)
@@ -551,6 +611,15 @@ def train_z_cycle_epoch(model, optimizer, trainable_params, x_loader, z_loader, 
         for key in sums:
             sums[key] += as_float(losses[key])
         nbatches += 1
+        if step_callback is not None:
+            step_callback(
+                {
+                    key: value / max(1, nbatches)
+                    for key, value in sums.items()
+                },
+                nbatches,
+                steps_in_epoch,
+            )
     return {key: value / max(1, nbatches) for key, value in sums.items()}
 
 
@@ -581,10 +650,13 @@ def train_all_stages(
     progress_callback=None,
 ) -> tuple[dict[str, list[Any]], float | None, int]:
     history_epoch = 0
+    history_step = 0
     best_eval_loss: float | None = None
     total_epochs = sum(
         int(stage["epochs"]) for stage in config["stages"] if stage.get("enabled", True)
     )
+    steps_in_train_epoch = min(len(train_loaders[0]), len(train_loaders[1]))
+    total_steps = total_epochs * steps_in_train_epoch
     for stage in config["stages"]:
         if not stage.get("enabled", True):
             continue
@@ -613,6 +685,31 @@ def train_all_stages(
             )
 
         for local_epoch in range(1, stage_epochs + 1):
+            def report_train_step(train_losses, step, steps_in_epoch):
+                nonlocal history_step
+                history_step += 1
+                if progress_callback is None:
+                    return
+                progress_callback(
+                    {
+                        "event": "train_step",
+                        "stage": stage["name"],
+                        "epoch": local_epoch,
+                        "epochs_in_stage": stage_epochs,
+                        "global_epoch": history_epoch + 1,
+                        "total_epochs": total_epochs,
+                        "step": step,
+                        "steps_in_epoch": steps_in_epoch,
+                        "global_step": history_step,
+                        "total_steps": total_steps,
+                        "percent": (100.0 * history_step / total_steps) if total_steps else 100.0,
+                        "train_loss": float(train_losses["loss"]),
+                        "eval_loss": None,
+                        "best_eval_loss": best_eval_loss,
+                        "evaluated": False,
+                    }
+                )
+
             if stage.get("mode", "standard") == "z_cycle":
                 train_losses = train_z_cycle_epoch(
                     model,
@@ -623,6 +720,7 @@ def train_all_stages(
                     stage,
                     loss_factory,
                     device,
+                    report_train_step,
                 )
                 eval_fn = eval_z_cycle_epoch
             else:
@@ -634,6 +732,7 @@ def train_all_stages(
                     make_stage_config(config, stage),
                     loss_factory,
                     device,
+                    report_train_step,
                 )
                 eval_fn = eval_standard_epoch
             if scheduler is not None:
@@ -685,6 +784,9 @@ def train_all_stages(
                     "eval_alt_x_loss": eval_alt_x_loss,
                     "eval_selection_score": selection_score,
                 }
+                for component_field in HistoryLogger.component_fields:
+                    component_key = component_field.removeprefix("train_")
+                    row[component_field] = train_losses.get(component_key, "")
                 logger.append(row)
                 is_best = best_eval_loss is None or selection_score < best_eval_loss
                 if is_best:
@@ -705,11 +807,16 @@ def train_all_stages(
             if progress_callback is not None:
                 progress_callback(
                     {
+                        "event": "epoch_end",
                         "stage": stage["name"],
                         "epoch": local_epoch,
                         "epochs_in_stage": stage_epochs,
                         "global_epoch": history_epoch,
                         "total_epochs": total_epochs,
+                        "step": steps_in_train_epoch,
+                        "steps_in_epoch": steps_in_train_epoch,
+                        "global_step": history_step,
+                        "total_steps": total_steps,
                         "percent": (100.0 * history_epoch / total_epochs) if total_epochs else 100.0,
                         "train_loss": float(train_losses["loss"]),
                         "eval_loss": eval_loss,

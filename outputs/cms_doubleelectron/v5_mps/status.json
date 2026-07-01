@@ -1,0 +1,21 @@
+{
+  "best_eval_loss": 0.12806099653244019,
+  "device": "mps",
+  "epoch": 100,
+  "epochs_in_stage": 100,
+  "evaluated_this_epoch": true,
+  "event": "epoch_end",
+  "global_epoch": 200,
+  "global_step": 52600,
+  "latest_eval_loss": 0.1309459347810064,
+  "latest_train_loss": 0.36218831135746193,
+  "percent": 100.0,
+  "progress_mode": "bar",
+  "run_name": "v5_mps",
+  "stage": "stage3_decoder_response_mass_protected",
+  "step": 263,
+  "steps_in_epoch": 263,
+  "total_epochs": 200,
+  "total_steps": 52600,
+  "updated_at": "2026-07-01T09:34:27-07:00"
+}

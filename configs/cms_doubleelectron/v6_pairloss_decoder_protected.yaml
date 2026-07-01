@@ -1,0 +1,122 @@
+paths:
+  repo_root: .
+  data_root: .
+  cms_root_file: experiments/cms_zpeak/data/Run2012B_DoubleElectron.root
+  theory_prior_file: experiments/cms_doubleelectron/cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5
+  # Optional mixed-prior mode:
+  # theory_prior_files:
+  #   - experiments/cms_doubleelectron/cms_dyee_mg5_8tev_dy0j_fiducial_70_110.hdf5
+  #   - experiments/cms_doubleelectron/cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5
+  # theory_prior_weights: [0.3, 0.7]
+  output_root: outputs/cms_doubleelectron
+
+device: auto
+seed: 0
+float_type: float32
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+
+electron_selection:
+  electron_pt_min: 20.0
+  electron_abs_eta_max: 2.5
+  electron_iso_max: 0.15
+  electron_dxy_max: 0.05
+  electron_dz_max: 0.1
+  z_mass_min: 70.0
+  z_mass_max: 110.0
+
+model:
+  class: CondNoiseAutoencoder
+  num_hidden_layers: 4
+  dim_per_hidden_layer: 512
+  activation: ReLU
+  sigma_fun: softplus
+  sigma_floor: 0.001
+  stoch_enc: true
+  stoch_dec: true
+  raw_io: true
+
+loss:
+  kind: cms_doubleelectron_loss
+  raw_swd: 0.5
+  physics_swd: 1.0
+  mass_w1: 2.0
+  marginal_w1: 0.5
+  transverse_w1: 0.5
+  longitudinal_w1: 0.4
+  tail_w1: 0.15
+  pair_mass_w1: 2.0
+  pair_pt_w1: 2.0
+  lepton_pt_w1: 1.0
+  delta_phi_w1: 0.5
+  delta_eta_w1: 0.5
+  pair_rapidity_w1: 0.5
+  physics_coord_swd: 0.5
+  mmd: 0.0
+  decoder_num_noise_samples: 1
+  selection_score:
+    x_sim: 1.0
+    z_prior: 0.7
+    x_reco: 0.05
+
+loaders:
+  train_batch_size: 4096
+  eval_batch_size: 20000
+  preload_data_to_accelerator: false
+
+evaluation:
+  min_truth_count: 20
+
+stages:
+  - name: stage1_anchor_warmup
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.001
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.0
+    rho: 0.0
+    nu_e: 50.0
+    nu_d: 50.0
+    num_slices: 500
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage2_joint_transport
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.0005
+    beta: 0.5
+    lamb: 1.0
+    tau: 1.2
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 800
+    log_freq: 20
+    lr_decay: true
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage3_decoder_response_mass_protected
+    mode: standard
+    enabled: true
+    epochs: 100
+    lr: 0.0001
+    beta: 0.15
+    lamb: 1.0
+    tau: 2.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1500
+    log_freq: 20
+    lr_decay: true
+    freeze_encoder: false
+    freeze_decoder: false

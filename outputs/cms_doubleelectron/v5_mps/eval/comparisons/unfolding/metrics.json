@@ -1,0 +1,18 @@
+{
+  "bins": 80,
+  "chi2_like": 2.7994031194071994e-05,
+  "comparison": "unfolding",
+  "mass_range": [
+    70.0,
+    110.0
+  ],
+  "max_abs_residual": 0.4581025618120279,
+  "mean_abs_residual": 0.09327137742947691,
+  "min_truth_count": 20,
+  "pred_entries": 134469,
+  "pred_label": "E(x_test CMS)",
+  "rms_residual": 0.1388489892508599,
+  "truth_entries": 62395,
+  "truth_label": "z_test MG5",
+  "valid_bins": 80
+}

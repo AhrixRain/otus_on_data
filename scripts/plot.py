@@ -18,7 +18,7 @@ from cms_training import first_tensor
 from device_utils import device_report, select_device
 
 try:
-    from scipy.stats import ks_2samp
+    from scipy.stats import ks_2samp, wasserstein_distance
 
     HAS_SCIPY = True
 except Exception:
@@ -132,6 +132,12 @@ def maybe_ks(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
     return float(result.statistic), float(result.pvalue)
 
 
+def maybe_w1(a: np.ndarray, b: np.ndarray) -> float:
+    if not HAS_SCIPY:
+        return float("nan")
+    return float(wasserstein_distance(finite_values(a), finite_values(b)))
+
+
 def hist_for_plot(values: np.ndarray, bins: np.ndarray, density: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     values = finite_values(values)
     counts, edges = np.histogram(values, bins=bins)
@@ -190,36 +196,57 @@ def draw_relative_error_target(ax: plt.Axes, target_rel_err: float = 0.01) -> No
 
 
 def residual_quality_summary(
-    residual: np.ndarray,
-    residual_err: np.ndarray,
+    truth_heights: np.ndarray,
+    pred_heights: np.ndarray,
     truth_counts: np.ndarray,
     pred_counts: np.ndarray,
-    target_rel_err: float = 0.01,
-    sigma_max: float = 0.01,
-    min_truth_counts: int = 100,
-    min_pred_counts: int = 100,
+    truth_values: np.ndarray | None = None,
+    pred_values: np.ndarray | None = None,
+    min_truth_count: int = 20,
 ) -> dict[str, float | int | None]:
-    residual = np.asarray(residual, dtype=float)
-    residual_err = np.asarray(residual_err, dtype=float)
+    truth_heights = np.asarray(truth_heights, dtype=float)
+    pred_heights = np.asarray(pred_heights, dtype=float)
     truth_counts = np.asarray(truth_counts, dtype=float)
     pred_counts = np.asarray(pred_counts, dtype=float)
 
     mask = (
-        np.isfinite(residual)
-        & np.isfinite(residual_err)
-        & (truth_counts >= min_truth_counts)
-        & (pred_counts >= min_pred_counts)
-        & (residual_err < sigma_max)
+        (truth_counts >= int(min_truth_count))
+        & np.isfinite(truth_heights)
+        & (truth_heights != 0.0)
     )
+    residual = np.full_like(truth_heights, np.nan, dtype=float)
+    residual[mask] = (pred_heights[mask] - truth_heights[mask]) / truth_heights[mask]
+    stat_error = np.full_like(truth_heights, np.nan, dtype=float)
+    stat_mask = mask & (pred_counts > 0)
+    stat_error[stat_mask] = np.sqrt(1.0 / pred_counts[stat_mask] + 1.0 / truth_counts[stat_mask])
+
+    chi2_ndf = None
+    if np.any(mask):
+        chi2_ndf = float(
+            np.sum((pred_counts[mask] - truth_counts[mask]) ** 2 / (truth_counts[mask] + 1e-12))
+            / max(1, int(mask.sum()) - 1)
+        )
+
+    ks_statistic = None
+    ks_pvalue = None
+    w1_distance = None
+    if truth_values is not None and pred_values is not None and HAS_SCIPY:
+        ks_statistic, ks_pvalue = maybe_ks(truth_values, pred_values)
+        w1_distance = maybe_w1(truth_values, pred_values)
+
     if not np.any(mask):
         return {
             "valid_bins": 0,
             "total_bins": int(len(residual)),
-            "frac_within_target": None,
-            "mae": None,
-            "rms": None,
-            "max_abs": None,
-            "median_sigma": None,
+            "frac_within_1pct": None,
+            "rms_rel_residual": None,
+            "mae_rel_residual": None,
+            "max_abs_rel_residual": None,
+            "median_stat_error": None,
+            "ks_statistic": ks_statistic,
+            "ks_pvalue": ks_pvalue,
+            "w1_distance": w1_distance,
+            "chi2_ndf": chi2_ndf,
         }
 
     selected = residual[mask]
@@ -227,12 +254,36 @@ def residual_quality_summary(
     return {
         "valid_bins": int(mask.sum()),
         "total_bins": int(len(residual)),
-        "frac_within_target": float(np.mean(abs_selected < target_rel_err)),
-        "mae": float(np.mean(abs_selected)),
-        "rms": float(np.sqrt(np.mean(selected**2))),
-        "max_abs": float(np.max(abs_selected)),
-        "median_sigma": float(np.median(residual_err[mask])),
+        "frac_within_1pct": float(np.mean(abs_selected <= 0.01)),
+        "rms_rel_residual": float(np.sqrt(np.mean(selected**2))),
+        "mae_rel_residual": float(np.mean(abs_selected)),
+        "max_abs_rel_residual": float(np.max(abs_selected)),
+        "median_stat_error": None if not np.any(np.isfinite(stat_error[mask])) else float(np.nanmedian(stat_error[mask])),
+        "ks_statistic": ks_statistic,
+        "ks_pvalue": ks_pvalue,
+        "w1_distance": w1_distance,
+        "chi2_ndf": chi2_ndf,
     }
+
+
+def histogram_observable_summary(
+    truth: np.ndarray,
+    pred: np.ndarray,
+    bins: np.ndarray,
+    density: bool,
+    min_truth_count: int,
+) -> dict[str, float | int | None]:
+    _, h_truth, c_truth = hist_for_plot(truth, bins, density=density)
+    _, h_pred, c_pred = hist_for_plot(pred, bins, density=density)
+    return residual_quality_summary(
+        h_truth,
+        h_pred,
+        c_truth,
+        c_pred,
+        truth_values=truth,
+        pred_values=pred,
+        min_truth_count=min_truth_count,
+    )
 
 
 def paper_ratio_plot_single(
@@ -594,6 +645,7 @@ def main() -> None:
     config = resolve_config(load_config(args.config))
     seed = int(config.get("seed", 0) if args.seed is None else args.seed)
     density = not args.counts
+    min_truth_count = int(config.get("evaluation", {}).get("min_truth_count", 20))
 
     device = select_device(args.device)
     report = device_report(device)
@@ -764,17 +816,49 @@ def main() -> None:
     ks_pt_reco, p_pt_reco = maybe_ks(pt_x, pt_x_reco)
     ks_pt_zx, p_pt_zx = maybe_ks(pt_x, pt_x_from_z)
     residual_summary_reco = residual_quality_summary(
-        xmass_info["residual1"],
-        xmass_info["residual1_err"],
+        xmass_info["truth"],
+        xmass_info["pred1"],
         xmass_info["truth_counts"],
         xmass_info["pred1_counts"],
+        truth_values=m_x,
+        pred_values=m_x_reco,
+        min_truth_count=min_truth_count,
     )
     residual_summary_zx = residual_quality_summary(
-        xmass_info["residual2"],
-        xmass_info["residual2_err"],
+        xmass_info["truth"],
+        xmass_info["pred2"],
         xmass_info["truth_counts"],
         xmass_info["pred2_counts"],
+        truth_values=m_x,
+        pred_values=m_x_from_z,
+        min_truth_count=min_truth_count,
     )
+
+    observable_summaries = {
+        "m_ee": histogram_observable_summary(m_x, m_x_from_z, mass_bins, density, min_truth_count),
+        "pT_ee": histogram_observable_summary(pt_x, pt_x_from_z, pt_bins, density, min_truth_count),
+        "e_minus_E": histogram_observable_summary(x_plot[:, 3], x_from_z[:, 3], bins_e, density, min_truth_count),
+        "e_plus_E": histogram_observable_summary(x_plot[:, 7], x_from_z[:, 7], bins_e, density, min_truth_count),
+        "e_minus_py": histogram_observable_summary(x_plot[:, 1], x_from_z[:, 1], bins_y, density, min_truth_count),
+        "e_plus_py": histogram_observable_summary(x_plot[:, 5], x_from_z[:, 5], bins_y, density, min_truth_count),
+        "e_minus_pz": histogram_observable_summary(x_plot[:, 2], x_from_z[:, 2], bins_z, density, min_truth_count),
+        "e_plus_pz": histogram_observable_summary(x_plot[:, 6], x_from_z[:, 6], bins_z, density, min_truth_count),
+        "zspace_mass": histogram_observable_summary(m_z_prior, m_x_to_z, mass_bins, density, min_truth_count),
+    }
+    z_component_summaries = {}
+    for j in range(8):
+        values = np.concatenate([z_plot[:, j], z_encoded[:, j]])
+        lo, hi = np.nanpercentile(values, [0.5, 99.5])
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+            lo, hi = np.nanmin(values), np.nanmax(values)
+        z_bins = np.linspace(lo, hi, 81)
+        z_component_summaries[f"z_component_{j:02d}"] = histogram_observable_summary(
+            z_plot[:, j],
+            z_encoded[:, j],
+            z_bins,
+            density,
+            min_truth_count,
+        )
 
     summary_lines = [
         f"NORMALIZE_DENSITY: {density}",
@@ -797,7 +881,26 @@ def main() -> None:
         f"mass KS statistic/pvalue: {ks_mass:.6g} / {p_mass:.6g}",
         f"pT KS x vs x->z->x: {ks_pt_reco:.6g} / {p_pt_reco:.6g}",
         f"pT KS x vs z->x: {ks_pt_zx:.6g} / {p_pt_zx:.6g}",
+        "",
+        "RESIDUAL SUMMARY TABLE (z->x for x-space; x->z for z-space):",
+        "observable valid/total frac_1pct rms mae max_abs median_stat_err ks w1 chi2_ndf",
     ]
+    for name, item in observable_summaries.items():
+        summary_lines.append(
+            f"{name} {item['valid_bins']}/{item['total_bins']} "
+            f"{item['frac_within_1pct']} {item['rms_rel_residual']} "
+            f"{item['mae_rel_residual']} {item['max_abs_rel_residual']} "
+            f"{item['median_stat_error']} {item['ks_statistic']} "
+            f"{item['w1_distance']} {item['chi2_ndf']}"
+        )
+    for name, item in z_component_summaries.items():
+        summary_lines.append(
+            f"{name} {item['valid_bins']}/{item['total_bins']} "
+            f"{item['frac_within_1pct']} {item['rms_rel_residual']} "
+            f"{item['mae_rel_residual']} {item['max_abs_rel_residual']} "
+            f"{item['median_stat_error']} {item['ks_statistic']} "
+            f"{item['w1_distance']} {item['chi2_ndf']}"
+        )
     for j in range(8):
         ks_j, p_j = maybe_ks(z_plot[:, j], z_encoded[:, j])
         summary_lines.append(f"z dim {j:02d} KS statistic/pvalue: {ks_j:.6g} / {p_j:.6g}")
@@ -843,6 +946,8 @@ def main() -> None:
             "x_to_z_to_x": residual_summary_reco,
             "z_to_x": residual_summary_zx,
         },
+        "observable_residuals": observable_summaries,
+        "zspace_component_residuals": z_component_summaries,
     }
     (output_dir / "paperstyle_summary.json").write_text(
         json.dumps(json_safe(summary), indent=2, sort_keys=True) + "\n",

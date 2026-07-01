@@ -43,8 +43,15 @@ def resolve_config(config: dict[str, Any], overrides: dict[str, Any] | None = No
     paths["repo_root"] = str(repo_root)
     paths["data_root"] = str(data_root)
 
-    for key in ("cms_root_file", "theory_prior_file"):
-        paths[key] = str(resolve_path(paths[key], data_root))
+    paths["cms_root_file"] = str(resolve_path(paths["cms_root_file"], data_root))
+    if paths.get("theory_prior_files"):
+        paths["theory_prior_files"] = [
+            str(resolve_path(item, data_root)) for item in paths["theory_prior_files"]
+        ]
+        if paths.get("theory_prior_file"):
+            paths["theory_prior_file"] = str(resolve_path(paths["theory_prior_file"], data_root))
+    else:
+        paths["theory_prior_file"] = str(resolve_path(paths["theory_prior_file"], data_root))
 
     output_root = paths.get("output_root", "outputs/cms_doubleelectron")
     paths["output_root"] = str(resolve_path(output_root, repo_root))
@@ -156,6 +163,39 @@ def load_theory_prior_z(theory_prior_file: Path) -> np.ndarray:
     return z_data[:, :8]
 
 
+def load_theory_prior_z_mixture(
+    theory_prior_files: list[str | Path],
+    weights: list[float] | None,
+    seed: int,
+) -> np.ndarray:
+    arrays = [load_theory_prior_z(Path(path)) for path in theory_prior_files]
+    if not arrays:
+        raise ValueError("theory_prior_files is empty.")
+    if weights is None:
+        weights_arr = np.ones(len(arrays), dtype=float) / len(arrays)
+    else:
+        weights_arr = np.asarray(weights, dtype=float)
+        if weights_arr.shape != (len(arrays),):
+            raise ValueError("theory_prior_weights must match theory_prior_files length.")
+        total_weight = weights_arr.sum()
+        if not np.isfinite(total_weight) or total_weight <= 0.0:
+            raise ValueError("theory_prior_weights must sum to a positive finite value.")
+        weights_arr = weights_arr / total_weight
+
+    total = int(sum(len(array) for array in arrays))
+    counts = np.floor(weights_arr * total).astype(int)
+    while counts.sum() < total:
+        counts[int(np.argmax(weights_arr * total - counts))] += 1
+    rng = np.random.default_rng(seed)
+    pieces = []
+    for array, count in zip(arrays, counts):
+        replace = count > len(array)
+        idx = rng.choice(len(array), size=int(count), replace=replace)
+        pieces.append(array[idx])
+    mixed = np.concatenate(pieces, axis=0)
+    return mixed[rng.permutation(len(mixed))]
+
+
 def apply_num_samples(arr: np.ndarray, num_samples: int | None) -> np.ndarray:
     if num_samples is None or int(num_samples) <= 0:
         return arr
@@ -182,7 +222,14 @@ def split_unpaired(
 def load_and_split(config: dict[str, Any], num_samples: int | None = None) -> dict[str, np.ndarray]:
     paths = config["paths"]
     x_data = load_cms_x_data(Path(paths["cms_root_file"]), config["electron_selection"])
-    z_data = load_theory_prior_z(Path(paths["theory_prior_file"]))
+    if paths.get("theory_prior_files"):
+        z_data = load_theory_prior_z_mixture(
+            paths["theory_prior_files"],
+            paths.get("theory_prior_weights"),
+            seed=int(config.get("seed", 0)) + 17,
+        )
+    else:
+        z_data = load_theory_prior_z(Path(paths["theory_prior_file"]))
 
     x_data = apply_num_samples(x_data, num_samples)
     z_data = apply_num_samples(z_data, num_samples)

@@ -46,6 +46,8 @@ def build_model(
     sigma_fun = model_config.get("sigma_fun")
     if sigma_fun:
         common_kwargs["sigma_fun"] = sigma_fun
+    if "sigma_floor" in model_config:
+        common_kwargs["sigma_floor"] = float(model_config["sigma_floor"])
 
     class_name = model_config.get("class", "CondNoiseAutoencoder")
     if class_name == "CondNoiseAutoencoder":

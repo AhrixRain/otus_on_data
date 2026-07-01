@@ -28,24 +28,33 @@ model:
   dim_per_hidden_layer: 512
   activation: ReLU
   sigma_fun: softplus
+  sigma_floor: 0.001
   stoch_enc: true
   stoch_dec: true
   raw_io: true
 
 loss:
-  kind: original_feature_ot_v1
-  raw_swd: 1.0
-  marginal_w1: 0.7
+  kind: cms_doubleelectron_loss
+  raw_swd: 0.5
+  marginal_w1: 0.5
   mass_w1: 2.0
   physics_swd: 1.0
   transverse_w1: 0.5
   longitudinal_w1: 0.4
   tail_w1: 0.15
+  pair_mass_w1: 2.0
+  pair_pt_w1: 2.0
+  lepton_pt_w1: 1.0
+  delta_phi_w1: 0.5
+  delta_eta_w1: 0.5
+  pair_rapidity_w1: 0.5
+  physics_coord_swd: 0.5
   mmd: 0.0
+  decoder_num_noise_samples: 1
   selection_score:
     x_sim: 1.0
     z_prior: 0.7
-    x_reco: 0.2
+    x_reco: 0.05
 
 loaders:
   train_batch_size: 4096
@@ -95,9 +104,9 @@ stages:
     enabled: true
     epochs: 100
     lr: 0.0001
-    beta: 0.8
+    beta: 0.15
     lamb: 1.0
-    tau: 1.5
+    tau: 2.0
     rho: 0.0
     nu_e: 0.0
     nu_d: 0.0

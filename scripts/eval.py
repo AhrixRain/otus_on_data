@@ -130,7 +130,10 @@ def main() -> None:
     evaluation_config = model_config.get("evaluation", {})
     loss_kind = model_config.get("loss", {}).get("kind")
     write_comparisons = bool(
-        evaluation_config.get("write_comparison_outputs", loss_kind == "original_feature_ot_v1")
+        evaluation_config.get(
+            "write_comparison_outputs",
+            loss_kind in {"original_feature_ot_v1", "cms_doubleelectron_loss"},
+        )
     )
     include_inverse_check = bool(
         args.include_inverse_check or evaluation_config.get("include_inverse_check", False)
