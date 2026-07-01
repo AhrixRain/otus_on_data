@@ -62,6 +62,13 @@ residual.png
 mass_histograms.npz
 ```
 
+Plot the training loss curve from `train_log.csv`:
+
+```bash
+python scripts/plot_loss.py --run-dir outputs/cms_doubleelectron/<run_name>
+python scripts/plot_loss.py --run-dir outputs/cms_doubleelectron/<run_name> --components
+```
+
 `PYTORCH_ENABLE_MPS_FALLBACK=1` is not set by default. Set it only if PyTorch reports a specific unsupported MPS operation and you accept CPU fallback for that operation:
 
 ```bash

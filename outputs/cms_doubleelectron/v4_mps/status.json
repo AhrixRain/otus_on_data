@@ -1,0 +1,16 @@
+{
+  "best_eval_loss": 1.1474991185324532,
+  "device": "mps",
+  "epoch": 40,
+  "epochs_in_stage": 40,
+  "evaluated_this_epoch": true,
+  "global_epoch": 240,
+  "latest_eval_loss": 1.1474991185324532,
+  "latest_train_loss": 1.1980832719984162,
+  "percent": 100.0,
+  "progress_mode": "log",
+  "run_name": "v4_mps",
+  "stage": "stage5_z_cycle_inverse_polish_gentle",
+  "total_epochs": 240,
+  "updated_at": "2026-06-30T21:02:01-07:00"
+}
