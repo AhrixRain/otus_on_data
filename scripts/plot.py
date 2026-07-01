@@ -1065,6 +1065,7 @@ def main() -> None:
         "checkpoint_eval_loss": checkpoint.get("eval_loss"),
         "device_report": report,
         "split": split,
+        "data_cache": cache_info,
         "density": density,
         "has_scipy": HAS_SCIPY,
         "shapes": {
@@ -1101,12 +1102,14 @@ def main() -> None:
         "observable_residuals": observable_summaries,
         "zspace_component_residuals": z_component_summaries,
     }
+    log_progress("Writing summary files.")
     (output_dir / "paperstyle_summary.json").write_text(
         json.dumps(json_safe(summary), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     print("Saved:", output_dir / "paperstyle_summary.json")
 
+    log_progress("Writing compressed model output arrays.")
     np.savez_compressed(
         output_dir / "paperstyle_loaded_model_outputs.npz",
         x_plot=x_plot,
@@ -1127,6 +1130,7 @@ def main() -> None:
     print("Using device:", device)
     print("Device report:", json.dumps(report, sort_keys=True))
     print("Wrote plots:", output_dir)
+    log_progress("Finished CMS DoubleElectron plot generation.")
 
 
 if __name__ == "__main__":
