@@ -73,7 +73,13 @@ def write_metrics(metrics: dict, path: Path) -> None:
     path.write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def plot_mass_ratio(arrays: dict[str, np.ndarray], path: Path) -> None:
+def plot_mass_ratio(
+    arrays: dict[str, np.ndarray],
+    path: Path,
+    truth_label: str = "CMS held-out",
+    pred_label: str = "OTUS decoded MG5",
+    x_label: str = "m(ee) [GeV]",
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     centers = arrays["centers"]
     width = np.diff(arrays["edges"])
@@ -84,8 +90,8 @@ def plot_mass_ratio(arrays: dict[str, np.ndarray], path: Path) -> None:
         sharex=True,
         gridspec_kw={"height_ratios": [3, 1]},
     )
-    ax_top.step(centers, arrays["truth_norm"], where="mid", label="CMS held-out", color="black")
-    ax_top.step(centers, arrays["pred_norm"], where="mid", label="OTUS decoded MG5", color="#0072B2")
+    ax_top.step(centers, arrays["truth_norm"], where="mid", label=truth_label, color="black")
+    ax_top.step(centers, arrays["pred_norm"], where="mid", label=pred_label, color="#0072B2")
     ax_top.set_ylabel("Normalized entries")
     ax_top.legend()
     ax_top.grid(alpha=0.25)
@@ -93,14 +99,18 @@ def plot_mass_ratio(arrays: dict[str, np.ndarray], path: Path) -> None:
     ax_ratio.bar(centers, arrays["ratio"], width=width, align="center", color="#0072B2", alpha=0.75)
     ax_ratio.axhline(1.0, color="black", linewidth=1)
     ax_ratio.set_ylabel("Pred / truth")
-    ax_ratio.set_xlabel("m(ee) [GeV]")
+    ax_ratio.set_xlabel(x_label)
     ax_ratio.grid(alpha=0.25)
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
 
 
-def plot_residual(arrays: dict[str, np.ndarray], path: Path) -> None:
+def plot_residual(
+    arrays: dict[str, np.ndarray],
+    path: Path,
+    x_label: str = "m(ee) [GeV]",
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     centers = arrays["centers"]
     width = np.diff(arrays["edges"])
@@ -109,7 +119,7 @@ def plot_residual(arrays: dict[str, np.ndarray], path: Path) -> None:
     ax.axhline(0.0, color="black", linewidth=1)
     ax.axhline(0.01, color="gray", linestyle="--", linewidth=1)
     ax.axhline(-0.01, color="gray", linestyle="--", linewidth=1)
-    ax.set_xlabel("m(ee) [GeV]")
+    ax.set_xlabel(x_label)
     ax.set_ylabel("(pred - truth) / truth")
     ax.grid(alpha=0.25)
     fig.tight_layout()

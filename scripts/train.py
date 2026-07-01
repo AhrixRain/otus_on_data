@@ -17,7 +17,7 @@ import torch
 
 from cms_data import array_stats, load_and_split, load_config, resolve_config, save_resolved_config
 from cms_model import build_model, checkpoint_payload
-from cms_training import HistoryLogger, ZLossFactory, build_loaders, train_all_stages
+from cms_training import HistoryLogger, build_loaders, build_loss_factory, train_all_stages
 from device_utils import device_report, select_device
 
 
@@ -269,7 +269,7 @@ def main() -> None:
 
     model = build_model(config, x_train_mean, x_train_std, z_train_mean, z_train_std)
     model.to(device)
-    loss_factory = ZLossFactory(arrays["x_train"], arrays["z_train"], config.get("loss", {}))
+    loss_factory = build_loss_factory(arrays["x_train"], arrays["z_train"], config.get("loss", {}))
     train_loaders, eval_loaders, loader_info = build_loaders(
         config,
         arrays,

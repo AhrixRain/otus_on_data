@@ -19,6 +19,7 @@ if str(UTILITY_DIR) not in sys.path:
     sys.path.insert(0, str(UTILITY_DIR))
 
 from func_utils import anchor_loss, data_loss, sliced_wd  # noqa: E402
+from feature_ot_loss import OriginalOtusFeatureLossFactory  # noqa: E402
 
 
 P = 2
@@ -325,6 +326,35 @@ class ZLossFactory:
             + self.weights["lambda_tail"] * loss_tail
         )
 
+    def z_prior_loss(self, z_true, z_encoded):
+        return self(z_true, z_encoded)
+
+    def x_sim_loss(self, x_true, x_from_z):
+        return sliced_wd(
+            self.standardize_x_raw(x_true),
+            self.standardize_x_raw(x_from_z),
+            self.num_slices,
+            P,
+        )
+
+    def x_reco_loss(self, x_true, x_reco):
+        return data_loss(x_true, x_reco, P)
+
+    def encoder_anchor_loss(self, z_encoded, x_true):
+        return anchor_loss(z_encoded, x_true)
+
+    def decoder_anchor_loss(self, z_true, x_from_z):
+        return anchor_loss(z_true, x_from_z)
+
+    def validation_score(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
+        return losses["z_loss"] + losses["alt_x_loss"]
+
+
+def build_loss_factory(x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
+    if loss_config.get("kind") == "original_feature_ot_v1":
+        return OriginalOtusFeatureLossFactory(x_train, z_train, loss_config)
+    return ZLossFactory(x_train, z_train, loss_config)
+
 
 def make_stage_config(config: dict[str, Any], stage: dict[str, Any]) -> dict[str, Any]:
     model_config = config["model"]
@@ -356,6 +386,7 @@ class HistoryLogger:
         "eval_x_loss",
         "eval_z_loss",
         "eval_alt_x_loss",
+        "eval_selection_score",
     ]
 
     def __init__(self, csv_path: Path):
@@ -392,20 +423,32 @@ def train_standard_epoch(model, optimizer, x_loader, z_loader, stage, loss_facto
         z = z.to(device)
         optimizer.zero_grad()
         z_tilde = first_tensor(model.encode(x))
-        z_loss = loss_factory(z, z_tilde) if stage["lamb"] > 0 else x.new_tensor(0.0)
+        z_loss = loss_factory.z_prior_loss(z, z_tilde) if stage["lamb"] > 0 else x.new_tensor(0.0)
         if stage["beta"] > 0:
             x_tilde = first_tensor(model.decode(z_tilde))
-            x_loss = data_loss(x, x_tilde, P)
+            x_loss = loss_factory.x_reco_loss(x, x_tilde)
         else:
             x_loss = x.new_tensor(0.0)
-        encoder_anchor = anchor_loss(z_tilde, x) if stage["nu_e"] > 0 else x.new_tensor(0.0)
+        encoder_anchor = (
+            loss_factory.encoder_anchor_loss(z_tilde, x)
+            if stage["nu_e"] > 0
+            else x.new_tensor(0.0)
+        )
         decoder_anchor = x.new_tensor(0.0)
         alt_x_loss = x.new_tensor(0.0)
         x_constraint_loss = x.new_tensor(0.0)
         if stage["tau"] > 0 or stage["rho"] > 0 or stage["nu_d"] > 0:
             model_x = first_tensor(model.decode(z))
-            alt_x_loss = loss_factory(x, model_x) if stage["tau"] > 0 else x.new_tensor(0.0)
-            decoder_anchor = anchor_loss(z, model_x) if stage["nu_d"] > 0 else x.new_tensor(0.0)
+            alt_x_loss = (
+                loss_factory.x_sim_loss(x, model_x)
+                if stage["tau"] > 0
+                else x.new_tensor(0.0)
+            )
+            decoder_anchor = (
+                loss_factory.decoder_anchor_loss(z, model_x)
+                if stage["nu_d"] > 0
+                else x.new_tensor(0.0)
+            )
         loss = (
             stage["beta"] * x_loss
             + stage["lamb"] * z_loss
@@ -427,7 +470,13 @@ def train_standard_epoch(model, optimizer, x_loader, z_loader, stage, loss_facto
 
 def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
     model.eval()
-    sums = {"loss": 0.0, "x_loss": 0.0, "z_loss": 0.0, "alt_x_loss": 0.0}
+    sums = {
+        "loss": 0.0,
+        "x_loss": 0.0,
+        "z_loss": 0.0,
+        "alt_x_loss": 0.0,
+        "selection_score": 0.0,
+    }
     nbatches = 0
     with torch.no_grad():
         for x, z in zip(x_loader, z_loader):
@@ -435,14 +484,21 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
             z = z.to(device)
             z_tilde = first_tensor(model.encode(x))
             x_tilde = first_tensor(model.decode(z_tilde))
-            x_loss = data_loss(x, x_tilde, P)
-            z_loss = loss_factory(z, z_tilde)
-            alt_x_loss = sliced_wd(x, first_tensor(model.decode(z)), loss_factory.num_slices, P)
-            loss = z_loss + alt_x_loss
+            x_loss = loss_factory.x_reco_loss(x, x_tilde)
+            z_loss = loss_factory.z_prior_loss(z, z_tilde)
+            alt_x_loss = loss_factory.x_sim_loss(x, first_tensor(model.decode(z)))
+            loss = loss_factory.validation_score(
+                {
+                    "x_loss": x_loss,
+                    "z_loss": z_loss,
+                    "alt_x_loss": alt_x_loss,
+                }
+            )
             sums["loss"] += as_float(loss)
             sums["x_loss"] += as_float(x_loss)
             sums["z_loss"] += as_float(z_loss)
             sums["alt_x_loss"] += as_float(alt_x_loss)
+            sums["selection_score"] += as_float(loss)
             nbatches += 1
     return {key: value / max(1, nbatches) for key, value in sums.items()}
 
@@ -533,6 +589,12 @@ def train_all_stages(
         if not stage.get("enabled", True):
             continue
         stage_epochs = int(stage["epochs"])
+        early_config = stage.get("early_stopping", {})
+        early_enabled = bool(early_config.get("enabled", False))
+        early_patience = max(1, int(early_config.get("patience", 10)))
+        early_min_delta = float(early_config.get("min_delta", 0.0))
+        early_bad_checks = 0
+        stage_best_eval_loss: float | None = None
         loss_factory.set_num_slices(stage["num_slices"])
         set_trainable(
             model,
@@ -585,6 +647,7 @@ def train_all_stages(
             )
             eval_losses = None
             eval_loss = None
+            selection_score = None
             if should_log:
                 if stage.get("mode", "standard") == "z_cycle":
                     eval_losses = eval_fn(
@@ -606,7 +669,8 @@ def train_all_stages(
                     )
                     eval_alt_x_loss = eval_losses["alt_x_loss"]
 
-                eval_loss = float(eval_losses["loss"])
+                selection_score = float(eval_losses.get("selection_score", eval_losses["loss"]))
+                eval_loss = selection_score
                 row = {
                     "epoch": history_epoch,
                     "stage": stage["name"],
@@ -619,12 +683,24 @@ def train_all_stages(
                     "eval_x_loss": eval_losses["x_loss"],
                     "eval_z_loss": eval_losses["z_loss"],
                     "eval_alt_x_loss": eval_alt_x_loss,
+                    "eval_selection_score": selection_score,
                 }
                 logger.append(row)
-                is_best = best_eval_loss is None or eval_loss < best_eval_loss
+                is_best = best_eval_loss is None or selection_score < best_eval_loss
                 if is_best:
-                    best_eval_loss = eval_loss
-                save_callback(history_epoch, eval_loss, is_best)
+                    best_eval_loss = selection_score
+                save_callback(history_epoch, selection_score, is_best)
+
+                if early_enabled:
+                    stage_improved = (
+                        stage_best_eval_loss is None
+                        or selection_score < stage_best_eval_loss - early_min_delta
+                    )
+                    if stage_improved:
+                        stage_best_eval_loss = selection_score
+                        early_bad_checks = 0
+                    else:
+                        early_bad_checks += 1
 
             if progress_callback is not None:
                 progress_callback(
@@ -646,4 +722,11 @@ def train_all_stages(
                     f"epoch {history_epoch:04d} | {stage['name']} | "
                     f"train_loss={train_losses['loss']:.4e} | eval_loss={eval_loss:.4e}"
                 )
+            if early_enabled and eval_loss is not None and early_bad_checks >= early_patience:
+                print(
+                    f"Early stopping {stage['name']} at epoch {local_epoch}/{stage_epochs} "
+                    f"after {early_bad_checks} validation checks without improvement.",
+                    flush=True,
+                )
+                break
     return logger.history(), best_eval_loss, history_epoch

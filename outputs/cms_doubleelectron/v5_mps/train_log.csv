@@ -1,0 +1,1 @@
+epoch,stage,train_loss,train_x_loss,train_z_loss,train_alt_x_loss,train_x_constraint_loss,eval_loss,eval_x_loss,eval_z_loss,eval_alt_x_loss,eval_selection_score
