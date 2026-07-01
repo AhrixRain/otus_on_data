@@ -117,12 +117,18 @@ def pt_ee(a: np.ndarray) -> np.ndarray:
 
 
 def w2_1d_np(a: np.ndarray, b: np.ndarray) -> float:
-    left = finite_values(a)
-    right = finite_values(b)
-    n = min(len(left), len(right))
-    if n == 0:
+    left = np.sort(finite_values(a))
+    right = np.sort(finite_values(b))
+    if len(left) == 0 or len(right) == 0:
         return float("nan")
-    return float(np.mean((np.sort(left)[:n] - np.sort(right)[:n]) ** 2))
+    if len(left) == len(right):
+        return float(np.mean((left - right) ** 2))
+
+    n_quantiles = max(len(left), len(right))
+    quantiles = (np.arange(n_quantiles, dtype=float) + 0.5) / n_quantiles
+    left_quantiles = np.quantile(left, quantiles, method="linear")
+    right_quantiles = np.quantile(right, quantiles, method="linear")
+    return float(np.mean((left_quantiles - right_quantiles) ** 2))
 
 
 def maybe_ks(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
