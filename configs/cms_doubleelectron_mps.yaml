@@ -24,8 +24,8 @@ electron_selection:
 
 model:
   class: CondNoiseAutoencoder
-  num_hidden_layers: 4
-  dim_per_hidden_layer: 512
+  num_hidden_layers: 6
+  dim_per_hidden_layer: 768
   activation: ReLU
   sigma_fun: softplus
   sigma_floor: 0.001

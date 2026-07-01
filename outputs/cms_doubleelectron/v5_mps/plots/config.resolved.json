@@ -58,11 +58,11 @@
     "stoch_enc": true
   },
   "paths": {
-    "cms_root_file": "C:\\Users\\AhrixMarin\\Desktop\\otus\\experiments\\cms_zpeak\\data\\Run2012B_DoubleElectron.root",
-    "data_root": "C:\\Users\\AhrixMarin\\Desktop\\otus",
-    "output_root": "C:\\Users\\AhrixMarin\\Desktop\\otus\\outputs\\cms_doubleelectron",
-    "repo_root": "C:\\Users\\AhrixMarin\\Desktop\\otus",
-    "theory_prior_file": "C:\\Users\\AhrixMarin\\Desktop\\otus\\experiments\\cms_doubleelectron\\cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5"
+    "cms_root_file": "/Users/ahrimarin/Desktop/otus_on_data/experiments/cms_zpeak/data/Run2012B_DoubleElectron.root",
+    "data_root": "/Users/ahrimarin/Desktop/otus_on_data",
+    "output_root": "/Users/ahrimarin/Desktop/otus_on_data/outputs/cms_doubleelectron",
+    "repo_root": "/Users/ahrimarin/Desktop/otus_on_data",
+    "theory_prior_file": "/Users/ahrimarin/Desktop/otus_on_data/experiments/cms_doubleelectron/cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5"
   },
   "seed": 0,
   "stages": [
