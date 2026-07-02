@@ -36,3 +36,5 @@ wandb/
 logs/
 *.log
 outputs/
+outputs/cms_doubleelectron/v6_mps/best_model.pt
+outputs/cms_doubleelectron/v6_mps/last_model.pt
