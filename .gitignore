@@ -18,6 +18,7 @@ saves/
 # Ignore HDF5 / H5 data files
 *.hdf5
 *.h5
+*.json
 
 # Ignore model checkpoints
 *.pt
