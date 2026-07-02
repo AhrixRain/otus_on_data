@@ -35,3 +35,4 @@ runs/
 wandb/
 logs/
 *.log
+outputs/cms_doubleelectron/v6_mps/status.json
