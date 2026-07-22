@@ -22,10 +22,10 @@ from device_utils import device_report, select_device
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train CMS DoubleElectron OTUS on a portable device.")
+    parser = argparse.ArgumentParser(description="Train a configured CMS dilepton OTUS workflow.")
     parser.add_argument("--config", type=Path, required=True, help="YAML/JSON config path.")
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu.")
-    parser.add_argument("--run-name", default=None, help="Run id under outputs/cms_doubleelectron.")
+    parser.add_argument("--run-name", default=None, help="Run id under the configured output root.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Override config output root.")
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs for each enabled stage.")
     parser.add_argument("--batch-size", type=int, default=None, help="Override train batch size.")

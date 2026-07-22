@@ -18,6 +18,7 @@ from func_utils import anchor_loss  # noqa: E402
 
 P = 2
 CANONICAL_LOSS_KIND = "cms_doubleelectron_loss"
+JPSI_DIMUON_LOSS_KIND = "cms_jpsi_doublemuon_loss"
 
 
 def build_ee_physics_features(x: torch.Tensor, eps: float = 1e-6) -> dict[str, torch.Tensor]:
@@ -583,6 +584,10 @@ class DualSpaceFeatureOTLoss:
 
 class CmsDoubleElectronLossFactory(DualSpaceFeatureOTLoss):
     """Canonical current CMS DoubleElectron OTUS loss."""
+
+
+class CmsJpsiDoubleMuonLossFactory(DualSpaceFeatureOTLoss):
+    """J/psi dimuon alias of the same charge-ordered dilepton OTUS loss."""
 
 
 class OriginalOtusFeatureLossFactory(CmsDoubleElectronLossFactory):

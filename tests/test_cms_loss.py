@@ -15,7 +15,12 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from cms_data import load_config, resolve_config  # noqa: E402
 from cms_training import build_loss_factory  # noqa: E402
-from loss import CANONICAL_LOSS_KIND, build_ee_physics_features  # noqa: E402
+from loss import (  # noqa: E402
+    CANONICAL_LOSS_KIND,
+    JPSI_DIMUON_LOSS_KIND,
+    CmsJpsiDoubleMuonLossFactory,
+    build_ee_physics_features,
+)
 from metrics import residual_metrics  # noqa: E402
 
 
@@ -72,6 +77,31 @@ class CmsLossSmokeTest(unittest.TestCase):
                 "stage3_decoder_response_mass_protected",
             ],
         )
+
+    def test_jpsi_muon_config_reuses_v5_network_and_data_directory(self) -> None:
+        config = resolve_config(
+            load_config(REPO_ROOT / "configs/cms_JpsiDoubleMuons_mps.yaml")
+        )
+        self.assertEqual(config["data"]["channel"], "muon")
+        self.assertEqual(config["loss"]["kind"], JPSI_DIMUON_LOSS_KIND)
+        self.assertEqual(config["model"]["num_hidden_layers"], 4)
+        self.assertEqual(config["model"]["dim_per_hidden_layer"], 512)
+        self.assertEqual(Path(config["paths"]["cms_root_file"]).parent, REPO_ROOT / "data")
+        self.assertEqual(Path(config["paths"]["theory_prior_file"]).parent, REPO_ROOT / "data")
+        self.assertEqual(config["evaluation"]["mass_range"], [2.6, 3.5])
+
+    def test_jpsi_muon_loss_alias_uses_dilepton_objective(self) -> None:
+        truth_x = fake_ee_batch(24, seed=10).numpy().astype("float32")
+        truth_z = fake_ee_batch(24, seed=11).numpy().astype("float32")
+        loss_factory = build_loss_factory(
+            truth_x,
+            truth_z,
+            {"kind": JPSI_DIMUON_LOSS_KIND, "num_slices": 4},
+        )
+        self.assertIsInstance(loss_factory, CmsJpsiDoubleMuonLossFactory)
+        pred = fake_ee_batch(24, seed=12)
+        loss = loss_factory.x_sim_loss(torch.as_tensor(truth_x), pred)
+        self.assertTrue(torch.isfinite(loss))
 
     def test_residual_metrics_valid_bins_use_truth_counts(self) -> None:
         truth = np.concatenate([np.full(25, 80.0), np.full(25, 90.0)])

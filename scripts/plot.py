@@ -100,7 +100,7 @@ COMPONENT_TITLES = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create CMS DoubleElectron paper-style OTUS plots with ratio and residual panels."
+        description="Create configured CMS dilepton OTUS plots with ratio and residual panels."
     )
     parser.add_argument("--config", type=Path, required=True, help="YAML/JSON config path.")
     parser.add_argument("--checkpoint", type=Path, required=True, help="best_model.pt or last_model.pt.")
@@ -149,9 +149,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Plot raw counts instead of normalized densities.",
     )
-    parser.add_argument("--mass-low", type=float, default=70.0, help="Low edge for mass plots.")
-    parser.add_argument("--mass-high", type=float, default=110.0, help="High edge for mass plots.")
-    parser.add_argument("--mass-bin-width", type=float, default=1.0, help="Mass bin width in GeV.")
+    parser.add_argument("--mass-low", type=float, default=None, help="Low edge for mass plots.")
+    parser.add_argument("--mass-high", type=float, default=None, help="High edge for mass plots.")
+    parser.add_argument(
+        "--mass-bin-width",
+        type=float,
+        default=None,
+        help="Mass bin width in GeV. Defaults to evaluation.mass_bin_width.",
+    )
     return parser.parse_args()
 
 
@@ -231,13 +236,22 @@ def file_fingerprint(path: str | Path) -> dict[str, Any]:
 
 def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict[str, Any]:
     paths = config["paths"]
+    channel = str(config.get("data", {}).get("channel", "electron"))
+    selection_key = "muon_selection" if channel.lower() in {
+        "muon",
+        "doublemuon",
+        "doublemuons",
+        "mumu",
+        "jpsi_mumu",
+    } else "electron_selection"
     metadata: dict[str, Any] = {
-        "version": 1,
+        "version": 2,
         "num_samples": None if num_samples is None else int(num_samples),
         "float_type": config.get("float_type", "float32"),
         "seed": int(config.get("seed", 0)),
         "data_split": config["data_split"],
-        "electron_selection": config["electron_selection"],
+        "data": config.get("data", {"channel": "electron"}),
+        selection_key: config[selection_key],
         "cms_root_file": file_fingerprint(paths["cms_root_file"]),
     }
     if paths.get("theory_prior_files"):
@@ -801,7 +815,9 @@ def plot_all_components(
     path: Path,
     component_bins: int,
     density: bool,
+    component_titles: list[str] | None = None,
 ) -> None:
+    component_titles = COMPONENT_TITLES if component_titles is None else component_titles
     fig, axes = plt.subplots(2, 4, figsize=(20, 7))
     fig.suptitle(title, y=1.02, fontsize=14)
     for j, ax in enumerate(axes.ravel()):
@@ -821,7 +837,7 @@ def plot_all_components(
                 color=style.get("color"),
                 label=label,
             )
-        ax.set_title(COMPONENT_TITLES[j])
+        ax.set_title(component_titles[j])
         ax.grid(alpha=0.25)
         if j in {0, 4}:
             ax.set_ylabel("Normalized density" if density else "Counts")
@@ -861,7 +877,7 @@ def main() -> None:
     threads = parse_thread_count(args.threads, MAX_THREADS)
     interop_threads = parse_thread_count(args.interop_threads, MAX_THREADS)
     thread_report = configure_torch_threads(threads, interop_threads)
-    log_progress("Starting CMS DoubleElectron plot generation.")
+    log_progress("Starting CMS dilepton plot generation.")
     log_progress(
         "Thread configuration: "
         f"threads={thread_report['torch_num_threads']}, "
@@ -871,8 +887,6 @@ def main() -> None:
     config = resolve_config(load_config(args.config))
     seed = int(config.get("seed", 0) if args.seed is None else args.seed)
     density = not args.counts
-    min_truth_count = int(config.get("evaluation", {}).get("min_truth_count", 20))
-
     device = select_device(args.device)
     report = device_report(device)
     log_progress(f"Using device: {device}")
@@ -886,6 +900,39 @@ def main() -> None:
     )
     model.to(device)
     save_resolved_config(model_config, output_dir / "config.resolved.json")
+
+    evaluation_config = model_config.get("evaluation", {})
+    configured_mass_range = evaluation_config.get("mass_range", [70.0, 110.0])
+    mass_low = float(configured_mass_range[0] if args.mass_low is None else args.mass_low)
+    mass_high = float(configured_mass_range[1] if args.mass_high is None else args.mass_high)
+    mass_bin_width = float(
+        evaluation_config.get("mass_bin_width", 1.0)
+        if args.mass_bin_width is None
+        else args.mass_bin_width
+    )
+    if mass_high <= mass_low or mass_bin_width <= 0.0:
+        raise ValueError("Mass plot range and bin width must be positive and ordered.")
+    min_truth_count = int(evaluation_config.get("min_truth_count", 20))
+    mass_label = str(evaluation_config.get("mass_label", "m(ll) [GeV]"))
+    channel_title = str(evaluation_config.get("channel_title", "CMS dilepton"))
+    reference_mass = evaluation_config.get("reference_mass")
+    reference_mass = None if reference_mass is None else float(reference_mass)
+    reference_label = str(evaluation_config.get("reference_label", "resonance mass"))
+    channel = str(model_config.get("data", {}).get("channel", "electron")).lower()
+    is_muon = channel in {"muon", "doublemuon", "doublemuons", "mumu", "jpsi_mumu"}
+    pair_symbol = r"\mu\mu" if is_muon else "ee"
+    positive_particle = "Positive muon" if is_muon else "Positron"
+    component_symbol = r"\mu" if is_muon else "e"
+    component_titles = [
+        fr"${component_symbol}^-\ p_x$",
+        fr"${component_symbol}^-\ p_y$",
+        fr"${component_symbol}^-\ p_z$",
+        fr"${component_symbol}^-\ E$",
+        fr"${component_symbol}^+\ p_x$",
+        fr"${component_symbol}^+\ p_y$",
+        fr"${component_symbol}^+\ p_z$",
+        fr"${component_symbol}^+\ E$",
+    ]
 
     arrays, cache_info = load_and_split_cached(
         model_config,
@@ -911,7 +958,7 @@ def main() -> None:
     x_from_z = predict_batches(model, "decode", z_for_x, device, batch_size, args.progress_log_steps)
 
     log_progress("Computing observables.")
-    mass_bins = np.arange(args.mass_low, args.mass_high + args.mass_bin_width, args.mass_bin_width)
+    mass_bins = np.arange(mass_low, mass_high + mass_bin_width, mass_bin_width)
     pt_bins = np.linspace(0.0, 100.0, 101)
     bins_y = np.array([-100, -60] + [-50 + 5 * i for i in range(21)] + [60, 100], dtype=float)
     bins_z = np.array([-400] + [-250 + 20 * i for i in range(26)] + [400], dtype=float)
@@ -926,16 +973,16 @@ def main() -> None:
         pred1=m_x_reco,
         pred2=m_x_from_z,
         bins=mass_bins,
-        xlabel=r"$m_{ee}$ [GeV]",
-        title=r"CMS DoubleElectron: x-space $Z \rightarrow ee$ mass",
+        xlabel=mass_label,
+        title=f"{channel_title}: x-space mass",
         path=output_dir / "paperstyle_xspace_mass_density_ratio.png",
         density=density,
-        xlim=(args.mass_low, args.mass_high),
+        xlim=(mass_low, mass_high),
         ratio_ylim=(0.5, 1.5),
         residual_ylim=(-0.05, 0.05),
         residual_ylabel=r"$(\mathrm{OTUS}-\mathrm{data})/\mathrm{data}$",
-        reference_x=MZ_REF,
-        reference_label=fr"$m_Z={MZ_REF:.4f}$ GeV",
+        reference_x=reference_mass,
+        reference_label=None if reference_mass is None else f"{reference_label}={reference_mass:.4f} GeV",
     )
 
     pt_x = pt_ee(x_plot)
@@ -947,8 +994,8 @@ def main() -> None:
         pred1=pt_x_reco,
         pred2=pt_x_from_z,
         bins=pt_bins,
-        xlabel=r"$p_T(ee)$ [GeV]",
-        title=r"CMS DoubleElectron: dilepton transverse momentum",
+        xlabel=fr"$p_T({pair_symbol})$ [GeV]",
+        title=f"{channel_title}: dilepton transverse momentum",
         path=output_dir / "paperstyle_xspace_pt_density_ratio.png",
         density=density,
         xlim=(0.0, 100.0),
@@ -956,9 +1003,9 @@ def main() -> None:
     )
 
     principal_specs_z = [
-        (5, bins_y, r"Positron $p_y$ [GeV]", (-100.0, 100.0), (0.5, 1.5), "paperstyle_zspace_pos_py_ratio.png"),
-        (6, bins_z, r"Positron $p_z$ [GeV]", (-400.0, 400.0), (0.5, 1.5), "paperstyle_zspace_pos_pz_ratio.png"),
-        (7, bins_e, r"Positron $E$ [GeV]", (0.0, 400.0), (0.5, 1.5), "paperstyle_zspace_pos_E_ratio.png"),
+        (5, bins_y, f"{positive_particle} $p_y$ [GeV]", (-100.0, 100.0), (0.5, 1.5), "paperstyle_zspace_pos_py_ratio.png"),
+        (6, bins_z, f"{positive_particle} $p_z$ [GeV]", (-400.0, 400.0), (0.5, 1.5), "paperstyle_zspace_pos_pz_ratio.png"),
+        (7, bins_e, f"{positive_particle} $E$ [GeV]", (0.0, 400.0), (0.5, 1.5), "paperstyle_zspace_pos_E_ratio.png"),
     ]
     log_progress("Writing selected z-space component plots.")
     for idx, bins, xlabel, xlim, ratio_ylim, filename in principal_specs_z:
@@ -975,9 +1022,9 @@ def main() -> None:
         )
 
     principal_specs_x = [
-        (5, bins_y, r"Positron $p_y$ [GeV]", (-100.0, 100.0), (0.5, 1.5), "paperstyle_xspace_pos_py_ratio.png"),
-        (6, bins_z, r"Positron $p_z$ [GeV]", (-400.0, 400.0), (0.5, 1.5), "paperstyle_xspace_pos_pz_ratio.png"),
-        (7, bins_e, r"Positron $E$ [GeV]", (0.0, 400.0), (0.5, 1.5), "paperstyle_xspace_pos_E_ratio.png"),
+        (5, bins_y, f"{positive_particle} $p_y$ [GeV]", (-100.0, 100.0), (0.5, 1.5), "paperstyle_xspace_pos_py_ratio.png"),
+        (6, bins_z, f"{positive_particle} $p_z$ [GeV]", (-400.0, 400.0), (0.5, 1.5), "paperstyle_xspace_pos_pz_ratio.png"),
+        (7, bins_e, f"{positive_particle} $E$ [GeV]", (0.0, 400.0), (0.5, 1.5), "paperstyle_xspace_pos_E_ratio.png"),
     ]
     log_progress("Writing selected x-space component plots.")
     for idx, bins, xlabel, xlim, ratio_ylim, filename in principal_specs_x:
@@ -1001,14 +1048,14 @@ def main() -> None:
         truth=m_z_prior,
         pred=m_x_to_z,
         bins=mass_bins,
-        xlabel=r"$m_{ee}^{z}$ [GeV]",
+        xlabel=mass_label,
         title=r"z-space mass check: MG5 z vs OTUS $x \rightarrow \tilde{z}$",
         path=output_dir / "paperstyle_zspace_mass_density_ratio.png",
         density=density,
-        xlim=(args.mass_low, args.mass_high),
+        xlim=(mass_low, mass_high),
         ratio_ylim=(0.0, 2.0),
-        reference_x=MZ_REF,
-        reference_label=fr"$m_Z={MZ_REF:.4f}$ GeV",
+        reference_x=reference_mass,
+        reference_label=None if reference_mass is None else f"{reference_label}={reference_mass:.4f} GeV",
     )
 
     log_progress("Writing all-component density checks.")
@@ -1018,6 +1065,7 @@ def main() -> None:
         path=output_dir / "all8_zspace_components_density.png",
         component_bins=80,
         density=density,
+        component_titles=component_titles,
     )
     plot_all_components(
         arrays=[
@@ -1029,6 +1077,7 @@ def main() -> None:
         path=output_dir / "all8_xspace_components_density.png",
         component_bins=80,
         density=density,
+        component_titles=component_titles,
     )
 
     zspace_validation_dir = output_dir / "zspace_validation"
@@ -1037,14 +1086,14 @@ def main() -> None:
         truth=m_z_prior,
         pred=m_x_to_z,
         bins=mass_bins,
-        xlabel=r"$m_{ee}^{z}$ [GeV]",
+        xlabel=mass_label,
         title="z-space mass check: MG5 z vs OTUS x -> z",
         path=zspace_validation_dir / "zspace_mass_mg5_vs_x2z.png",
         density=density,
-        xlim=(args.mass_low, args.mass_high),
+        xlim=(mass_low, mass_high),
         ratio_ylim=(0.0, 2.0),
-        reference_x=MZ_REF,
-        reference_label=fr"$m_Z={MZ_REF:.4f}$ GeV",
+        reference_x=reference_mass,
+        reference_label=None if reference_mass is None else f"{reference_label}={reference_mass:.4f} GeV",
     )
     plot_all_components(
         arrays=[(z_plot, "MG5 z", TRUTH_STYLE), (z_encoded, "CMS x -> z", ENC_STYLE)],
@@ -1052,6 +1101,7 @@ def main() -> None:
         path=zspace_validation_dir / "zspace_components_mg5_vs_x2z.png",
         component_bins=80,
         density=density,
+        component_titles=component_titles,
     )
 
     log_progress("Computing residual and statistical summaries.")
@@ -1078,14 +1128,14 @@ def main() -> None:
     )
 
     observable_summaries = {
-        "m_ee": histogram_observable_summary(m_x, m_x_from_z, mass_bins, density, min_truth_count),
-        "pT_ee": histogram_observable_summary(pt_x, pt_x_from_z, pt_bins, density, min_truth_count),
-        "e_minus_E": histogram_observable_summary(x_plot[:, 3], x_from_z[:, 3], bins_e, density, min_truth_count),
-        "e_plus_E": histogram_observable_summary(x_plot[:, 7], x_from_z[:, 7], bins_e, density, min_truth_count),
-        "e_minus_py": histogram_observable_summary(x_plot[:, 1], x_from_z[:, 1], bins_y, density, min_truth_count),
-        "e_plus_py": histogram_observable_summary(x_plot[:, 5], x_from_z[:, 5], bins_y, density, min_truth_count),
-        "e_minus_pz": histogram_observable_summary(x_plot[:, 2], x_from_z[:, 2], bins_z, density, min_truth_count),
-        "e_plus_pz": histogram_observable_summary(x_plot[:, 6], x_from_z[:, 6], bins_z, density, min_truth_count),
+        f"m_{'mumu' if is_muon else 'ee'}": histogram_observable_summary(m_x, m_x_from_z, mass_bins, density, min_truth_count),
+        f"pT_{'mumu' if is_muon else 'ee'}": histogram_observable_summary(pt_x, pt_x_from_z, pt_bins, density, min_truth_count),
+        f"{'mu' if is_muon else 'e'}_minus_E": histogram_observable_summary(x_plot[:, 3], x_from_z[:, 3], bins_e, density, min_truth_count),
+        f"{'mu' if is_muon else 'e'}_plus_E": histogram_observable_summary(x_plot[:, 7], x_from_z[:, 7], bins_e, density, min_truth_count),
+        f"{'mu' if is_muon else 'e'}_minus_py": histogram_observable_summary(x_plot[:, 1], x_from_z[:, 1], bins_y, density, min_truth_count),
+        f"{'mu' if is_muon else 'e'}_plus_py": histogram_observable_summary(x_plot[:, 5], x_from_z[:, 5], bins_y, density, min_truth_count),
+        f"{'mu' if is_muon else 'e'}_minus_pz": histogram_observable_summary(x_plot[:, 2], x_from_z[:, 2], bins_z, density, min_truth_count),
+        f"{'mu' if is_muon else 'e'}_plus_pz": histogram_observable_summary(x_plot[:, 6], x_from_z[:, 6], bins_z, density, min_truth_count),
         "zspace_mass": histogram_observable_summary(m_z_prior, m_x_to_z, mass_bins, density, min_truth_count),
     }
     z_component_summaries = {}
@@ -1224,7 +1274,7 @@ def main() -> None:
     print("Using device:", device)
     print("Device report:", json.dumps(report, sort_keys=True))
     print("Wrote plots:", output_dir)
-    log_progress("Finished CMS DoubleElectron plot generation.")
+    log_progress("Finished CMS dilepton plot generation.")
 
 
 if __name__ == "__main__":

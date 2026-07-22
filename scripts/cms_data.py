@@ -83,7 +83,36 @@ def p4_array(particle) -> np.ndarray:
     return np.stack([px, py, pz, energy], axis=1)
 
 
-def load_cms_x_data(cms_root_file: Path, selection: dict[str, float]) -> np.ndarray:
+def _pair_p4_rows(
+    particles,
+    mass_min: float,
+    mass_max: float,
+) -> np.ndarray:
+    """Return charge-ordered opposite-sign pairs as [negative p4, positive p4]."""
+    import awkward as ak
+
+    pairs = ak.combinations(particles, 2, fields=["p1", "p2"])
+    os_pairs = pairs[(pairs.p1.charge * pairs.p2.charge) < 0]
+    negative = ak.where(os_pairs.p1.charge < 0, os_pairs.p1, os_pairs.p2)
+    positive = ak.where(os_pairs.p1.charge > 0, os_pairs.p1, os_pairs.p2)
+
+    px = negative.pt * np.cos(negative.phi) + positive.pt * np.cos(positive.phi)
+    py = negative.pt * np.sin(negative.phi) + positive.pt * np.sin(positive.phi)
+    pz = negative.pt * np.sinh(negative.eta) + positive.pt * np.sinh(positive.eta)
+    e1 = np.sqrt((negative.pt * np.cosh(negative.eta)) ** 2 + negative.mass**2)
+    e2 = np.sqrt((positive.pt * np.cosh(positive.eta)) ** 2 + positive.mass**2)
+    mass2 = (e1 + e2) ** 2 - px**2 - py**2 - pz**2
+    pair_mass = np.sqrt(ak.where(mass2 > 0, mass2, 0))
+
+    mass_window = (pair_mass > float(mass_min)) & (pair_mass < float(mass_max))
+    negative = ak.flatten(negative[mass_window])
+    positive = ak.flatten(positive[mass_window])
+    if len(negative) == 0:
+        return np.empty((0, 8), dtype=np.float32)
+    return np.concatenate([p4_array(negative), p4_array(positive)], axis=1)
+
+
+def load_cms_electron_x_data(cms_root_file: Path, selection: dict[str, Any]) -> np.ndarray:
     import awkward as ak
     import uproot
 
@@ -128,23 +157,103 @@ def load_cms_x_data(cms_root_file: Path, selection: dict[str, float]) -> np.ndar
         & (np.abs(electrons.dz) < selection["electron_dz_max"])
     ]
 
-    pairs = ak.combinations(selected, 2, fields=["e1", "e2"])
-    os_pairs = pairs[(pairs.e1.charge * pairs.e2.charge) < 0]
-    e_minus = ak.where(os_pairs.e1.charge < 0, os_pairs.e1, os_pairs.e2)
-    e_plus = ak.where(os_pairs.e1.charge > 0, os_pairs.e1, os_pairs.e2)
+    return _pair_p4_rows(
+        selected,
+        mass_min=float(selection["z_mass_min"]),
+        mass_max=float(selection["z_mass_max"]),
+    )
 
-    px = e_minus.pt * np.cos(e_minus.phi) + e_plus.pt * np.cos(e_plus.phi)
-    py = e_minus.pt * np.sin(e_minus.phi) + e_plus.pt * np.sin(e_plus.phi)
-    pz = e_minus.pt * np.sinh(e_minus.eta) + e_plus.pt * np.sinh(e_plus.eta)
-    e1 = np.sqrt((e_minus.pt * np.cosh(e_minus.eta)) ** 2 + e_minus.mass**2)
-    e2 = np.sqrt((e_plus.pt * np.cosh(e_plus.eta)) ** 2 + e_plus.mass**2)
-    mass2 = (e1 + e2) ** 2 - px**2 - py**2 - pz**2
-    m_ee = np.sqrt(ak.where(mass2 > 0, mass2, 0))
 
-    z_window = (m_ee > selection["z_mass_min"]) & (m_ee < selection["z_mass_max"])
-    e_minus = ak.flatten(e_minus[z_window])
-    e_plus = ak.flatten(e_plus[z_window])
-    return np.concatenate([p4_array(e_minus), p4_array(e_plus)], axis=1)
+def load_cms_muon_x_data(
+    cms_root_file: Path,
+    selection: dict[str, Any],
+    max_selected: int | None = None,
+    step_size: str | int = "100 MB",
+) -> np.ndarray:
+    """Load J/psi dimuon candidates from the reduced DoubleMuParked ROOT file.
+
+    The checked-in reduced file contains only the six basic Muon_* branches, so
+    the selection deliberately does not assume isolation, ID, or impact-parameter
+    fields. Iteration keeps the 61M-event input from being materialized at once.
+    """
+    import awkward as ak
+    import uproot
+
+    if not cms_root_file.exists():
+        raise FileNotFoundError(f"CMS ROOT file not found: {cms_root_file}")
+
+    branches = [
+        "nMuon",
+        "Muon_pt",
+        "Muon_eta",
+        "Muon_phi",
+        "Muon_mass",
+        "Muon_charge",
+    ]
+    events = uproot.open(cms_root_file)["Events"]
+    available = set(events.keys())
+    missing = [branch for branch in branches if branch not in available]
+    if missing:
+        raise KeyError(
+            f"Muon channel requires ROOT branches {missing}; available branches: "
+            f"{sorted(available)}"
+        )
+
+    pieces: list[np.ndarray] = []
+    selected_count = 0
+    for arrays in events.iterate(branches, step_size=step_size, library="ak"):
+        muons = ak.zip(
+            {
+                "pt": arrays["Muon_pt"],
+                "eta": arrays["Muon_eta"],
+                "phi": arrays["Muon_phi"],
+                "mass": arrays["Muon_mass"],
+                "charge": arrays["Muon_charge"],
+            }
+        )
+        selected = muons[
+            (muons.pt > float(selection["muon_pt_min"]))
+            & (np.abs(muons.eta) < float(selection["muon_abs_eta_max"]))
+        ]
+        rows = _pair_p4_rows(
+            selected,
+            mass_min=float(selection["jpsi_mass_min"]),
+            mass_max=float(selection["jpsi_mass_max"]),
+        )
+        if max_selected is not None and int(max_selected) > 0:
+            remaining = int(max_selected) - selected_count
+            rows = rows[:remaining]
+        if len(rows):
+            pieces.append(rows)
+            selected_count += len(rows)
+        if max_selected is not None and int(max_selected) > 0 and selected_count >= int(max_selected):
+            break
+
+    if not pieces:
+        return np.empty((0, 8), dtype=np.float32)
+    return np.concatenate(pieces, axis=0)
+
+
+def load_cms_x_data(
+    cms_root_file: Path,
+    selection: dict[str, Any],
+    channel: str = "electron",
+    max_selected: int | None = None,
+    step_size: str | int = "100 MB",
+) -> np.ndarray:
+    normalized_channel = str(channel).strip().lower().replace("-", "_")
+    if normalized_channel in {"electron", "doubleelectron", "ee"}:
+        return load_cms_electron_x_data(cms_root_file, selection)
+    if normalized_channel in {"muon", "doublemuon", "doublemuons", "mumu", "jpsi_mumu"}:
+        return load_cms_muon_x_data(
+            cms_root_file,
+            selection,
+            max_selected=max_selected,
+            step_size=step_size,
+        )
+    raise ValueError(
+        f"Unknown CMS data channel {channel!r}. Expected electron/ee or muon/mumu."
+    )
 
 
 def load_theory_prior_z(theory_prior_file: Path) -> np.ndarray:
@@ -221,7 +330,24 @@ def split_unpaired(
 
 def load_and_split(config: dict[str, Any], num_samples: int | None = None) -> dict[str, np.ndarray]:
     paths = config["paths"]
-    x_data = load_cms_x_data(Path(paths["cms_root_file"]), config["electron_selection"])
+    data_config = config.get("data", {})
+    channel = str(data_config.get("channel", "electron"))
+    normalized_channel = channel.strip().lower().replace("-", "_")
+    if normalized_channel in {"electron", "doubleelectron", "ee"}:
+        selection = config["electron_selection"]
+    elif normalized_channel in {"muon", "doublemuon", "doublemuons", "mumu", "jpsi_mumu"}:
+        selection = config["muon_selection"]
+    else:
+        raise ValueError(
+            f"Unknown CMS data channel {channel!r}. Expected electron/ee or muon/mumu."
+        )
+    x_data = load_cms_x_data(
+        Path(paths["cms_root_file"]),
+        selection,
+        channel=channel,
+        max_selected=num_samples,
+        step_size=data_config.get("root_step_size", "100 MB"),
+    )
     if paths.get("theory_prior_files"):
         z_data = load_theory_prior_z_mixture(
             paths["theory_prior_files"],

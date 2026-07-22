@@ -111,7 +111,7 @@ def plot_mass_ratio(
     path: Path,
     truth_label: str = "CMS held-out",
     pred_label: str = "OTUS decoded MG5",
-    x_label: str = "m(ee) [GeV]",
+    x_label: str = "m(ll) [GeV]",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     centers = arrays["centers"]
@@ -142,7 +142,7 @@ def plot_mass_ratio(
 def plot_residual(
     arrays: dict[str, np.ndarray],
     path: Path,
-    x_label: str = "m(ee) [GeV]",
+    x_label: str = "m(ll) [GeV]",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     centers = arrays["centers"]

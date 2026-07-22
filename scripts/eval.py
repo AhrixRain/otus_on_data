@@ -15,14 +15,26 @@ from metrics import invariant_mass, plot_mass_ratio, plot_residual, residual_met
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate CMS DoubleElectron OTUS mass residuals.")
+    parser = argparse.ArgumentParser(description="Evaluate configured CMS dilepton OTUS mass residuals.")
     parser.add_argument("--config", type=Path, required=True, help="YAML/JSON config path.")
     parser.add_argument("--checkpoint", type=Path, required=True, help="best_model.pt or last_model.pt.")
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Evaluation output directory.")
     parser.add_argument("--num-samples", type=int, default=None, help="Limit selected CMS and MG5 rows.")
-    parser.add_argument("--bins", type=int, default=80, help="Mass histogram bins.")
-    parser.add_argument("--mass-range", nargs=2, type=float, default=(70.0, 110.0), metavar=("LOW", "HIGH"))
+    parser.add_argument(
+        "--bins",
+        type=int,
+        default=None,
+        help="Mass histogram bins. Defaults to evaluation.mass_bin_width from config.",
+    )
+    parser.add_argument(
+        "--mass-range",
+        nargs=2,
+        type=float,
+        default=None,
+        metavar=("LOW", "HIGH"),
+        help="Mass window. Defaults to evaluation.mass_range from config.",
+    )
     parser.add_argument(
         "--include-inverse-check",
         action="store_true",
@@ -69,6 +81,7 @@ def write_mass_comparison(
     mass_range: tuple[float, float],
     min_truth_count: int,
     labels: tuple[str, str],
+    x_label: str = "m(ll) [GeV]",
     write_outputs: bool = True,
 ) -> tuple[dict, dict[str, np.ndarray], np.ndarray, np.ndarray]:
     comparison_dir = output_dir / "comparisons" / name
@@ -92,8 +105,9 @@ def write_mass_comparison(
             comparison_dir / "mass_ratio.png",
             truth_label=labels[0],
             pred_label=labels[1],
+            x_label=x_label,
         )
-        plot_residual(metric_arrays, comparison_dir / "residual.png")
+        plot_residual(metric_arrays, comparison_dir / "residual.png", x_label=x_label)
         np.savez(
             comparison_dir / "mass_histograms.npz",
             truth_mass=truth_mass,
@@ -132,24 +146,39 @@ def main() -> None:
     write_comparisons = bool(
         evaluation_config.get(
             "write_comparison_outputs",
-            loss_kind in {"original_feature_ot_v1", "cms_doubleelectron_loss"},
+            loss_kind in {
+                "original_feature_ot_v1",
+                "cms_doubleelectron_loss",
+                "cms_jpsi_doublemuon_loss",
+            },
         )
     )
     include_inverse_check = bool(
         args.include_inverse_check or evaluation_config.get("include_inverse_check", False)
     )
 
-    mass_range = (float(args.mass_range[0]), float(args.mass_range[1]))
+    configured_mass_range = evaluation_config.get("mass_range", [70.0, 110.0])
+    selected_mass_range = args.mass_range or configured_mass_range
+    mass_range = (float(selected_mass_range[0]), float(selected_mass_range[1]))
+    if args.bins is not None:
+        bins = int(args.bins)
+    else:
+        bin_width = float(evaluation_config.get("mass_bin_width", 0.5))
+        if bin_width <= 0.0:
+            raise ValueError("evaluation.mass_bin_width must be positive.")
+        bins = max(1, int(round((mass_range[1] - mass_range[0]) / bin_width)))
+    mass_label = str(evaluation_config.get("mass_label", "m(ll) [GeV]"))
     min_truth_count = int(model_config.get("evaluation", {}).get("min_truth_count", 20))
     metrics, metric_arrays, truth_mass, pred_mass = write_mass_comparison(
         output_dir,
         "simulation",
         arrays["x_test"],
         z_decoded,
-        bins=int(args.bins),
+        bins=bins,
         mass_range=mass_range,
         min_truth_count=min_truth_count,
         labels=("x_test CMS", "D(z_test MG5)"),
+        x_label=mass_label,
         write_outputs=write_comparisons,
     )
     metrics.update(
@@ -164,8 +193,8 @@ def main() -> None:
 
     save_resolved_config(model_config, output_dir / "config.resolved.json")
     write_metrics(metrics, output_dir / "metrics.json")
-    plot_mass_ratio(metric_arrays, output_dir / "mass_ratio.png")
-    plot_residual(metric_arrays, output_dir / "residual.png")
+    plot_mass_ratio(metric_arrays, output_dir / "mass_ratio.png", x_label=mass_label)
+    plot_residual(metric_arrays, output_dir / "residual.png", x_label=mass_label)
     np.savez(
         output_dir / "mass_histograms.npz",
         truth_mass=truth_mass,
@@ -183,10 +212,11 @@ def main() -> None:
             "reconstruction",
             arrays["x_test"],
             x_reconstructed,
-            bins=int(args.bins),
+            bins=bins,
             mass_range=mass_range,
             min_truth_count=min_truth_count,
             labels=("x_test CMS", "D(E(x_test CMS))"),
+            x_label=mass_label,
         )
         comparison_metrics["reconstruction"] = reco_metrics
         unfold_metrics, _, _, _ = write_mass_comparison(
@@ -194,10 +224,11 @@ def main() -> None:
             "unfolding",
             arrays["z_test"],
             z_encoded,
-            bins=int(args.bins),
+            bins=bins,
             mass_range=mass_range,
             min_truth_count=min_truth_count,
             labels=("z_test MG5", "E(x_test CMS)"),
+            x_label=mass_label,
         )
         comparison_metrics["unfolding"] = unfold_metrics
         if include_inverse_check:
@@ -207,10 +238,11 @@ def main() -> None:
                 "inverse_check",
                 arrays["z_test"],
                 z_inverse,
-                bins=int(args.bins),
+                bins=bins,
                 mass_range=mass_range,
                 min_truth_count=min_truth_count,
                 labels=("z_test MG5", "E(D(z_test MG5))"),
+                x_label=mass_label,
             )
             comparison_metrics["inverse_check"] = inverse_metrics
         write_metrics(comparison_metrics, output_dir / "comparisons" / "metrics.json")

@@ -19,7 +19,12 @@ if str(UTILITY_DIR) not in sys.path:
     sys.path.insert(0, str(UTILITY_DIR))
 
 from func_utils import anchor_loss, data_loss, sliced_wd  # noqa: E402
-from loss import CANONICAL_LOSS_KIND, CmsDoubleElectronLossFactory  # noqa: E402
+from loss import (  # noqa: E402
+    CANONICAL_LOSS_KIND,
+    JPSI_DIMUON_LOSS_KIND,
+    CmsDoubleElectronLossFactory,
+    CmsJpsiDoubleMuonLossFactory,
+)
 
 
 P = 2
@@ -352,6 +357,8 @@ class ZLossFactory:
 
 def build_loss_factory(x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
     kind = loss_config.get("kind", CANONICAL_LOSS_KIND)
+    if kind == JPSI_DIMUON_LOSS_KIND:
+        return CmsJpsiDoubleMuonLossFactory(x_train, z_train, loss_config)
     if kind in {None, CANONICAL_LOSS_KIND, "original_feature_ot_v1"}:
         return CmsDoubleElectronLossFactory(x_train, z_train, loss_config)
     return ZLossFactory(x_train, z_train, loss_config)

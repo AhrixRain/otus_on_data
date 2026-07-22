@@ -27,7 +27,7 @@ COMPONENT_COLUMNS = [column for column in LOSS_COLUMNS if column not in TOTAL_CO
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot CMS DoubleElectron training losses from train_log.csv.")
+    parser = argparse.ArgumentParser(description="Plot CMS dilepton training losses from train_log.csv.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--run-dir", type=Path, help="Run directory containing train_log.csv.")
     source.add_argument("--log", type=Path, help="Path to a train_log.csv file.")
