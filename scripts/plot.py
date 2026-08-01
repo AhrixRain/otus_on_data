@@ -338,9 +338,33 @@ def w2_1d_np(a: np.ndarray, b: np.ndarray) -> float:
 
     n_quantiles = max(len(left), len(right))
     quantiles = (np.arange(n_quantiles, dtype=float) + 0.5) / n_quantiles
-    left_quantiles = np.quantile(left, quantiles, method="linear")
-    right_quantiles = np.quantile(right, quantiles, method="linear")
+
+    def linear_quantiles(sorted_values: np.ndarray) -> np.ndarray:
+        values = sorted_values.astype(float, copy=False)
+        positions = quantiles * (len(values) - 1)
+        lower = np.floor(positions).astype(np.int64)
+        upper = np.minimum(lower + 1, len(values) - 1)
+        fractions = positions - lower
+        return values[lower] + fractions * (values[upper] - values[lower])
+
+    left_quantiles = linear_quantiles(left)
+    right_quantiles = linear_quantiles(right)
     return float(np.mean((left_quantiles - right_quantiles) ** 2))
+
+
+def w2_1d_in_histogram_range_np(a: np.ndarray, b: np.ndarray, bins: np.ndarray) -> float:
+    """Compute W2^2 for the conditional distributions visible in the histogram."""
+    edges = np.asarray(bins, dtype=float)
+    if edges.ndim != 1 or len(edges) < 2:
+        raise ValueError("Histogram bins must be a one-dimensional array with at least two edges.")
+
+    low = edges[0]
+    high = edges[-1]
+    left = finite_values(a)
+    right = finite_values(b)
+    left = left[(left >= low) & (left <= high)]
+    right = right[(right >= low) & (right <= high)]
+    return w2_1d_np(left, right)
 
 
 def maybe_ks(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
@@ -529,6 +553,7 @@ def paper_ratio_plot_single(
     _, h_pred, c_pred = hist_for_plot(pred, bins, density=density)
     ratio, rerr = ratio_and_error(h_pred, h_truth, c_pred, c_truth)
     residual = ratio - 1.0
+    w2_shown = w2_1d_in_histogram_range_np(truth, pred, bins)
 
     fig = plt.figure(figsize=(7.0, 7.4))
     gs = fig.add_gridspec(3, 1, height_ratios=[3.0, 1.05, 1.05], hspace=0.05)
@@ -549,7 +574,7 @@ def paper_ratio_plot_single(
     ax.text(
         0.97,
         0.92,
-        fr"$W_2^2 = {w2_1d_np(truth, pred):.3e}$",
+        fr"$W_{{2,\mathrm{{shown}}}}^2 = {w2_shown:.3e}$",
         transform=ax.transAxes,
         ha="right",
         va="top",
@@ -648,6 +673,8 @@ def paper_ratio_plot_double(
     ratio2, err2 = ratio_and_error(h_pred2, h_truth, c_pred2, c_truth)
     residual1 = ratio1 - 1.0
     residual2 = ratio2 - 1.0
+    w2_shown_pred1 = w2_1d_in_histogram_range_np(truth, pred1, bins)
+    w2_shown_pred2 = w2_1d_in_histogram_range_np(truth, pred2, bins)
 
     fig = plt.figure(figsize=(7.0, 7.4))
     gs = fig.add_gridspec(3, 1, height_ratios=[3.0, 1.05, 1.05], hspace=0.05)
@@ -669,7 +696,7 @@ def paper_ratio_plot_double(
     ax.text(
         0.97,
         0.92,
-        fr"$W_2^2(x,\tilde{{x}}) = {w2_1d_np(truth, pred1):.3e}$",
+        fr"$W_{{2,\mathrm{{shown}}}}^2(x,\tilde{{x}}) = {w2_shown_pred1:.3e}$",
         transform=ax.transAxes,
         ha="right",
         va="top",
@@ -679,7 +706,7 @@ def paper_ratio_plot_double(
     ax.text(
         0.97,
         0.84,
-        fr"$W_2^2(x,\tilde{{x}}^\prime) = {w2_1d_np(truth, pred2):.3e}$",
+        fr"$W_{{2,\mathrm{{shown}}}}^2(x,\tilde{{x}}^\prime) = {w2_shown_pred2:.3e}$",
         transform=ax.transAxes,
         ha="right",
         va="top",
