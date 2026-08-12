@@ -1,0 +1,128 @@
+paths:
+  repo_root: .
+  data_root: data
+  cms_root_file: Run2012BC_DoubleMuParked_Muons.root
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_1M.hdf5
+  output_root: outputs/cms_JpsiDoubleMuons
+
+data:
+  channel: muon
+  root_step_size: 100 MB
+
+device: auto
+seed: 0
+float_type: float32
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+
+# This reduced ROOT file exposes only nMuon, Muon_pt, Muon_eta, Muon_phi,
+# Muon_mass, and Muon_charge. Do not add isolation/ID/IP cuts unless the file
+# is regenerated with those branches.
+muon_selection:
+  muon_pt_min: 2.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 2.6
+  jpsi_mass_max: 3.5
+
+# Same CondNoiseAutoencoder architecture as outputs/cms_doubleelectron/v5_mps.
+model:
+  class: CondNoiseAutoencoder
+  num_hidden_layers: 4
+  dim_per_hidden_layer: 512
+  activation: ReLU
+  sigma_fun: softplus
+  sigma_floor: 0.001
+  stoch_enc: true
+  stoch_dec: true
+  raw_io: true
+
+loss:
+  kind: cms_jpsi_doublemuon_loss
+  raw_swd: 0.5
+  marginal_w1: 0.5
+  mass_w1: 2.0
+  physics_swd: 1.0
+  transverse_w1: 0.5
+  longitudinal_w1: 0.4
+  tail_w1: 0.15
+  pair_mass_w1: 2.0
+  pair_pt_w1: 2.0
+  lepton_pt_w1: 1.0
+  delta_phi_w1: 0.5
+  delta_eta_w1: 0.5
+  pair_rapidity_w1: 0.5
+  physics_coord_swd: 0.5
+  mmd: 0.0
+  decoder_num_noise_samples: 1
+  selection_score:
+    x_sim: 1.0
+    z_prior: 0.7
+    x_reco: 0.05
+
+loaders:
+  train_batch_size: 8192
+  eval_batch_size: 60000
+  preload_data_to_accelerator: false
+
+evaluation:
+  min_truth_count: 20
+  mass_range: [2.6, 3.5]
+  mass_bin_width: 0.01
+  mass_label: "m(mumu) [GeV]"
+  channel_title: "CMS DoubleMuParked: J/psi -> mumu"
+  reference_mass: 3.0969
+  reference_label: "m_J/psi"
+
+stages:
+  - name: stage1_anchor_warmup
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.001
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.0
+    rho: 0.0
+    nu_e: 50.0
+    nu_d: 50.0
+    num_slices: 500
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage2_joint_transport
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 0.0005
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1000
+    log_freq: 20
+    lr_decay: true
+    freeze_encoder: false
+    freeze_decoder: false
+
+  - name: stage3_decoder_response_mass_protected
+    mode: standard
+    enabled: true
+    epochs: 100
+    lr: 0.0001
+    beta: 0.15
+    lamb: 1.0
+    tau: 2.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1500
+    log_freq: 20
+    lr_decay: true
+    freeze_encoder: true
+    freeze_decoder: false

@@ -42,6 +42,51 @@ def as_float(value) -> float:
     return float(value)
 
 
+def flat_grad_vector(grads) -> torch.Tensor | None:
+    if grads is None:
+        return None
+    parts = [
+        grad.detach().reshape(-1)
+        for grad in grads
+        if grad is not None and grad.numel() > 0
+    ]
+    if not parts:
+        return None
+    return torch.cat(parts)
+
+
+def grad_norm(grads) -> float:
+    if grads is None:
+        return 0.0
+    vector = flat_grad_vector(grads)
+    return 0.0 if vector is None else float(vector.norm())
+
+
+def grad_cosine(grads_a, grads_b) -> float | None:
+    a = flat_grad_vector(grads_a)
+    b = flat_grad_vector(grads_b)
+    if a is None or b is None:
+        return None
+    denom = a.norm() * b.norm()
+    if not bool(denom > 0.0):
+        return None
+    return float((a @ b / denom).item())
+
+
+def encoder_grads_for(loss, model) -> list[torch.Tensor | None]:
+    params = [param for param in model.encoder.parameters() if param.requires_grad]
+    if not params or loss is None:
+        return []
+    return list(
+        torch.autograd.grad(
+            loss,
+            params,
+            retain_graph=True,
+            allow_unused=True,
+        )
+    )
+
+
 class ResampleTensorLoader:
     def __init__(self, tensor: torch.Tensor, batch_size: int, steps_per_epoch: int):
         self.tensor = tensor
@@ -386,6 +431,15 @@ class HistoryLogger:
         f"train_{space}_{component}"
         for space in ("x", "z")
         for component in (
+            "raw_swd",
+            "marginal_w1",
+            "mass_w1",
+            "resonance_mass_w1",
+            "physics_swd",
+            "mass_kin_swd",
+            "transverse_w1",
+            "longitudinal_w1",
+            "tail_w1",
             "pair_mass_w1",
             "pair_pt_w1",
             "lepton_pt_w1",
@@ -394,6 +448,18 @@ class HistoryLogger:
             "pair_rapidity_w1",
             "physics_coord_swd",
         )
+    ]
+    weighted_component_fields = [
+        f"{field}_weighted"
+        for field in component_fields
+    ]
+    latent_component_fields = [
+        f"z_component_w1_{j:02d}"
+        for j in range(8)
+    ]
+    latent_component_weighted_fields = [
+        f"z_component_w1_{j:02d}_weighted"
+        for j in range(8)
     ]
     fieldnames = [
         "epoch",
@@ -408,7 +474,15 @@ class HistoryLogger:
         "eval_z_loss",
         "eval_alt_x_loss",
         "eval_selection_score",
-    ] + component_fields
+        "grad_norm_encoder_latent",
+        "grad_norm_encoder_reco",
+        "grad_norm_encoder_anchor",
+        "grad_norm_encoder_latent_weighted",
+        "grad_norm_encoder_reco_weighted",
+        "grad_norm_encoder_anchor_weighted",
+        "grad_norm_encoder_total",
+        "grad_cosine_latent_reco",
+    ] + component_fields + weighted_component_fields + latent_component_fields + latent_component_weighted_fields
 
     def __init__(self, csv_path: Path):
         self.csv_path = csv_path
@@ -446,6 +520,14 @@ def train_standard_epoch(
         "z_loss": 0.0,
         "alt_x_loss": 0.0,
         "x_constraint_loss": 0.0,
+        "grad_norm_encoder_latent": 0.0,
+        "grad_norm_encoder_reco": 0.0,
+        "grad_norm_encoder_anchor": 0.0,
+        "grad_norm_encoder_latent_weighted": 0.0,
+        "grad_norm_encoder_reco_weighted": 0.0,
+        "grad_norm_encoder_anchor_weighted": 0.0,
+        "grad_norm_encoder_total": 0.0,
+        "grad_cosine_latent_reco": 0.0,
     }
     nbatches = 0
     steps_in_epoch = min(len(x_loader), len(z_loader))
@@ -499,13 +581,44 @@ def train_standard_epoch(
             + stage["nu_e"] * encoder_anchor
             + stage["nu_d"] * decoder_anchor
         )
+        encoder_params = [param for param in model.encoder.parameters() if param.requires_grad]
+        grad_latent = None
+        grad_reco = None
+        grad_anchor = None
+        if encoder_params:
+            if stage["lamb"] > 0 and z_loss.requires_grad:
+                grad_latent = encoder_grads_for(z_loss, model)
+            if stage["beta"] > 0 and x_loss.requires_grad:
+                grad_reco = encoder_grads_for(x_loss, model)
+            if stage["nu_e"] > 0 and encoder_anchor.requires_grad:
+                grad_anchor = encoder_grads_for(encoder_anchor, model)
         loss.backward()
+        total_grad_norm = 0.0
+        if encoder_params:
+            total_grad_norm = grad_norm(
+                [param.grad for param in encoder_params if param.grad is not None]
+            )
         optimizer.step()
         sums["loss"] += as_float(loss)
         sums["x_loss"] += as_float(x_loss)
         sums["z_loss"] += as_float(z_loss)
         sums["alt_x_loss"] += as_float(alt_x_loss)
         sums["x_constraint_loss"] += as_float(x_constraint_loss)
+        sums["grad_norm_encoder_latent"] += grad_norm(grad_latent)
+        sums["grad_norm_encoder_reco"] += grad_norm(grad_reco)
+        sums["grad_norm_encoder_anchor"] += grad_norm(grad_anchor)
+        sums["grad_norm_encoder_latent_weighted"] += (
+            stage["lamb"] * grad_norm(grad_latent)
+        )
+        sums["grad_norm_encoder_reco_weighted"] += (
+            stage["beta"] * grad_norm(grad_reco)
+        )
+        sums["grad_norm_encoder_anchor_weighted"] += (
+            stage["nu_e"] * grad_norm(grad_anchor)
+        )
+        sums["grad_norm_encoder_total"] += total_grad_norm
+        cosine = grad_cosine(grad_latent, grad_reco)
+        sums["grad_cosine_latent_reco"] += 0.0 if cosine is None else cosine
         for key, value in getattr(loss_factory, "latest_components", {}).items():
             log_key = f"{key}"
             sums.setdefault(log_key, 0.0)
@@ -548,6 +661,7 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
                     "x_loss": x_loss,
                     "z_loss": z_loss,
                     "alt_x_loss": alt_x_loss,
+                    "cycle_loss": x_loss,
                 }
             )
             sums["loss"] += as_float(loss)
@@ -655,6 +769,9 @@ def train_all_stages(
     logger: HistoryLogger,
     save_callback,
     progress_callback=None,
+    stage_checkpoint_callback=None,
+    diagnostics_callback=None,
+    diagnostic_every: int = 10,
 ) -> tuple[dict[str, list[Any]], float | None, int]:
     history_epoch = 0
     history_step = 0
@@ -746,6 +863,14 @@ def train_all_stages(
                 scheduler.step()
 
             history_epoch += 1
+            if (
+                diagnostics_callback is not None
+                and (
+                    history_epoch % max(1, int(diagnostic_every)) == 0
+                    or local_epoch == stage_epochs
+                )
+            ):
+                diagnostics_callback(model, history_epoch, stage["name"], loss_factory)
             should_log = (
                 local_epoch == 1
                 or local_epoch == stage_epochs
@@ -794,6 +919,25 @@ def train_all_stages(
                 for component_field in HistoryLogger.component_fields:
                     component_key = component_field.removeprefix("train_")
                     row[component_field] = train_losses.get(component_key, "")
+                for component_field in HistoryLogger.weighted_component_fields:
+                    component_key = component_field.removeprefix("train_")
+                    row[component_field] = train_losses.get(component_key, "")
+                for gradient_field in (
+                    "grad_norm_encoder_latent",
+                    "grad_norm_encoder_reco",
+                    "grad_norm_encoder_anchor",
+                    "grad_norm_encoder_latent_weighted",
+                    "grad_norm_encoder_reco_weighted",
+                    "grad_norm_encoder_anchor_weighted",
+                    "grad_norm_encoder_total",
+                    "grad_cosine_latent_reco",
+                ):
+                    row[gradient_field] = train_losses.get(gradient_field, "")
+                for latent_field in (
+                    HistoryLogger.latent_component_fields
+                    + HistoryLogger.latent_component_weighted_fields
+                ):
+                    row[latent_field] = train_losses.get(latent_field, "")
                 logger.append(row)
                 is_best = best_eval_loss is None or selection_score < best_eval_loss
                 if is_best:
@@ -810,6 +954,8 @@ def train_all_stages(
                         early_bad_checks = 0
                     else:
                         early_bad_checks += 1
+                if local_epoch == stage_epochs and stage_checkpoint_callback is not None:
+                    stage_checkpoint_callback(stage["name"], history_epoch, selection_score)
 
             if progress_callback is not None:
                 progress_callback(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -112,7 +113,19 @@ def _pair_p4_rows(
     return np.concatenate([p4_array(negative), p4_array(positive)], axis=1)
 
 
-def load_cms_electron_x_data(cms_root_file: Path, selection: dict[str, Any]) -> np.ndarray:
+def load_cms_electron_x_data(
+    cms_root_file: Path,
+    selection: dict[str, Any],
+    max_selected: int | None = None,
+    step_size: str | int = "100 MB",
+) -> np.ndarray:
+    """Load Z->ee candidates from a CMS ROOT file with chunked iteration.
+
+    Mirrors the muon loader: events are read in bounded chunks, selection is
+    applied per event inside each chunk (pairing is per event, so the result is
+    identical to a full in-memory load), and iteration stops early once
+    ``max_selected`` rows are collected.
+    """
     import awkward as ak
     import uproot
 
@@ -131,37 +144,48 @@ def load_cms_electron_x_data(cms_root_file: Path, selection: dict[str, Any]) -> 
         "Electron_dxy",
         "Electron_dz",
     ]
-    arrays = events.arrays(branches, library="ak")
+    pieces: list[np.ndarray] = []
+    selected_count = 0
+    for arrays in events.iterate(branches, step_size=step_size, library="ak"):
+        electrons = ak.zip(
+            {
+                "pt": arrays["Electron_pt"],
+                "eta": arrays["Electron_eta"],
+                "phi": arrays["Electron_phi"],
+                "mass": arrays["Electron_mass"],
+                "charge": arrays["Electron_charge"],
+                "pfRelIso03_all": arrays["Electron_pfRelIso03_all"],
+                "dxy": arrays["Electron_dxy"],
+                "dz": arrays["Electron_dz"],
+            }
+        )
+        abs_eta = np.abs(electrons.eta)
+        outside_ecal_gap = ~((abs_eta > 1.4442) & (abs_eta < 1.566))
+        selected = electrons[
+            (electrons.pt > selection["electron_pt_min"])
+            & (abs_eta < selection["electron_abs_eta_max"])
+            & outside_ecal_gap
+            & (electrons.pfRelIso03_all < selection["electron_iso_max"])
+            & (np.abs(electrons.dxy) < selection["electron_dxy_max"])
+            & (np.abs(electrons.dz) < selection["electron_dz_max"])
+        ]
+        rows = _pair_p4_rows(
+            selected,
+            mass_min=float(selection["z_mass_min"]),
+            mass_max=float(selection["z_mass_max"]),
+        )
+        if max_selected is not None and int(max_selected) > 0:
+            remaining = int(max_selected) - selected_count
+            rows = rows[:remaining]
+        if len(rows):
+            pieces.append(rows)
+            selected_count += len(rows)
+        if max_selected is not None and int(max_selected) > 0 and selected_count >= int(max_selected):
+            break
 
-    electrons = ak.zip(
-        {
-            "pt": arrays["Electron_pt"],
-            "eta": arrays["Electron_eta"],
-            "phi": arrays["Electron_phi"],
-            "mass": arrays["Electron_mass"],
-            "charge": arrays["Electron_charge"],
-            "pfRelIso03_all": arrays["Electron_pfRelIso03_all"],
-            "dxy": arrays["Electron_dxy"],
-            "dz": arrays["Electron_dz"],
-        }
-    )
-
-    abs_eta = np.abs(electrons.eta)
-    outside_ecal_gap = ~((abs_eta > 1.4442) & (abs_eta < 1.566))
-    selected = electrons[
-        (electrons.pt > selection["electron_pt_min"])
-        & (abs_eta < selection["electron_abs_eta_max"])
-        & outside_ecal_gap
-        & (electrons.pfRelIso03_all < selection["electron_iso_max"])
-        & (np.abs(electrons.dxy) < selection["electron_dxy_max"])
-        & (np.abs(electrons.dz) < selection["electron_dz_max"])
-    ]
-
-    return _pair_p4_rows(
-        selected,
-        mass_min=float(selection["z_mass_min"]),
-        mass_max=float(selection["z_mass_max"]),
-    )
+    if not pieces:
+        return np.empty((0, 8), dtype=np.float32)
+    return np.concatenate(pieces, axis=0)
 
 
 def load_cms_muon_x_data(
@@ -243,7 +267,12 @@ def load_cms_x_data(
 ) -> np.ndarray:
     normalized_channel = str(channel).strip().lower().replace("-", "_")
     if normalized_channel in {"electron", "doubleelectron", "ee"}:
-        return load_cms_electron_x_data(cms_root_file, selection)
+        return load_cms_electron_x_data(
+            cms_root_file,
+            selection,
+            max_selected=max_selected,
+            step_size=step_size,
+        )
     if normalized_channel in {"muon", "doublemuon", "doublemuons", "mumu", "jpsi_mumu"}:
         return load_cms_muon_x_data(
             cms_root_file,
@@ -254,6 +283,103 @@ def load_cms_x_data(
     raise ValueError(
         f"Unknown CMS data channel {channel!r}. Expected electron/ee or muon/mumu."
     )
+
+
+def file_fingerprint(path: str | Path) -> dict[str, Any]:
+    """Stable identity for a data file: resolved path, size, and mtime."""
+    resolved = Path(path).expanduser().resolve()
+    stat = resolved.stat()
+    return {
+        "path": str(resolved),
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
+
+
+def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict[str, Any]:
+    """Everything that can change the selected/split arrays."""
+    paths = config["paths"]
+    channel = str(config.get("data", {}).get("channel", "electron"))
+    selection_key = "muon_selection" if channel.lower() in {
+        "muon",
+        "doublemuon",
+        "doublemuons",
+        "mumu",
+        "jpsi_mumu",
+    } else "electron_selection"
+    metadata: dict[str, Any] = {
+        "version": 2,
+        "num_samples": None if num_samples is None else int(num_samples),
+        "float_type": config.get("float_type", "float32"),
+        "seed": int(config.get("seed", 0)),
+        "data_split": config["data_split"],
+        "data": config.get("data", {"channel": "electron"}),
+        selection_key: config[selection_key],
+        "cms_root_file": file_fingerprint(paths["cms_root_file"]),
+    }
+    if paths.get("theory_prior_files"):
+        metadata["theory_prior_files"] = [
+            file_fingerprint(item) for item in paths["theory_prior_files"]
+        ]
+        metadata["theory_prior_weights"] = paths.get("theory_prior_weights")
+        metadata["theory_prior_mixture_seed"] = int(config.get("seed", 0)) + 17
+    else:
+        metadata["theory_prior_file"] = file_fingerprint(paths["theory_prior_file"])
+    return metadata
+
+
+def data_cache_key(metadata: dict[str, Any]) -> str:
+    payload = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:20]
+
+
+def load_and_split_cached(
+    config: dict[str, Any],
+    num_samples: int | None,
+    cache_dir: Path | None,
+    use_cache: bool,
+    log=print,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    """load_and_split() backed by a keyed on-disk cache of the split arrays.
+
+    The cache key covers the resolved config, selection, file fingerprints,
+    seed, and sample cap, so a hit always returns the same arrays a fresh load
+    would produce. Defaults to <output_root>/.plot_cache so train/eval/plot
+    share the same artifacts.
+    """
+    if not use_cache:
+        log("Data cache disabled; loading selected CMS and MG5 rows from source files.")
+        return load_and_split(config, num_samples=num_samples), {"enabled": False, "hit": False}
+
+    if cache_dir is None:
+        cache_dir = Path(config["paths"]["output_root"]) / ".plot_cache"
+    cache_dir = cache_dir.expanduser().resolve()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata = data_cache_metadata(config, num_samples)
+    key = data_cache_key(metadata)
+    cache_path = cache_dir / f"selected_split_{key}.npz"
+    metadata_path = cache_dir / f"selected_split_{key}.json"
+    expected_keys = ("x_train", "x_val", "x_test", "z_train", "z_val", "z_test")
+
+    if cache_path.exists():
+        log(f"Loading selected/split data cache: {cache_path}")
+        with np.load(cache_path, allow_pickle=False) as cached:
+            arrays = {key: cached[key] for key in expected_keys}
+        log(
+            "Loaded cache shapes: "
+            + ", ".join(f"{key}={value.shape}" for key, value in arrays.items())
+        )
+        return arrays, {"enabled": True, "hit": True, "path": str(cache_path), "key": key}
+
+    log("Data cache miss; reading ROOT/HDF5 inputs and applying selection.")
+    arrays = load_and_split(config, num_samples=num_samples)
+    tmp_path = cache_dir / f".selected_split_{key}.tmp.npz"
+    log(f"Writing selected/split data cache: {cache_path}")
+    np.savez(tmp_path, **{key: arrays[key] for key in expected_keys})
+    tmp_path.replace(cache_path)
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return arrays, {"enabled": True, "hit": False, "path": str(cache_path), "key": key}
 
 
 def load_theory_prior_z(theory_prior_file: Path) -> np.ndarray:

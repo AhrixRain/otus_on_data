@@ -87,6 +87,16 @@ stage4_encoder_distribution_polish: 50 epochs
 stage5_z_cycle_inverse_polish_gentle: 40 epochs
 ```
 
+## Data Cache
+
+`train.py`, `eval.py`, and `plot.py` share a keyed on-disk cache of the
+selected/split CMS and MG5 arrays at `<output_root>/.plot_cache/`. The key
+covers the resolved config, selection cuts, data-file fingerprints, seed, and
+`--num-samples`, so repeated runs (including ablations with different
+`--num-samples` values) skip the multi-GB ROOT scan. Regenerating a cached
+entry requires a source file to change (mtime/size) or a config/seed/sample-cap
+change. `plot.py` can bypass the cache with `--no-data-cache`.
+
 Run full training with a unique run name:
 
 ```bash
@@ -142,3 +152,62 @@ For an intermediate-length test before the full run, use a small per-stage epoch
 python scripts/train.py --config configs/cms_doubleelectron_mps.yaml --device auto --num-samples 100000 --epochs 3 --run-name medium_mps
 python scripts/eval.py --config configs/cms_doubleelectron_mps.yaml --checkpoint outputs/cms_doubleelectron/medium_mps/best_model.pt --device auto --num-samples 100000
 ```
+
+## J/psi -> mu mu runs (OTUS-on-CMS)
+
+The J/psi dimuon workflow uses the same CLI with `configs/cms_JpsiDoubleMuons_mps.yaml`
+(run: `Jpsi_v3.5`) or the controlled mass-ablation config
+`configs/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml`:
+
+```bash
+conda run -n cms python scripts/train.py \
+  --config configs/cms_JpsiDoubleMuons_mps.yaml \
+  --run-name Jpsi_v3.5_stage_diag --device auto
+conda run -n cms python scripts/train.py \
+  --config configs/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml \
+  --run-name Jpsi_v3.6A_no_explicit_mass --device auto
+```
+
+Training now also writes a named checkpoint at every stage boundary
+(`checkpoint_stage1_anchor_warmup.pt`, `checkpoint_stage2_joint_transport.pt`,
+`checkpoint_stage3_decoder_response_mass_protected.pt`) in addition to
+`best_model.pt` / `last_model.pt`. This is diagnostic-only bookkeeping; the
+training schedule, loss, and data are unchanged.
+
+### Stage / ablation diagnostic
+
+Compare checkpoints with identical eval/plot settings (e.g. end of Stage 2 vs
+the best Stage-3 checkpoint, or v3.5 vs v3.6A):
+
+```bash
+conda run -n cms python scripts/stage_diagnostic.py \
+  --config configs/cms_JpsiDoubleMuons_mps.yaml \
+  --checkpoint stage2_end=outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/checkpoint_stage2_joint_transport.pt \
+  --checkpoint best_stage3=outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/best_model.pt \
+  --output-dir outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/stage_diagnostic \
+  --num-samples 200000 --split test
+```
+
+The script reruns the shared `scripts/eval.py` + `scripts/plot.py` pipelines for
+each checkpoint with identical arguments and writes
+`stage_diagnostic/summary.json` (machine-readable) and `stage_diagnostic/summary.md`
+(human-readable, with explicit Stage-3 / mass-ablation verdicts). Add
+`--skip-plots` to reuse existing per-checkpoint outputs, or `--force` to rerun.
+
+### Explicit invariant-mass supervision in the J/psi loss
+
+The J/psi loss (`cms_jpsi_doublemuon_loss` in `scripts/loss.py`) contains these
+explicit mass terms, all independently disableable:
+
+- `mass_w1` / `pair_mass_w1`: W1 on the standardized invariant mass (identical
+  value; two weight knobs).
+- `resonance_mass_w1`: W1 on physical mass inside
+  `[resonance_mass_center +/- resonance_mass_half_width]` (the narrow J/psi window).
+- `mass_kin_swd_components.mll`: the invariant-mass column of the joint
+  `[m_ll, pT_ll, y_ll, cos dphi, sin dphi]` sliced-Wasserstein term. Set `mll: 0.0`
+  to keep only the four non-mass pair-kinematics columns.
+
+Indirect mass-bearing terms that remain active in v3.6A by design:
+`physics_swd` (15-observable joint SWD incl. `m_ll`), `physics_coord_swd`
+(per-lepton log-pT/eta/direction/log-E), `x_reco_physics_w1` (per-event paired
+physics MSE incl. `m_ll`), and the raw 8-vector terms.

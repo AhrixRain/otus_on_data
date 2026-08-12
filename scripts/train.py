@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import random
@@ -15,10 +16,17 @@ from typing import Any
 import numpy as np
 import torch
 
-from cms_data import array_stats, load_and_split, load_config, resolve_config, save_resolved_config
+from cms_data import (
+    array_stats,
+    load_and_split_cached,
+    load_config,
+    resolve_config,
+    save_resolved_config,
+)
 from cms_model import build_model, checkpoint_payload
 from cms_training import HistoryLogger, build_loaders, build_loss_factory, train_all_stages
 from device_utils import device_report, select_device
+from encoder_diagnostics import make_training_callback
 
 
 def parse_args() -> argparse.Namespace:
@@ -140,6 +148,9 @@ class ProgressReporter:
         self.latest_train_loss: float | None = None
         self.latest_eval_loss: float | None = None
         self.best_eval_loss: float | None = None
+        self.status_write_interval = 5.0
+        self._last_status_write = time.time()
+        self._latest_status: dict[str, Any] | None = None
         self._bar = None
         self._bar_step = 0
 
@@ -179,6 +190,8 @@ class ProgressReporter:
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self.close()
+        if self._latest_status is not None:
+            self.write_status(self._latest_status)
 
     def update(self, progress: dict[str, Any]) -> None:
         total_steps = int(progress["total_steps"])
@@ -211,7 +224,12 @@ class ProgressReporter:
             "progress_mode": self.mode,
             "evaluated_this_epoch": bool(progress["evaluated"]),
         }
-        self.write_status(status)
+        self._latest_status = status
+        now = time.time()
+        force_write = bool(progress.get("evaluated")) or progress["event"] == "epoch_end"
+        if force_write or (now - self._last_status_write) >= self.status_write_interval:
+            self.write_status(status)
+            self._last_status_write = now
         self.report(status)
 
     def write_status(self, status: dict[str, Any]) -> None:
@@ -290,7 +308,13 @@ def main() -> None:
     print("Output directory:", run_dir)
     print("PYTORCH_ENABLE_MPS_FALLBACK:", os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK"))
 
-    arrays = load_and_split(config, num_samples=args.num_samples)
+    arrays, cache_info = load_and_split_cached(
+        config,
+        num_samples=args.num_samples,
+        cache_dir=None,
+        use_cache=True,
+    )
+    print("Data cache:", json.dumps(cache_info, sort_keys=True))
     for key, value in arrays.items():
         print(f"{key}: shape={value.shape}, dtype={value.dtype}")
 
@@ -315,6 +339,19 @@ def main() -> None:
     config["loader_info"] = loader_info
     print("Loader info:", json.dumps(loader_info, sort_keys=True))
 
+    eval_batch_size = int(loader_info.get("eval_batch_size", 8192))
+    diag_x_eval = arrays["x_test"][: min(len(arrays["x_test"]), eval_batch_size)]
+    diag_z_eval = arrays["z_test"][: min(len(arrays["z_test"]), eval_batch_size)]
+    diagnostics_callback = make_training_callback(
+        run_dir,
+        diag_x_eval,
+        diag_z_eval,
+        device,
+        seed=int(config.get("seed", 0)),
+        batch_size=eval_batch_size,
+    )
+    diagnostic_freq = int(config.get("evaluation", {}).get("diagnostic_freq", 10))
+
     if args.dry_run:
         print("Dry run complete. No files written.")
         return
@@ -336,6 +373,22 @@ def main() -> None:
         if is_best:
             shutil.copy2(run_dir / "last_model.pt", run_dir / "best_model.pt")
 
+    def save_stage_checkpoint(stage_name: str, epoch: int, eval_loss: float | None) -> None:
+        """Keep a named checkpoint at every stage boundary (diagnostic support).
+
+        Training math/schedule are unchanged; this only preserves the model at
+        the end of each stage (e.g. epoch 100 after Stage 2) so later stages can
+        be compared against it (see scripts/stage_diagnostic.py).
+        """
+        checkpoint_path = run_dir / f"checkpoint_{stage_name}.pt"
+        payload = checkpoint_payload(model, config, stats, epoch, eval_loss, report)
+        torch.save(payload, checkpoint_path)
+        print(
+            f"Saved stage-boundary checkpoint: {checkpoint_path} "
+            f"(global epoch {epoch}, eval loss {eval_loss})",
+            flush=True,
+        )
+
     with progress_reporter:
         progress_reporter.start(
             sum(int(stage["epochs"]) for stage in config["stages"] if stage.get("enabled", True))
@@ -351,11 +404,53 @@ def main() -> None:
             logger,
             save_checkpoint,
             progress_reporter.update,
+            stage_checkpoint_callback=save_stage_checkpoint,
+            diagnostics_callback=diagnostics_callback,
+            diagnostic_every=diagnostic_freq,
         )
     if final_epoch == 0:
         save_checkpoint(0, None, is_best=True)
 
     (run_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
+    diag_dir = run_dir / "encoder_alignment_diagnostic"
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    loss_fields = [
+        "epoch",
+        "stage",
+        "train_loss",
+        "train_x_loss",
+        "train_z_loss",
+        "train_alt_x_loss",
+        "train_x_constraint_loss",
+    ]
+    for key in sorted(history.keys()):
+        if key.startswith("train_") and key not in loss_fields:
+            loss_fields.append(key)
+    n_history_rows = len(history.get("epoch", []))
+    with (diag_dir / "loss_trajectory.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=loss_fields)
+        writer.writeheader()
+        for idx in range(n_history_rows):
+            row = {key: history.get(key, [None] * n_history_rows)[idx] for key in loss_fields}
+            writer.writerow(row)
+    grad_fields = [
+        "epoch",
+        "stage",
+        "grad_norm_encoder_latent",
+        "grad_norm_encoder_reco",
+        "grad_norm_encoder_anchor",
+        "grad_norm_encoder_latent_weighted",
+        "grad_norm_encoder_reco_weighted",
+        "grad_norm_encoder_anchor_weighted",
+        "grad_norm_encoder_total",
+        "grad_cosine_latent_reco",
+    ]
+    with (diag_dir / "gradient_trajectory.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=grad_fields)
+        writer.writeheader()
+        for idx in range(n_history_rows):
+            row = {key: history.get(key, [None] * n_history_rows)[idx] for key in grad_fields}
+            writer.writerow(row)
     if not (run_dir / "best_model.pt").exists():
         shutil.copy2(run_dir / "last_model.pt", run_dir / "best_model.pt")
     print("Training complete.")

@@ -7,7 +7,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from cms_data import load_and_split, load_config, resolve_config, save_resolved_config
+from cms_data import (
+    load_and_split_cached,
+    load_config,
+    resolve_config,
+    save_resolved_config,
+)
 from cms_model import load_model_from_checkpoint
 from cms_training import first_tensor
 from device_utils import device_report, select_device
@@ -39,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         "--include-inverse-check",
         action="store_true",
         help="Also write the eval-only E(D(z_test)) vs z_test inverse check.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Torch/NumPy RNG seed for stochastic eval draws (default: config seed).",
     )
     return parser.parse_args()
 
@@ -122,6 +133,13 @@ def main() -> None:
     config = resolve_config(load_config(args.config))
     device = select_device(args.device)
     report = device_report(device)
+    seed = int(config.get("seed", 0) if args.seed is None else args.seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        torch.mps.manual_seed(seed)
 
     checkpoint_path = args.checkpoint.expanduser().resolve()
     model, model_config, _stats, checkpoint = load_model_from_checkpoint(
@@ -131,7 +149,13 @@ def main() -> None:
     )
     model.to(device)
 
-    arrays = load_and_split(model_config, num_samples=args.num_samples)
+    arrays, cache_info = load_and_split_cached(
+        model_config,
+        num_samples=args.num_samples,
+        cache_dir=None,
+        use_cache=True,
+    )
+    print("Data cache:", json.dumps(cache_info, sort_keys=True))
     batch_size = int(model_config.get("loaders", {}).get("eval_batch_size", 20000))
     z_decoded = decode_in_batches(model, arrays["z_test"], device, batch_size)
 

@@ -7,8 +7,6 @@ __pycache__/
 # Ignore all data folders anywhere
 data/
 
-outputs/cms_doubleelectron/v6_mps
-
 # Ignore data generation code
 dataGenerationCode/
 
@@ -20,21 +18,29 @@ saves/
 *.h5
 *.json
 
-# Ignore model checkpoints
+# Ignore model checkpoints (any size)
 *.pt
-*.npz
 *.pth
 *.ckpt
+*.safetensors
 
-# Specifically ignore data under zpeak
-cms_zpeak/data/
+# Ignore NPZ data; re-include only the small histogram artifacts (~KB each).
+# gitignore cannot filter by size, so this is the pattern-level approximation
+# of "no NPZ larger than ~10 MB": the large ones stay ignored.
+*.npz
+!**/mass_histograms.npz
 
-
-# Optional: logs / experiment outputs
+# Ignore archives and run logs
+*.zip
+*.log
 runs/
 wandb/
 logs/
-*.log
-outputs/
-outputs/cms_doubleelectron/v6_mps/best_model.pt
-outputs/cms_doubleelectron/v6_mps/last_model.pt
+
+# outputs: upload plots (PNG), keep models, NPZ, caches, metrics and reports out
+outputs/*
+!outputs/**/
+outputs/**/.plot_cache/
+outputs/**/*.csv
+outputs/**/*.txt
+outputs/**/*.md

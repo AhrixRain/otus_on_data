@@ -178,7 +178,9 @@ class SpaceFeatureOTLoss:
             "raw_swd": 0.5,
             "marginal_w1": 0.5,
             "mass_w1": 2.0,
+            "resonance_mass_w1": 0.0,
             "physics_swd": 1.0,
+            "mass_kin_swd": 0.0,
             "transverse_w1": 0.5,
             "longitudinal_w1": 0.4,
             "tail_w1": 0.15,
@@ -199,9 +201,39 @@ class SpaceFeatureOTLoss:
             }
         )
         self.tail_frac = float(loss_config.get("tail_frac", 0.20))
+        self.resonance_mass_center = float(
+            loss_config.get("resonance_mass_center", 3.0969)
+        )
+        self.resonance_mass_half_width = float(
+            loss_config.get("resonance_mass_half_width", 0.06)
+        )
+        # mass_kin_swd is a joint sliced-Wasserstein over the pair-level physics
+        # bundle [m_ll, pT_ll, y_ll, cos(dphi), sin(dphi)] (physics-feature
+        # columns 4..8). The invariant-mass column can be disabled independently
+        # via `mass_kin_swd_components: {mll: 0.0}` so a controlled ablation can
+        # keep the four non-mass pair-kinematics observables while removing
+        # explicit mass supervision. Defaults to all components active, which is
+        # byte-for-byte the pre-refactor behavior (SWD over columns 4:9).
+        self.mass_kin_swd_columns = {
+            "mll": 4,
+            "ptll": 5,
+            "yll": 6,
+            "cos_dphi": 7,
+            "sin_dphi": 8,
+        }
+        mass_kin_component_config = loss_config.get("mass_kin_swd_components", {})
+        self.mass_kin_swd_component_weights = {
+            name: float(mass_kin_component_config.get(name, 1.0))
+            for name in self.mass_kin_swd_columns
+        }
         self.mmd_scales = [
             float(value) for value in loss_config.get("mmd_scales", [0.5, 1.0, 2.0, 4.0])
         ]
+        # Raw 8-vector SWD/marginal/tail terms are computed in standardized units
+        # by default. Set `standardize_raw_matching: false` for a raw-GeV control.
+        self.standardize_raw_matching = bool(
+            loss_config.get("standardize_raw_matching", True)
+        )
 
         self.raw_mean = np.mean(train_samples, axis=0)
         self.raw_std = _safe_numpy_std(train_samples)
@@ -333,13 +365,30 @@ class SpaceFeatureOTLoss:
         n = min(a_sorted.numel(), b_sorted.numel())
         return torch.mean(torch.abs(a_sorted[:n] - b_sorted[:n]))
 
+    def _marginal_w1_std(
+        self,
+        truth_std: torch.Tensor,
+        pred_std: torch.Tensor,
+    ) -> torch.Tensor:
+        """Batched 1D Wasserstein-1 over all columns with one sort per array.
+
+        Sorting every column at once and averaging over all N x D entries is
+        mathematically identical to sorting each column and averaging per
+        column, but replaces D separate torch.sort calls with one.
+        """
+        truth_sorted = torch.sort(truth_std, dim=0)[0]
+        pred_sorted = torch.sort(pred_std, dim=0)[0]
+        n = min(truth_sorted.shape[0], pred_sorted.shape[0])
+        return torch.mean(torch.abs(truth_sorted[:n] - pred_sorted[:n]))
+
     def marginal_w1(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
-        truth_std = self.standardize_raw(truth)
-        pred_std = self.standardize_raw(pred)
-        loss = truth_std.new_tensor(0.0)
-        for dim in range(truth_std.shape[1]):
-            loss = loss + self.wasserstein_1d_sorted(truth_std[:, dim], pred_std[:, dim])
-        return loss / truth_std.shape[1]
+        if self.standardize_raw_matching:
+            truth_std = self.standardize_raw(truth)
+            pred_std = self.standardize_raw(pred)
+        else:
+            truth_std = truth
+            pred_std = pred
+        return self._marginal_w1_std(truth_std, pred_std)
 
     def feature_w1(
         self,
@@ -350,10 +399,7 @@ class SpaceFeatureOTLoss:
     ) -> torch.Tensor:
         truth_std = self.standardize_features(truth_features, mean, std)
         pred_std = self.standardize_features(pred_features, mean, std)
-        loss = truth_std.new_tensor(0.0)
-        for dim in range(truth_std.shape[1]):
-            loss = loss + self.wasserstein_1d_sorted(truth_std[:, dim], pred_std[:, dim])
-        return loss / truth_std.shape[1]
+        return self._marginal_w1_std(truth_std, pred_std)
 
     def standardized_physics_column(self, values: torch.Tensor, column: int) -> torch.Tensor:
         features = self.physics_features(values)
@@ -370,17 +416,82 @@ class SpaceFeatureOTLoss:
         start = max(0, min(int((1.0 - self.tail_frac) * n), n - 1))
         return torch.mean(torch.abs(truth_sorted[start:n] - pred_sorted[start:n]))
 
+    def _tail_w1_std(
+        self,
+        truth_std: torch.Tensor,
+        pred_std: torch.Tensor,
+        dims: tuple[int, ...] = (0, 1, 2, 4, 5, 6),
+    ) -> torch.Tensor:
+        """Batched tail Wasserstein-1 over the selected columns."""
+        truth_sorted = torch.sort(torch.abs(truth_std[:, dims]), dim=0)[0]
+        pred_sorted = torch.sort(torch.abs(pred_std[:, dims]), dim=0)[0]
+        n = min(truth_sorted.shape[0], pred_sorted.shape[0])
+        if n == 0:
+            return truth_std.new_tensor(0.0)
+        start = max(0, min(int((1.0 - self.tail_frac) * n), n - 1))
+        return torch.mean(torch.abs(truth_sorted[start:n] - pred_sorted[start:n]))
+
     def tail_w1(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
-        truth_std = self.standardize_raw(truth)
-        pred_std = self.standardize_raw(pred)
-        loss = truth_std.new_tensor(0.0)
-        for dim in (0, 1, 2, 4, 5, 6):
-            loss = loss + self.tail_wasserstein_abs(truth_std[:, dim], pred_std[:, dim])
-        return loss / 6.0
+        if self.standardize_raw_matching:
+            truth_std = self.standardize_raw(truth)
+            pred_std = self.standardize_raw(pred)
+        else:
+            truth_std = truth
+            pred_std = pred
+        return self._tail_w1_std(truth_std, pred_std)
+
+    def resonance_mass_w1(self, truth_mass: torch.Tensor, pred_mass: torch.Tensor) -> torch.Tensor:
+        """W1 on the physical invariant mass inside the resonance window.
+
+        The MG5 z-prior mass has sigma ~10 MeV, so a standardized global mass W1
+        carries a gradient scale ~100x larger than the other terms and can
+        dominate training. This windowed term operates in physical GeV so its
+        gradient scale is comparable to the kinematics terms, and it targets
+        only the resonance core: it fixes peak position/width without letting
+        the mass marginal dominate the full 8-vector joint.
+        """
+        center = self.to_like(self.resonance_mass_center, truth_mass)
+        half_width = self.to_like(self.resonance_mass_half_width, truth_mass)
+        truth_window = (truth_mass >= center - half_width) & (truth_mass <= center + half_width)
+        pred_window = (pred_mass >= center - half_width) & (pred_mass <= center + half_width)
+        truth_selected = truth_mass[truth_window]
+        pred_selected = pred_mass[pred_window]
+        if truth_selected.numel() == 0 or pred_selected.numel() == 0:
+            return truth_mass.new_tensor(0.0)
+        return self.wasserstein_1d_sorted(truth_selected, pred_selected)
+
+    def paired_physics_mse_standardized(
+        self,
+        truth: torch.Tensor,
+        pred: torch.Tensor,
+    ) -> torch.Tensor:
+        """Per-event MSE over standardized physics observables.
+
+        The 15-observable bundle includes invariant mass (column 4). This is a
+        paired per-event anchor used by `x_reco_loss` (x -> z -> x), not a
+        marginal/narrow-window mass constraint. It is intentionally retained by
+        the v3.6A ablation, which removes only explicit distribution-level mass
+        supervision (mass_w1, pair_mass_w1, resonance_mass_w1, mass_kin_swd.mll).
+        """
+        truth_std = self.standardize_features(
+            self.physics_features(truth),
+            self.feature_mean,
+            self.feature_std,
+        )
+        pred_std = self.standardize_features(
+            self.physics_features(pred),
+            self.feature_mean,
+            self.feature_std,
+        )
+        return torch.mean((truth_std - pred_std) ** 2)
 
     def multiscale_mmd(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
-        truth_std = self.standardize_raw(truth)
-        pred_std = self.standardize_raw(pred)
+        if self.standardize_raw_matching:
+            truth_std = self.standardize_raw(truth)
+            pred_std = self.standardize_raw(pred)
+        else:
+            truth_std = truth
+            pred_std = pred
         xx = torch.mm(truth_std, truth_std.t())
         yy = torch.mm(pred_std, pred_std.t())
         xy = torch.mm(truth_std, pred_std.t())
@@ -398,71 +509,135 @@ class SpaceFeatureOTLoss:
         return loss / max(1, len(self.mmd_scales))
 
     def distribution_components(self, truth: torch.Tensor, pred: torch.Tensor) -> dict[str, torch.Tensor]:
-        truth_std = self.standardize_raw(truth)
-        pred_std = self.standardize_raw(pred)
-        truth_features = self.physics_features(truth)
-        pred_features = self.physics_features(pred)
-        truth_transverse = self.transverse_features(truth)
-        pred_transverse = self.transverse_features(pred)
-        truth_longitudinal = self.longitudinal_features(truth)
-        pred_longitudinal = self.longitudinal_features(pred)
+        """Differentiable distribution-level OT components between two batches.
+
+        INVARIANT-MASS TRACE (J/psi v3.6A mass ablation reference):
+
+        Explicit distribution-level mass terms:
+          mass_w1 / pair_mass_w1  -> W1 on the standardized invariant mass
+                                     (identical value; two separate weight knobs).
+          resonance_mass_w1       -> W1 on physical mass inside the configured
+                                     narrow J/psi window [center +/- half_width].
+          mass_kin_swd            -> joint SWD over [m_ll, pT_ll, y_ll,
+                                     cos(dphi), sin(dphi)]; the m_ll column is
+                                     independently disableable through
+                                     `mass_kin_swd_components: {mll: 0.0}`.
+
+        Indirect mass-bearing terms (NOT removed by the v3.6A config):
+          physics_swd             -> joint SWD over the 15 physics features,
+                                     which include m_ll (column 4).
+          physics_coord_swd       -> SWD over per-lepton log(pT), eta, direction
+                                     and log(E); mass enters only through the
+                                     energy coordinates.
+          raw_swd / marginal_w1 /
+          mmd                      -> 8-vector distribution matching; mass is a
+                                     nonlinear function of the components, which
+                                     is the intended physics-learning channel.
+        """
+        # Build the differentiable physics bundle once per side and reuse it for
+        # every component instead of recomputing the feature stack repeatedly.
         truth_named = build_ee_physics_features(truth, self.eps)
         pred_named = build_ee_physics_features(pred, self.eps)
-        truth_coord = truth_named["physics_coord_features"]
-        pred_coord = pred_named["physics_coord_features"]
+        if self.standardize_raw_matching:
+            truth_std = self.standardize_raw(truth)
+            pred_std = self.standardize_raw(pred)
+        else:
+            truth_std = truth
+            pred_std = pred
+
+        truth_features_std = self.standardize_features(
+            truth_named["physics_features"],
+            self.feature_mean,
+            self.feature_std,
+        )
+        pred_features_std = self.standardize_features(
+            pred_named["physics_features"],
+            self.feature_mean,
+            self.feature_std,
+        )
+
+        truth_transverse_std = self.standardize_features(
+            self.transverse_features(truth),
+            self.transverse_mean,
+            self.transverse_std,
+        )
+        pred_transverse_std = self.standardize_features(
+            self.transverse_features(pred),
+            self.transverse_mean,
+            self.transverse_std,
+        )
+
+        truth_longitudinal_std = self.standardize_features(
+            self.longitudinal_features(truth),
+            self.longitudinal_mean,
+            self.longitudinal_std,
+        )
+        pred_longitudinal_std = self.standardize_features(
+            self.longitudinal_features(pred),
+            self.longitudinal_mean,
+            self.longitudinal_std,
+        )
+
+        truth_mass_std = self.standardize_mass(truth_named["m_ee"])
+        pred_mass_std = self.standardize_mass(pred_named["m_ee"])
+
         truth_coord_std = self.standardize_features(
-            truth_coord,
+            truth_named["physics_coord_features"],
             self.physics_coord_mean,
             self.physics_coord_std,
         )
         pred_coord_std = self.standardize_features(
-            pred_coord,
+            pred_named["physics_coord_features"],
             self.physics_coord_mean,
             self.physics_coord_std,
         )
+
+        eta_norm = (
+            self.to_like(self.feature_std[2], truth)
+            + self.to_like(self.feature_std[3], truth)
+            + self.eps
+        )
         components = {
             "raw_swd": sliced_wasserstein(truth_std, pred_std, self.num_slices, self.p),
-            "marginal_w1": self.marginal_w1(truth, pred),
-            "mass_w1": self.wasserstein_1d_sorted(
-                self.standardize_mass(self.invariant_mass(truth)),
-                self.standardize_mass(self.invariant_mass(pred)),
+            "marginal_w1": self._marginal_w1_std(truth_std, pred_std),
+            "mass_w1": self.wasserstein_1d_sorted(truth_mass_std, pred_mass_std),
+            "resonance_mass_w1": self.resonance_mass_w1(
+                truth_named["m_ee"],
+                pred_named["m_ee"],
             ),
             "physics_swd": sliced_wasserstein(
-                self.standardize_features(truth_features, self.feature_mean, self.feature_std),
-                self.standardize_features(pred_features, self.feature_mean, self.feature_std),
+                truth_features_std,
+                pred_features_std,
                 self.num_slices,
                 self.p,
             ),
-            "transverse_w1": self.feature_w1(
-                truth_transverse,
-                pred_transverse,
-                self.transverse_mean,
-                self.transverse_std,
+            "mass_kin_swd": self._mass_kin_swd(
+                truth_features_std,
+                pred_features_std,
             ),
-            "longitudinal_w1": self.feature_w1(
-                truth_longitudinal,
-                pred_longitudinal,
-                self.longitudinal_mean,
-                self.longitudinal_std,
+            "transverse_w1": self._marginal_w1_std(
+                truth_transverse_std,
+                pred_transverse_std,
             ),
-            "tail_w1": self.tail_w1(truth, pred),
-            "pair_mass_w1": self.wasserstein_1d_sorted(
-                self.standardize_mass(truth_named["m_ee"]),
-                self.standardize_mass(pred_named["m_ee"]),
+            "longitudinal_w1": self._marginal_w1_std(
+                truth_longitudinal_std,
+                pred_longitudinal_std,
             ),
+            "tail_w1": self._tail_w1_std(truth_std, pred_std),
+            "pair_mass_w1": self.wasserstein_1d_sorted(truth_mass_std, pred_mass_std),
             "pair_pt_w1": self.wasserstein_1d_sorted(
-                self.standardized_physics_column(truth, 5),
-                self.standardized_physics_column(pred, 5),
+                truth_features_std[:, 5],
+                pred_features_std[:, 5],
             ),
             "lepton_pt_w1": 0.5
             * (
                 self.wasserstein_1d_sorted(
-                    self.standardized_physics_column(truth, 0),
-                    self.standardized_physics_column(pred, 0),
+                    truth_features_std[:, 0],
+                    pred_features_std[:, 0],
                 )
                 + self.wasserstein_1d_sorted(
-                    self.standardized_physics_column(truth, 1),
-                    self.standardized_physics_column(pred, 1),
+                    truth_features_std[:, 1],
+                    pred_features_std[:, 1],
                 )
             ),
             "delta_phi_w1": self.wasserstein_1d_sorted(
@@ -470,14 +645,12 @@ class SpaceFeatureOTLoss:
                 pred_named["delta_phi"] / torch.pi,
             ),
             "delta_eta_w1": self.wasserstein_1d_sorted(
-                truth_named["delta_eta"]
-                / (self.to_like(self.feature_std[2], truth) + self.to_like(self.feature_std[3], truth) + self.eps),
-                pred_named["delta_eta"]
-                / (self.to_like(self.feature_std[2], pred) + self.to_like(self.feature_std[3], pred) + self.eps),
+                truth_named["delta_eta"] / eta_norm,
+                pred_named["delta_eta"] / eta_norm,
             ),
             "pair_rapidity_w1": self.wasserstein_1d_sorted(
-                self.standardized_physics_column(truth, 6),
-                self.standardized_physics_column(pred, 6),
+                truth_features_std[:, 6],
+                pred_features_std[:, 6],
             ),
             "physics_coord_swd": sliced_wasserstein(
                 truth_coord_std,
@@ -492,6 +665,31 @@ class SpaceFeatureOTLoss:
             components["mmd"] = truth.new_tensor(0.0)
         return components
 
+    def _mass_kin_swd(
+        self,
+        truth_features_std: torch.Tensor,
+        pred_features_std: torch.Tensor,
+    ) -> torch.Tensor:
+        """Joint sliced-Wasserstein over the mass-kinematics bundle.
+
+        Selected columns come from `mass_kin_swd_columns` filtered by
+        `mass_kin_swd_component_weights` (weights <= 0 drop the observable).
+        Dropping the invariant mass leaves [pT_ll, y_ll, cos(dphi), sin(dphi)].
+        """
+        columns = [
+            column
+            for name, column in self.mass_kin_swd_columns.items()
+            if self.mass_kin_swd_component_weights[name] > 0.0
+        ]
+        if not columns:
+            return truth_features_std.new_tensor(0.0)
+        return sliced_wasserstein(
+            truth_features_std[:, columns],
+            pred_features_std[:, columns],
+            self.num_slices,
+            self.p,
+        )
+
     def distribution_loss(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
         components = self.distribution_components(truth, pred)
         loss = truth.new_tensor(0.0)
@@ -505,16 +703,23 @@ class DualSpaceFeatureOTLoss:
 
     def __init__(self, x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
         self.kind = str(loss_config.get("kind", CANONICAL_LOSS_KIND))
-        self.x_space = SpaceFeatureOTLoss(x_train, loss_config, name="x")
-        self.z_space = SpaceFeatureOTLoss(z_train, loss_config, name="z")
+        space_weight_overrides = loss_config.get("space_weights", {})
+        x_loss_config = dict(loss_config)
+        x_loss_config.update(space_weight_overrides.get("x", {}))
+        z_loss_config = dict(loss_config)
+        z_loss_config.update(space_weight_overrides.get("z", {}))
+        self.x_space = SpaceFeatureOTLoss(x_train, x_loss_config, name="x")
+        self.z_space = SpaceFeatureOTLoss(z_train, z_loss_config, name="z")
         self.num_slices = int(loss_config.get("num_slices", 1000))
         self.decoder_num_noise_samples = max(1, int(loss_config.get("decoder_num_noise_samples", 1)))
+        self.x_reco_physics_w1 = float(loss_config.get("x_reco_physics_w1", 0.0))
         self.latest_components: dict[str, torch.Tensor] = {}
         score_weights = loss_config.get("selection_score", {})
         self.selection_weights = {
             "x_sim": float(score_weights.get("x_sim", 1.0)),
             "z_prior": float(score_weights.get("z_prior", 0.7)),
             "x_reco": float(score_weights.get("x_reco", 0.2)),
+            "cycle": float(score_weights.get("cycle", 0.0)),
         }
 
     def set_num_slices(self, num_slices: int) -> None:
@@ -545,17 +750,46 @@ class DualSpaceFeatureOTLoss:
         loss = truth.new_tensor(0.0)
         for key, value in components.items():
             self.latest_components[f"{prefix}_{key}"] = value
-            loss = loss + float(space.weights.get(key, 0.0)) * value
+            weight = float(space.weights.get(key, 0.0))
+            self.latest_components[f"{prefix}_{key}_raw"] = value
+            self.latest_components[f"{prefix}_{key}_weighted"] = weight * value
+            loss = loss + weight * value
         return loss
 
     def z_prior_loss(self, z_true: torch.Tensor, z_encoded: torch.Tensor) -> torch.Tensor:
-        return self._weighted_distribution_loss(self.z_space, z_true, z_encoded, "z")
+        loss = self._weighted_distribution_loss(self.z_space, z_true, z_encoded, "z")
+        # Per-component marginal W1 (standardized), the channel-independent
+        # marginal term discussed in the encoder-alignment diagnostic.
+        if self.z_space.standardize_raw_matching:
+            truth_std = self.z_space.standardize_raw(z_true)
+            pred_std = self.z_space.standardize_raw(z_encoded)
+        else:
+            truth_std = z_true
+            pred_std = z_encoded
+        marginal_weight = float(self.z_space.weights.get("marginal_w1", 1.0))
+        n_components = min(truth_std.shape[1], pred_std.shape[1])
+        for j in range(n_components):
+            value = self.z_space.wasserstein_1d_sorted(
+                truth_std[:, j],
+                pred_std[:, j],
+            )
+            self.latest_components[f"z_component_w1_{j:02d}"] = value
+            self.latest_components[f"z_component_w1_{j:02d}_weighted"] = (
+                marginal_weight * value / max(1, n_components)
+            )
+        return loss
 
     def x_sim_loss(self, x_true: torch.Tensor, x_from_z: torch.Tensor) -> torch.Tensor:
         return self._weighted_distribution_loss(self.x_space, x_true, x_from_z, "x")
 
     def x_reco_loss(self, x_true: torch.Tensor, x_reco: torch.Tensor) -> torch.Tensor:
-        return self.x_space.paired_mse_standardized(x_true, x_reco)
+        loss = self.paired_mse_standardized(x_true, x_reco, self.standardize_x_raw)
+        if self.x_reco_physics_w1 > 0.0:
+            loss = loss + self.x_reco_physics_w1 * self.x_space.paired_physics_mse_standardized(
+                x_true,
+                x_reco,
+            )
+        return loss
 
     def encoder_anchor_loss(self, z_encoded: torch.Tensor, x_true: torch.Tensor) -> torch.Tensor:
         return anchor_loss(z_encoded, x_true)
@@ -576,6 +810,7 @@ class DualSpaceFeatureOTLoss:
             self.selection_weights["x_sim"] * losses["alt_x_loss"]
             + self.selection_weights["z_prior"] * losses["z_loss"]
             + self.selection_weights["x_reco"] * losses["x_loss"]
+            + self.selection_weights["cycle"] * losses.get("cycle_loss", losses["x_loss"])
         )
 
     def __call__(self, z_true: torch.Tensor, z_encoded: torch.Tensor) -> torch.Tensor:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -61,7 +60,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from cms_data import load_and_split, load_config, resolve_config, save_resolved_config
+from cms_data import (
+    data_cache_key,
+    data_cache_metadata,
+    file_fingerprint,
+    load_and_split_cached,
+    load_config,
+    resolve_config,
+    save_resolved_config,
+)
 from cms_model import load_model_from_checkpoint
 from cms_training import first_tensor
 from device_utils import device_report, select_device
@@ -223,92 +230,6 @@ def select_split(arrays: dict[str, np.ndarray], prefix: str, split: str) -> np.n
         )
     return arrays[f"{prefix}_{split}"]
 
-
-def file_fingerprint(path: str | Path) -> dict[str, Any]:
-    resolved = Path(path).expanduser().resolve()
-    stat = resolved.stat()
-    return {
-        "path": str(resolved),
-        "size": int(stat.st_size),
-        "mtime_ns": int(stat.st_mtime_ns),
-    }
-
-
-def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict[str, Any]:
-    paths = config["paths"]
-    channel = str(config.get("data", {}).get("channel", "electron"))
-    selection_key = "muon_selection" if channel.lower() in {
-        "muon",
-        "doublemuon",
-        "doublemuons",
-        "mumu",
-        "jpsi_mumu",
-    } else "electron_selection"
-    metadata: dict[str, Any] = {
-        "version": 2,
-        "num_samples": None if num_samples is None else int(num_samples),
-        "float_type": config.get("float_type", "float32"),
-        "seed": int(config.get("seed", 0)),
-        "data_split": config["data_split"],
-        "data": config.get("data", {"channel": "electron"}),
-        selection_key: config[selection_key],
-        "cms_root_file": file_fingerprint(paths["cms_root_file"]),
-    }
-    if paths.get("theory_prior_files"):
-        metadata["theory_prior_files"] = [
-            file_fingerprint(item) for item in paths["theory_prior_files"]
-        ]
-        metadata["theory_prior_weights"] = paths.get("theory_prior_weights")
-        metadata["theory_prior_mixture_seed"] = int(config.get("seed", 0)) + 17
-    else:
-        metadata["theory_prior_file"] = file_fingerprint(paths["theory_prior_file"])
-    return metadata
-
-
-def data_cache_key(metadata: dict[str, Any]) -> str:
-    payload = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()[:20]
-
-
-def load_and_split_cached(
-    config: dict[str, Any],
-    num_samples: int | None,
-    cache_dir: Path | None,
-    use_cache: bool,
-) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
-    if not use_cache:
-        log_progress("Data cache disabled; loading selected CMS and MG5 rows from source files.")
-        return load_and_split(config, num_samples=num_samples), {"enabled": False, "hit": False}
-
-    if cache_dir is None:
-        cache_dir = Path(config["paths"]["output_root"]) / ".plot_cache"
-    cache_dir = cache_dir.expanduser().resolve()
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    metadata = data_cache_metadata(config, num_samples)
-    key = data_cache_key(metadata)
-    cache_path = cache_dir / f"selected_split_{key}.npz"
-    metadata_path = cache_dir / f"selected_split_{key}.json"
-    expected_keys = ("x_train", "x_val", "x_test", "z_train", "z_val", "z_test")
-
-    if cache_path.exists():
-        log_progress(f"Loading selected/split data cache: {cache_path}")
-        with np.load(cache_path, allow_pickle=False) as cached:
-            arrays = {key: cached[key] for key in expected_keys}
-        log_progress(
-            "Loaded cache shapes: "
-            + ", ".join(f"{key}={value.shape}" for key, value in arrays.items())
-        )
-        return arrays, {"enabled": True, "hit": True, "path": str(cache_path), "key": key}
-
-    log_progress("Data cache miss; reading ROOT/HDF5 inputs and applying selection.")
-    arrays = load_and_split(config, num_samples=num_samples)
-    tmp_path = cache_dir / f".selected_split_{key}.tmp.npz"
-    log_progress(f"Writing selected/split data cache: {cache_path}")
-    np.savez(tmp_path, **{key: arrays[key] for key in expected_keys})
-    tmp_path.replace(cache_path)
-    metadata_path.write_text(json.dumps(json_safe(metadata), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return arrays, {"enabled": True, "hit": False, "path": str(cache_path), "key": key}
 
 
 def inv_mass_ee(a: np.ndarray, eps: float = 0.0) -> np.ndarray:
@@ -913,6 +834,12 @@ def main() -> None:
     )
     config = resolve_config(load_config(args.config))
     seed = int(config.get("seed", 0) if args.seed is None else args.seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        torch.mps.manual_seed(seed)
     density = not args.counts
     device = select_device(args.device)
     report = device_report(device)
@@ -966,6 +893,7 @@ def main() -> None:
         num_samples=args.num_samples,
         cache_dir=args.cache_dir,
         use_cache=not args.no_data_cache,
+        log=log_progress,
     )
     split = args.split
     log_progress(f"Selecting split={split}.")

@@ -116,6 +116,22 @@ class CondNoiseMLP(nn.Module):
                     final_bias = layer.bias
             final_bias.data.fill_(1.0)
 
+        self._stats_device = None
+        self._input_stats_cached = None
+        self._output_stats_cached = None
+
+    def _stats_for(self, device):
+        """Return (input_stats, output_stats) moved once per device."""
+        if self._stats_device != device:
+            self._input_stats_cached = (
+                None if self.input_stats is None else self.input_stats.to(device)
+            )
+            self._output_stats_cached = (
+                None if self.output_stats is None else self.output_stats.to(device)
+            )
+            self._stats_device = device
+        return self._input_stats_cached, self._output_stats_cached
+
     def forward(self, input):
         """
         Given input batch vector, produce samples from the conditional distribution p(output|input).
@@ -123,7 +139,7 @@ class CondNoiseMLP(nn.Module):
         :return:
         """
         if self.input_stats is not None:
-            input_mean, input_std = self.input_stats.to(input.device)
+            input_mean, input_std = self._stats_for(input.device)[0]
             input = (input - input_mean) / input_std
         if self.stoch:
             noise_dim = self.noise_dim
@@ -140,7 +156,7 @@ class CondNoiseMLP(nn.Module):
             num_particles = self.num_particles
             batch = len(X)
             output = torch.zeros([batch, self.output_dim], dtype=X.dtype, device=X.device)
-            output_mean, output_std = self.output_stats.to(X.device)
+            output_mean, output_std = self._stats_for(X.device)[1]
             idx_noE = np.hstack([np.arange(4 * i, 4 * i + 3) for i in range(num_particles)])  # NN output doesn't have E
             X = (X * output_std[idx_noE]) + output_mean[idx_noE]  # unstandardize
             for i in range(num_particles):
@@ -158,7 +174,7 @@ class CondNoiseMLP(nn.Module):
         else:
             output = X
             if self.output_raw:
-                output_mean, output_std = self.output_stats.to(X.device)
+                output_mean, output_std = self._stats_for(X.device)[1]
                 output = (output * output_std) + output_mean
 
         return output
@@ -394,6 +410,22 @@ class StochasticResNet(nn.Module):
             nn_layers.append(layer)
         self.nn = nn.Sequential(*nn_layers)
 
+        self._stats_device = None
+        self._input_stats_cached = None
+        self._output_stats_cached = None
+
+    def _stats_for(self, device):
+        """Return (input_stats, output_stats) moved once per device."""
+        if self._stats_device != device:
+            self._input_stats_cached = (
+                None if self.input_stats is None else self.input_stats.to(device)
+            )
+            self._output_stats_cached = (
+                None if self.output_stats is None else self.output_stats.to(device)
+            )
+            self._stats_device = device
+        return self._input_stats_cached, self._output_stats_cached
+
     def forward(self, input):
         """
         Given input batch vector, produce samples from the conditional distribution p(output|input).
@@ -402,7 +434,7 @@ class StochasticResNet(nn.Module):
         """
         if self.input_stats is not None:
             raw_input = input.clone()
-            input_mean, input_std = self.input_stats.to(input.device)
+            input_mean, input_std = self._stats_for(input.device)[0]
             input = (input - input_mean) / input_std
         if self.stoch:
             noise_dim = self.noise_dim
@@ -414,7 +446,7 @@ class StochasticResNet(nn.Module):
             num_particles = self.num_particles
             batch = len(X)
             output = torch.zeros([batch, self.output_dim], dtype=X.dtype, device=X.device)
-            output_mean, output_std = self.output_stats.to(X.device)
+            output_mean, output_std = self._stats_for(X.device)[1]
             idx_noE = np.hstack([np.arange(4 * i, 4 * i + 3) for i in range(num_particles)])  # NN output doesn't have E
             X = (X * output_std[idx_noE]) + output_mean[idx_noE]  # unstandardize
             if self.io_residual:  # residual connection from the corresponding elements of the raw input
@@ -434,7 +466,7 @@ class StochasticResNet(nn.Module):
         else:
             output = X
             if self.output_raw:
-                output_mean, output_std = self.output_stats.to(X.device)
+                output_mean, output_std = self._stats_for(X.device)[1]
                 output = (output * output_std) + output_mean
                 if self.io_residual:  # residual connection from the corresponding elements of the input
                     output = output + raw_input
@@ -472,7 +504,7 @@ class MaskedStochasticResNet(StochasticResNet):
         if self.output_raw:  # output is in raw space already
             raw_output = output
         else:
-            output_mean, output_std = self.output_stats.to(input.device)
+            output_mean, output_std = self._stats_for(input.device)[1]
             raw_output = (output * output_std) + output_mean
 
         mask = self.mask_fun(raw_output)
