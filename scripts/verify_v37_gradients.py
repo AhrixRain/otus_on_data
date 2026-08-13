@@ -117,6 +117,7 @@ def main() -> int:
         arrays["x_train"],
         arrays["z_train"],
         loss_config,
+        daughter_masses=(config.get("model") or {}).get("daughter_masses"),
     )
     stage = next(
         (stage for stage in config["stages"] if stage.get("enabled", True)),

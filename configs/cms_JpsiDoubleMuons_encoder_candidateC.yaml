@@ -37,6 +37,9 @@ model:
   stoch_enc: true
   stoch_dec: true
   raw_io: true
+  # Physical muon masses for the generated daughters. Omitted in legacy
+  # configs/checkpoints, which keep the original massless behavior.
+  daughter_masses: [0.105658, 0.105658]
 
 loss:
   kind: cms_jpsi_doublemuon_loss

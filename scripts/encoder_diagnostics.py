@@ -173,7 +173,10 @@ def evaluate_encoder(
         "z_ks": {},
         "mean_z_ks": None,
         "max_z_ks": None,
-        "z_mass_ks": maybe_ks(invariant_mass(z_eval), invariant_mass(z_encoded)),
+        "z_mass_ks": maybe_ks(
+            invariant_mass(z_eval, stable=False),
+            invariant_mass(z_encoded, stable=False),
+        ),
         "z_pt_ks": maybe_ks(pair_pt(z_eval), pair_pt(z_encoded)),
         "cycle_mass_ks": maybe_ks(invariant_mass(x_eval), invariant_mass(x_reco)),
         "cycle_pt_ks": maybe_ks(pair_pt(x_eval), pair_pt(x_reco)),
@@ -279,7 +282,12 @@ def final_metric_row(
         from cms_training import build_loss_factory
 
         loss_config = config.get("loss", {})
-        loss_factory = build_loss_factory(x_test, z_test, loss_config)
+        loss_factory = build_loss_factory(
+            x_test,
+            z_test,
+            loss_config,
+            daughter_masses=(config.get("model") or {}).get("daughter_masses"),
+        )
     except Exception:
         loss_factory = None
     batch_size = int(config.get("loaders", {}).get("eval_batch_size", 8192))

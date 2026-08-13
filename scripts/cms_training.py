@@ -255,7 +255,7 @@ class ZLossFactory:
         py = py1 + py2
         pz = pz1 + pz2
         energy = energy1 + energy2
-        mll = torch.sqrt(torch.clamp(energy**2 - px**2 - py**2 - pz**2, min=self.eps))
+        mll = self.dilepton_mass_torch(z)
         ptll = torch.sqrt(px**2 + py**2 + self.eps)
         yll = 0.5 * torch.log(
             torch.clamp(energy + pz, min=self.eps) / torch.clamp(energy - pz, min=self.eps)
@@ -400,12 +400,17 @@ class ZLossFactory:
         return losses["z_loss"] + losses["alt_x_loss"]
 
 
-def build_loss_factory(x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
+def build_loss_factory(
+    x_train: np.ndarray,
+    z_train: np.ndarray,
+    loss_config: dict[str, Any],
+    daughter_masses=None,
+):
     kind = loss_config.get("kind", CANONICAL_LOSS_KIND)
     if kind == JPSI_DIMUON_LOSS_KIND:
-        return CmsJpsiDoubleMuonLossFactory(x_train, z_train, loss_config)
+        return CmsJpsiDoubleMuonLossFactory(x_train, z_train, loss_config, daughter_masses)
     if kind in {None, CANONICAL_LOSS_KIND, "original_feature_ot_v1"}:
-        return CmsDoubleElectronLossFactory(x_train, z_train, loss_config)
+        return CmsDoubleElectronLossFactory(x_train, z_train, loss_config, daughter_masses)
     return ZLossFactory(x_train, z_train, loss_config)
 
 

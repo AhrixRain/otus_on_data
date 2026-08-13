@@ -17,6 +17,7 @@ from cms_model import load_model_from_checkpoint
 from cms_training import first_tensor
 from device_utils import device_report, select_device
 from metrics import invariant_mass, plot_mass_ratio, plot_residual, residual_metrics, write_metrics
+from physics import daughter_masses_from_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,10 +95,20 @@ def write_mass_comparison(
     labels: tuple[str, str],
     x_label: str = "m(ll) [GeV]",
     write_outputs: bool = True,
+    daughter_masses=None,
+    stable: bool = True,
 ) -> tuple[dict, dict[str, np.ndarray], np.ndarray, np.ndarray]:
     comparison_dir = output_dir / "comparisons" / name
-    truth_mass = invariant_mass(truth)
-    pred_mass = invariant_mass(pred)
+    truth_mass = invariant_mass(
+        truth,
+        daughter_masses=daughter_masses,
+        stable=stable,
+    )
+    pred_mass = invariant_mass(
+        pred,
+        daughter_masses=daughter_masses,
+        stable=stable,
+    )
     metrics, metric_arrays = residual_metrics(
         truth_mass,
         pred_mass,
@@ -148,6 +159,7 @@ def main() -> None:
         map_location=torch.device("cpu"),
     )
     model.to(device)
+    daughter_masses = daughter_masses_from_config(model_config)
 
     arrays, cache_info = load_and_split_cached(
         model_config,
@@ -204,6 +216,8 @@ def main() -> None:
         labels=("x_test CMS", "D(z_test MG5)"),
         x_label=mass_label,
         write_outputs=write_comparisons,
+        daughter_masses=daughter_masses,
+        stable=True,
     )
     metrics.update(
         {
@@ -241,6 +255,8 @@ def main() -> None:
             min_truth_count=min_truth_count,
             labels=("x_test CMS", "D(E(x_test CMS))"),
             x_label=mass_label,
+            daughter_masses=daughter_masses,
+            stable=True,
         )
         comparison_metrics["reconstruction"] = reco_metrics
         unfold_metrics, _, _, _ = write_mass_comparison(
@@ -253,6 +269,8 @@ def main() -> None:
             min_truth_count=min_truth_count,
             labels=("z_test MG5", "E(x_test CMS)"),
             x_label=mass_label,
+            daughter_masses=daughter_masses,
+            stable=False,
         )
         comparison_metrics["unfolding"] = unfold_metrics
         if include_inverse_check:
@@ -267,6 +285,8 @@ def main() -> None:
                 min_truth_count=min_truth_count,
                 labels=("z_test MG5", "E(D(z_test MG5))"),
                 x_label=mass_label,
+                daughter_masses=daughter_masses,
+                stable=False,
             )
             comparison_metrics["inverse_check"] = inverse_metrics
         write_metrics(comparison_metrics, output_dir / "comparisons" / "metrics.json")

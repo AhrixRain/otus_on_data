@@ -9,6 +9,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from physics import invariant_mass_np
+
 try:
     from scipy.stats import ks_2samp, wasserstein_distance
 
@@ -17,10 +19,20 @@ except Exception:
     HAS_SCIPY = False
 
 
-def invariant_mass(pairs: np.ndarray) -> np.ndarray:
-    p4 = pairs[:, 0:4] + pairs[:, 4:8]
-    mass2 = p4[:, 3] ** 2 - p4[:, 2] ** 2 - p4[:, 1] ** 2 - p4[:, 0] ** 2
-    return np.sqrt(np.where(mass2 > 0.0, mass2, 0.0))
+def invariant_mass(
+    pairs: np.ndarray,
+    daughter_masses=None,
+    stable: bool = True,
+) -> np.ndarray:
+    """Cancellation-free pair invariant mass, computed in float64.
+
+    Wraps ``physics.invariant_mass_np`` so boosted float32 four-vectors do not
+    lose the J/psi-scale mass to ``E^2 - p^2`` cancellation. ``None`` selects
+    the massless formula; pass ``(m1, m2)`` for physical daughter masses.
+    With ``stable=False`` the stored energy columns are authoritative (used for
+    the theory z-prior, whose energies carry truth-level information).
+    """
+    return invariant_mass_np(pairs, daughter_masses=daughter_masses, stable=stable)
 
 
 def residual_metrics(

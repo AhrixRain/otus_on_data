@@ -35,6 +35,8 @@ model:
   stoch_enc: true
   stoch_dec: true
   raw_io: true
+  # daughter_masses intentionally omitted: legacy massless-electron
+  # approximation, preserved for v5-compatible checkpoints.
 
 loss:
   kind: cms_doubleelectron_loss

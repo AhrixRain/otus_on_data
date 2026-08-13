@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
+
+from physics import validate_daughter_masses
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +33,15 @@ def build_model(
         int(model_config["dim_per_hidden_layer"])
     ]
     activation = getattr(torch.nn, model_config.get("activation", "ReLU"))
+    daughter_masses = validate_daughter_masses(model_config.get("daughter_masses"))
+    if daughter_masses is None:
+        # Legacy zero-mass behavior: old configs/checkpoints without the
+        # daughter_masses field keep generating massless daughters.
+        x_inv_masses = np.zeros(2, dtype=np.float32)
+        z_inv_masses = np.zeros(2, dtype=np.float32)
+    else:
+        x_inv_masses = np.asarray(daughter_masses, dtype=np.float32)
+        z_inv_masses = np.asarray(daughter_masses, dtype=np.float32)
 
     common_kwargs: dict[str, Any] = {
         "x_dim": x_dim,
@@ -37,8 +49,8 @@ def build_model(
         "raw_io": bool(model_config.get("raw_io", True)),
         "x_stats": np.stack([x_train_mean, x_train_std]),
         "z_stats": np.stack([z_train_mean, z_train_std]),
-        "x_inv_masses": np.zeros(2),
-        "z_inv_masses": np.zeros(2),
+        "x_inv_masses": x_inv_masses,
+        "z_inv_masses": z_inv_masses,
         "stoch_enc": bool(model_config.get("stoch_enc", True)),
         "stoch_dec": bool(model_config.get("stoch_dec", True)),
         "activation": activation,
@@ -99,7 +111,30 @@ def load_model_from_checkpoint(
     map_location: torch.device,
 ) -> tuple[torch.nn.Module, dict[str, Any], dict[str, np.ndarray], dict[str, Any]]:
     checkpoint = torch.load(checkpoint_path, map_location=map_location)
-    model_config = checkpoint.get("config") if config is None else config
+    checkpoint_config = checkpoint.get("config")
+    if config is None:
+        model_config = checkpoint_config
+    elif checkpoint_config is None:
+        model_config = config
+    else:
+        # Prefer the checkpoint's daughter-mass semantics so that old
+        # massless checkpoints are not silently reinterpreted with a newer
+        # config that enables physical muon masses (or vice versa).
+        model_config = dict(config)
+        model_config["model"] = dict(config.get("model") or {})
+        checkpoint_masses = (checkpoint_config.get("model") or {}).get("daughter_masses")
+        config_masses = (config.get("model") or {}).get("daughter_masses")
+        if checkpoint_masses != config_masses:
+            if checkpoint_masses is None:
+                model_config["model"].pop("daughter_masses", None)
+            else:
+                model_config["model"]["daughter_masses"] = checkpoint_masses
+            warnings.warn(
+                "Checkpoint daughter_masses differ from the provided config; "
+                "using the checkpoint's semantics to preserve its physics. "
+                f"checkpoint={checkpoint_masses!r}, config={config_masses!r}",
+                stacklevel=2,
+            )
     if model_config is None:
         raise ValueError("Checkpoint does not contain config; pass --config.")
 

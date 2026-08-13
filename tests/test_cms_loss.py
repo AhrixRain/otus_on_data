@@ -82,8 +82,18 @@ def reference_distribution_components(factory, truth: torch.Tensor, pred: torch.
     """Pre-refactor algorithm: per-column sorts and repeated feature builds."""
     truth_std = factory.standardize_raw(truth)
     pred_std = factory.standardize_raw(pred)
-    truth_named = build_ee_physics_features(truth, factory.eps)
-    pred_named = build_ee_physics_features(pred, factory.eps)
+    truth_named = build_ee_physics_features(
+        truth,
+        factory.eps,
+        factory.daughter_masses,
+        mass_from_energy=factory.mass_from_energy,
+    )
+    pred_named = build_ee_physics_features(
+        pred,
+        factory.eps,
+        factory.daughter_masses,
+        mass_from_energy=factory.mass_from_energy,
+    )
     truth_features_std = factory.standardize_features(
         truth_named["physics_features"], factory.feature_mean, factory.feature_std
     )
@@ -153,9 +163,9 @@ def reference_distribution_components(factory, truth: torch.Tensor, pred: torch.
         ),
         "delta_eta_w1": reference_w1_sorted(
             truth_named["delta_eta"]
-            / (factory.to_like(factory.feature_std[2], truth) + factory.to_like(factory.feature_std[3], truth) + factory.eps),
+            / (factory.to_like(factory.delta_eta_std, truth) + factory.eps),
             pred_named["delta_eta"]
-            / (factory.to_like(factory.feature_std[2], pred) + factory.to_like(factory.feature_std[3], pred) + factory.eps),
+            / (factory.to_like(factory.delta_eta_std, pred) + factory.eps),
         ),
         "pair_rapidity_w1": reference_w1_sorted(
             factory.standardized_physics_column(truth, 6),

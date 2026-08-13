@@ -37,6 +37,8 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 
+from physics import invariant_mass_np
+
 try:
     from scipy.stats import ks_2samp, wasserstein_distance
 
@@ -93,9 +95,8 @@ def maybe_w1(a: np.ndarray, b: np.ndarray) -> float | None:
 
 
 def invariant_mass(pairs: np.ndarray) -> np.ndarray:
-    p4 = pairs[:, 0:4] + pairs[:, 4:8]
-    m2 = p4[:, 3] ** 2 - p4[:, 2] ** 2 - p4[:, 1] ** 2 - p4[:, 0] ** 2
-    return np.sqrt(np.where(m2 > 0.0, m2, 0.0))
+    """Cancellation-free pair invariant mass (float64, massless convention)."""
+    return invariant_mass_np(pairs, daughter_masses=None, stable=True)
 
 
 def pair_pt(pairs: np.ndarray) -> np.ndarray:

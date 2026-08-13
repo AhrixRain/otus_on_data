@@ -324,7 +324,12 @@ def main() -> None:
         "z_train_mean": z_train_mean,
         "z_train_std": z_train_std,
     }
-    loss_factory = build_loss_factory(arrays["x_train"], arrays["z_train"], config.get("loss", {}))
+    loss_factory = build_loss_factory(
+        arrays["x_train"],
+        arrays["z_train"],
+        config.get("loss", {}),
+        daughter_masses=(config.get("model") or {}).get("daughter_masses"),
+    )
     train_loaders, eval_loaders, loader_info = build_loaders(
         config,
         arrays,

@@ -258,6 +258,7 @@ def evaluate_checkpoint(
         arrays["x_train"],
         arrays["z_train"],
         model_config.get("loss", {}),
+        daughter_masses=(model_config.get("model") or {}).get("daughter_masses"),
     )
     sw_n = min(sw_batch_size, len(x_eval), len(z_eval))
     z_sw = latent_sw(
@@ -306,7 +307,10 @@ def evaluate_checkpoint(
             "z_mean_ks": z_mean_ks,
             "z_max_ks": z_max_ks,
             "z_component_ks": z_component_ks,
-            "z_mass_ks": maybe_ks(invariant_mass(z_eval), invariant_mass(z_hat)),
+            "z_mass_ks": maybe_ks(
+                invariant_mass(z_eval, stable=False),
+                invariant_mass(z_hat, stable=False),
+            ),
             "z_pt_ks": maybe_ks(pair_pt(z_eval), pair_pt(z_hat)),
             "z_physics_mean_ks": z_phys_mean_ks,
             "z_physics_max_ks": z_phys_max_ks,

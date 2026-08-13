@@ -24,6 +24,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from physics import invariant_mass_np
+
 
 def read_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
@@ -184,9 +186,8 @@ def plot_loss_trajectory(runs: list[tuple[str, Path]], out_dir: Path) -> None:
 
 
 def invariant_mass(pairs: np.ndarray) -> np.ndarray:
-    p4 = pairs[:, 0:4] + pairs[:, 4:8]
-    m2 = p4[:, 3] ** 2 - p4[:, 2] ** 2 - p4[:, 1] ** 2 - p4[:, 0] ** 2
-    return np.sqrt(np.where(m2 > 0.0, m2, 0.0))
+    """Cancellation-free pair invariant mass (float64, massless convention)."""
+    return invariant_mass_np(pairs, daughter_masses=None, stable=True)
 
 
 def pair_pt(pairs: np.ndarray) -> np.ndarray:

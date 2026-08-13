@@ -60,6 +60,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from physics import daughter_masses_from_config, invariant_mass_np
+
 from cms_data import (
     data_cache_key,
     data_cache_metadata,
@@ -232,14 +234,22 @@ def select_split(arrays: dict[str, np.ndarray], prefix: str, split: str) -> np.n
 
 
 
-def inv_mass_ee(a: np.ndarray, eps: float = 0.0) -> np.ndarray:
-    values = np.asarray(a)
-    px = values[:, 0] + values[:, 4]
-    py = values[:, 1] + values[:, 5]
-    pz = values[:, 2] + values[:, 6]
-    energy = values[:, 3] + values[:, 7]
-    mass2 = energy**2 - px**2 - py**2 - pz**2
-    return np.sqrt(np.maximum(mass2, eps))
+def inv_mass_ee(
+    a: np.ndarray,
+    eps: float = 0.0,
+    daughter_masses=None,
+    stable: bool = True,
+) -> np.ndarray:
+    """Cancellation-free pair invariant mass in float64.
+
+    ``eps`` floors the squared mass as in the legacy implementation; the
+    default ``0.0`` returns the stable mass directly. ``daughter_masses=None``
+    selects the massless formula (callers with channel information pass the
+    resolved physical masses instead). ``stable=False`` uses the stored energy
+    columns, which is authoritative for the theory z-prior.
+    """
+    mass = invariant_mass_np(a, daughter_masses=daughter_masses, stable=stable)
+    return np.sqrt(np.maximum(mass**2, eps))
 
 
 def pt_ee(a: np.ndarray) -> np.ndarray:
@@ -854,6 +864,7 @@ def main() -> None:
     )
     model.to(device)
     save_resolved_config(model_config, output_dir / "config.resolved.json")
+    plot_daughter_masses = daughter_masses_from_config(model_config)
 
     evaluation_config = model_config.get("evaluation", {})
     configured_mass_range = evaluation_config.get("mass_range", [70.0, 110.0])
@@ -919,9 +930,9 @@ def main() -> None:
     bins_z = np.array([-400] + [-250 + 20 * i for i in range(26)] + [400], dtype=float)
     bins_e = np.array([0] + [20 + 10 * i for i in range(26)] + [400], dtype=float)
 
-    m_x = inv_mass_ee(x_plot)
-    m_x_reco = inv_mass_ee(x_reco)
-    m_x_from_z = inv_mass_ee(x_from_z)
+    m_x = inv_mass_ee(x_plot, daughter_masses=plot_daughter_masses)
+    m_x_reco = inv_mass_ee(x_reco, daughter_masses=plot_daughter_masses)
+    m_x_from_z = inv_mass_ee(x_from_z, daughter_masses=plot_daughter_masses)
     log_progress("Writing x-space mass plot.")
     xmass_info = paper_ratio_plot_double(
         truth=m_x,
@@ -996,8 +1007,8 @@ def main() -> None:
             ratio_ylim=ratio_ylim,
         )
 
-    m_z_prior = inv_mass_ee(z_plot)
-    m_x_to_z = inv_mass_ee(z_encoded)
+    m_z_prior = inv_mass_ee(z_plot, daughter_masses=plot_daughter_masses, stable=False)
+    m_x_to_z = inv_mass_ee(z_encoded, daughter_masses=plot_daughter_masses, stable=False)
     log_progress("Writing z-space mass plot.")
     paper_ratio_plot_single(
         truth=m_z_prior,

@@ -11,6 +11,20 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Explicit cache/data-pipeline schema version. Bump whenever the selection,
+# pairing, splitting, or caching semantics change in this module, so that
+# on-disk caches written by older code can never be reused silently. The
+# semantic fingerprint below hashes this module's source together with this
+# version, so the constant is primarily a human-readable statement of intent.
+DATA_PIPELINE_CACHE_VERSION = 3
+
+# Mass-window tolerance (GeV) used when validating cached x arrays. The stable
+# invariant-mass formula is accurate to well below 1 MeV for float32 inputs,
+# so one 10 MeV bin is a generous but still meaningful guard.
+MASS_WINDOW_VALIDATION_TOL_GEV = 0.01
+
+_EXPECTED_CACHE_KEYS = ("x_train", "x_val", "x_test", "z_train", "z_val", "z_test")
+
 
 def load_config(path: Path) -> dict[str, Any]:
     path = path.expanduser().resolve()
@@ -141,13 +155,7 @@ def _pair_p4_rows(
     negative = ak.where(os_pairs.p1.charge < 0, os_pairs.p1, os_pairs.p2)
     positive = ak.where(os_pairs.p1.charge > 0, os_pairs.p1, os_pairs.p2)
 
-    px = negative.pt * np.cos(negative.phi) + positive.pt * np.cos(positive.phi)
-    py = negative.pt * np.sin(negative.phi) + positive.pt * np.sin(positive.phi)
-    pz = negative.pt * np.sinh(negative.eta) + positive.pt * np.sinh(positive.eta)
-    e1 = np.sqrt((negative.pt * np.cosh(negative.eta)) ** 2 + negative.mass**2)
-    e2 = np.sqrt((positive.pt * np.cosh(positive.eta)) ** 2 + positive.mass**2)
-    mass2 = (e1 + e2) ** 2 - px**2 - py**2 - pz**2
-    pair_mass = np.sqrt(ak.where(mass2 > 0, mass2, 0))
+    pair_mass = _pair_mass_ak(negative, positive)
 
     mass_window = (pair_mass > float(mass_min)) & (pair_mass < float(mass_max))
     negative = ak.flatten(negative[mass_window])
@@ -155,6 +163,48 @@ def _pair_p4_rows(
     if len(negative) == 0:
         return np.empty((0, 8), dtype=np.float32)
     return np.concatenate([p4_array(negative), p4_array(positive)], axis=1)
+
+
+def _pair_mass_ak(particle1, particle2) -> np.ndarray:
+    """Stable pair invariant mass for awkward particle records.
+
+    Mirrors the cancellation-free transverse-mass / rapidity decomposition in
+    ``scripts/physics.py`` (``invariant_mass_np``), so the selection uses the
+    same physical definition as evaluation:
+
+        m^2 = m1^2 + m2^2
+              + 4 pT1 pT2 [sinh^2(Delta_y/2) + sin^2(Delta_phi/2)]
+              + 2 (mT1 mT2 - pT1 pT2) cosh(Delta_y)
+
+    with y_i = asinh(pz_i / mT_i) and mT_i = sqrt(m_i^2 + pT_i^2). For massless
+    daughters y reduces to pseudorapidity. Every term is a product of
+    non-negative O(1)-scale factors times pT1 pT2, so boosted low-mass pairs
+    do not suffer the float32 ``E^2 - p^2`` cancellation.
+
+    Both loaders select ``pt > pt_min > 0``, so the pT -> 0 guard used by the
+    generic NumPy helper is not needed here.
+    """
+    pt1 = particle1.pt
+    pt2 = particle2.pt
+    m1 = particle1.mass
+    m2 = particle2.mass
+    dphi = particle1.phi - particle2.phi
+    m1sq = m1 * m1
+    m2sq = m2 * m2
+    pt1sq = pt1 * pt1
+    pt2sq = pt2 * pt2
+    mt1 = np.sqrt(m1sq + pt1sq)
+    mt2 = np.sqrt(m2sq + pt2sq)
+    # pz = pT * sinh(eta) exactly, so rapidity is available from the recorded
+    # pT/eta/mass fields without an explicit pz branch.
+    y1 = np.arcsinh(pt1 * np.sinh(particle1.eta) / mt1)
+    y2 = np.arcsinh(pt2 * np.sinh(particle2.eta) / mt2)
+    dy = y1 - y2
+    angular = 4.0 * pt1 * pt2 * (np.sinh(dy / 2.0) ** 2 + np.sin(dphi / 2.0) ** 2)
+    numerator = m1sq * m2sq + m1sq * pt2sq + m2sq * pt1sq
+    denominator = mt1 * mt2 + pt1 * pt2
+    mass2 = m1sq + m2sq + angular + 2.0 * (numerator / denominator) * np.cosh(dy)
+    return np.sqrt(mass2)
 
 
 def load_cms_electron_x_data(
@@ -341,7 +391,14 @@ def file_fingerprint(path: str | Path) -> dict[str, Any]:
 
 
 def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict[str, Any]:
-    """Everything that can change the selected/split arrays."""
+    """Everything that can change the selected/split arrays.
+
+    In addition to the resolved configuration and source-file fingerprints,
+    the metadata records the explicit pipeline schema version and a semantic
+    fingerprint of this module's source. The fingerprint invalidates entries
+    produced by older selection/pairing/splitting code even when the
+    configuration text is unchanged.
+    """
     paths = config["paths"]
     channel = str(config.get("data", {}).get("channel", "electron"))
     selection_key = "muon_selection" if channel.lower() in {
@@ -352,7 +409,8 @@ def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict
         "jpsi_mumu",
     } else "electron_selection"
     metadata: dict[str, Any] = {
-        "version": 2,
+        "version": DATA_PIPELINE_CACHE_VERSION,
+        "pipeline_fingerprint": _pipeline_semantic_fingerprint(),
         "num_samples": None if num_samples is None else int(num_samples),
         "float_type": config.get("float_type", "float32"),
         "seed": int(config.get("seed", 0)),
@@ -372,9 +430,136 @@ def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict
     return metadata
 
 
+def _pipeline_semantic_fingerprint() -> str:
+    """Deterministic fingerprint of the data-pipeline implementation.
+
+    Hashes the explicit schema version together with the source of this
+    module, which contains every function that defines selection/pairing/
+    splitting semantics (``p4_array``, ``_pair_p4_rows``, ``_pair_mass_ak``,
+    the ROOT/HDF5 loaders, ``apply_num_samples``, ``split_unpaired``, and
+    ``load_and_split``). Editing any of them produces a different cache key,
+    so stale arrays cannot be reused silently.
+    """
+    payload = f"{DATA_PIPELINE_CACHE_VERSION}\n".encode("utf-8") + Path(__file__).read_bytes()
+    return hashlib.sha256(payload).hexdigest()
+
+
 def data_cache_key(metadata: dict[str, Any]) -> str:
     payload = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:20]
+
+
+def _configured_mass_window(config: dict[str, Any]) -> tuple[float, float] | None:
+    """Return the channel mass window from the selection config, if complete."""
+    data_config = config.get("data", {})
+    channel = str(data_config.get("channel", "electron"))
+    normalized = channel.strip().lower().replace("-", "_")
+    if normalized in {"muon", "doublemuon", "doublemuons", "mumu", "jpsi_mumu"}:
+        selection = config.get("muon_selection", {})
+        low, high = selection.get("jpsi_mass_min"), selection.get("jpsi_mass_max")
+    else:
+        selection = config.get("electron_selection", {})
+        low, high = selection.get("z_mass_min"), selection.get("z_mass_max")
+    if low is None or high is None:
+        return None
+    return (float(low), float(high))
+
+
+def _validate_cached_arrays(
+    arrays: dict[str, np.ndarray],
+    config: dict[str, Any],
+) -> str | None:
+    """Validate cached split arrays; return a problem description or None.
+
+    Checks the expected key set, rank-2 shape with eight columns, finiteness,
+    dtype compatibility with ``float_type``, minimum row counts, configured
+    split caps, and (when the selection config declares a mass window) that
+    the x arrays live inside it up to a small numerical tolerance.
+    """
+    from physics import daughter_masses_from_config, invariant_mass_np
+
+    problems: list[str] = []
+    actual = set(arrays)
+    expected = set(_EXPECTED_CACHE_KEYS)
+    if actual != expected:
+        problems.append(f"unexpected array keys {sorted(actual ^ expected)}")
+
+    try:
+        expected_dtype = np.dtype(config.get("float_type", "float32"))
+    except TypeError:
+        expected_dtype = None
+        problems.append(f"invalid float_type {config.get('float_type')!r}")
+
+    for key in _EXPECTED_CACHE_KEYS:
+        if key not in arrays:
+            continue
+        arr = arrays[key]
+        if arr.ndim != 2 or arr.shape[1] != 8:
+            problems.append(f"{key} has shape {arr.shape}, expected (N, 8)")
+        elif arr.shape[0] < 1:
+            problems.append(f"{key} is empty")
+        if not np.isfinite(arr).all():
+            problems.append(f"{key} contains non-finite values")
+        if expected_dtype is not None and arr.dtype != expected_dtype:
+            problems.append(f"{key} dtype {arr.dtype} does not match {expected_dtype}")
+
+    split_config = config.get("data_split", {})
+    for cap_key, array_keys in (
+        ("train_max", ("x_train", "z_train")),
+        ("val_max", ("x_val", "z_val")),
+        ("test_max", ("x_test", "z_test")),
+    ):
+        cap = split_config.get(cap_key)
+        if cap is None:
+            continue
+        for key in array_keys:
+            if key in arrays and len(arrays[key]) > int(cap):
+                problems.append(f"{key} has {len(arrays[key])} rows, exceeding {cap_key}={cap}")
+
+    mass_window = _configured_mass_window(config)
+    if mass_window is not None:
+        low, high = mass_window
+        masses = daughter_masses_from_config(config)
+        for key in ("x_train", "x_val", "x_test"):
+            if key not in arrays:
+                continue
+            arr = arrays[key]
+            if arr.ndim != 2 or arr.shape[1] != 8 or len(arr) == 0:
+                continue
+            mass = invariant_mass_np(arr, daughter_masses=masses, stable=True)
+            finite = mass[np.isfinite(mass)]
+            if len(finite) == 0:
+                problems.append(f"{key} has no finite invariant masses")
+                continue
+            mass_min = float(finite.min())
+            mass_max = float(finite.max())
+            tolerance = MASS_WINDOW_VALIDATION_TOL_GEV
+            if mass_min < low - tolerance or mass_max > high + tolerance:
+                problems.append(
+                    f"{key} invariant-mass range [{mass_min:.4f}, {mass_max:.4f}] "
+                    f"outside configured window [{low}, {high}] "
+                    f"(tolerance {tolerance} GeV)"
+                )
+    return "; ".join(problems) if problems else None
+
+
+def _write_cache_entry(
+    cache_path: Path,
+    metadata_path: Path,
+    metadata: dict[str, Any],
+    arrays: dict[str, np.ndarray],
+) -> None:
+    """Atomically write the metadata JSON and NPZ cache entry."""
+    tmp_metadata = metadata_path.with_name(metadata_path.name + ".tmp")
+    tmp_metadata.write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp_metadata.replace(metadata_path)
+
+    tmp_npz = cache_path.with_name(cache_path.name + ".tmp.npz")
+    np.savez(tmp_npz, **{key: arrays[key] for key in _EXPECTED_CACHE_KEYS})
+    tmp_npz.replace(cache_path)
 
 
 def load_and_split_cached(
@@ -393,7 +578,11 @@ def load_and_split_cached(
     """
     if not use_cache:
         log("Data cache disabled; loading selected CMS and MG5 rows from source files.")
-        return load_and_split(config, num_samples=num_samples), {"enabled": False, "hit": False}
+        return load_and_split(config, num_samples=num_samples), {
+            "enabled": False,
+            "hit": False,
+            "status": "disabled",
+        }
 
     if cache_dir is None:
         cache_dir = Path(config["paths"]["output_root"]) / ".plot_cache"
@@ -404,26 +593,64 @@ def load_and_split_cached(
     key = data_cache_key(metadata)
     cache_path = cache_dir / f"selected_split_{key}.npz"
     metadata_path = cache_dir / f"selected_split_{key}.json"
-    expected_keys = ("x_train", "x_val", "x_test", "z_train", "z_val", "z_test")
+    stored_metadata: dict[str, Any] | None = None
+    metadata_reason: str | None = None
+    metadata_missing = False
+    if metadata_path.exists():
+        try:
+            stored_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            metadata_reason = f"metadata unreadable: {exc}"
+    else:
+        metadata_missing = True
+    if stored_metadata is not None and stored_metadata != metadata:
+        metadata_reason = "metadata mismatch (selection/data-pipeline semantics changed)"
 
-    if cache_path.exists():
-        log(f"Loading selected/split data cache: {cache_path}")
-        with np.load(cache_path, allow_pickle=False) as cached:
-            arrays = {key: cached[key] for key in expected_keys}
-        log(
-            "Loaded cache shapes: "
-            + ", ".join(f"{key}={value.shape}" for key, value in arrays.items())
-        )
-        return arrays, {"enabled": True, "hit": True, "path": str(cache_path), "key": key}
+    if metadata_reason is None and not metadata_missing and cache_path.exists():
+        try:
+            with np.load(cache_path, allow_pickle=False) as cached:
+                arrays = {key: cached[key] for key in _EXPECTED_CACHE_KEYS}
+        except Exception as exc:
+            status = "content_invalid"
+            invalid_reason = f"cached NPZ unreadable: {exc}"
+        else:
+            validation_problem = _validate_cached_arrays(arrays, config)
+            if validation_problem is None:
+                log(f"Loading selected/split data cache: {cache_path}")
+                log(
+                    "Loaded cache shapes: "
+                    + ", ".join(f"{key}={value.shape}" for key, value in arrays.items())
+                )
+                return arrays, {
+                    "enabled": True,
+                    "hit": True,
+                    "status": "hit",
+                    "path": str(cache_path),
+                    "key": key,
+                }
+            status = "content_invalid"
+            invalid_reason = f"cached content failed validation: {validation_problem}"
+    elif metadata_reason is not None or (
+        metadata_missing and (cache_path.exists() or metadata_path.exists())
+    ):
+        status = "metadata_invalid"
+        invalid_reason = metadata_reason or "companion metadata JSON is missing"
+    else:
+        status = "miss"
+        invalid_reason = "no cache entry"
 
-    log("Data cache miss; reading ROOT/HDF5 inputs and applying selection.")
+    log(f"Data cache {status} ({invalid_reason}); reading ROOT/HDF5 inputs and applying selection.")
     arrays = load_and_split(config, num_samples=num_samples)
-    tmp_path = cache_dir / f".selected_split_{key}.tmp.npz"
     log(f"Writing selected/split data cache: {cache_path}")
-    np.savez(tmp_path, **{key: arrays[key] for key in expected_keys})
-    tmp_path.replace(cache_path)
-    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return arrays, {"enabled": True, "hit": False, "path": str(cache_path), "key": key}
+    _write_cache_entry(cache_path, metadata_path, metadata, arrays)
+    return arrays, {
+        "enabled": True,
+        "hit": False,
+        "status": status,
+        "path": str(cache_path),
+        "key": key,
+        "reason": invalid_reason,
+    }
 
 
 def load_theory_prior_z(theory_prior_file: Path) -> np.ndarray:

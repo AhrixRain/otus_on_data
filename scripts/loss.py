@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import difflib
 import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
+
+from physics import (
+    invariant_mass_np,
+    invariant_mass_torch,
+    validate_daughter_masses,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,9 +27,186 @@ P = 2
 CANONICAL_LOSS_KIND = "cms_doubleelectron_loss"
 JPSI_DIMUON_LOSS_KIND = "cms_jpsi_doublemuon_loss"
 
+# Default per-component weight values. Kept at module level so strict
+# configuration validation and the factory share one source of truth.
+DEFAULT_SPACE_WEIGHTS = {
+    "raw_swd": 0.5,
+    "marginal_w1": 0.5,
+    "mass_w1": 2.0,
+    "resonance_mass_w1": 0.0,
+    "physics_swd": 1.0,
+    "mass_kin_swd": 0.0,
+    "transverse_w1": 0.5,
+    "longitudinal_w1": 0.4,
+    "tail_w1": 0.15,
+    "pair_mass_w1": 2.0,
+    "pair_pt_w1": 2.0,
+    "lepton_pt_w1": 1.0,
+    "delta_phi_w1": 0.5,
+    "delta_eta_w1": 0.5,
+    "pair_rapidity_w1": 0.5,
+    "physics_coord_swd": 0.5,
+    "mmd": 0.0,
+}
 
-def build_ee_physics_features(x: torch.Tensor, eps: float = 1e-6) -> dict[str, torch.Tensor]:
-    """Differentiable CMS DoubleElectron observables for [e- p4, e+ p4]."""
+MASS_KIN_SWD_COMPONENT_KEYS = ("mll", "ptll", "yll", "cos_dphi", "sin_dphi")
+SELECTION_SCORE_KEYS = ("x_sim", "z_prior", "x_reco", "cycle")
+
+# Non-weight settings accepted at the top level of a loss config (and inside
+# per-space overrides, which are merged into the space config unchanged).
+KNOWN_LOSS_SETTINGS = frozenset(
+    {
+        "kind",
+        "vanilla_v3_7",
+        "eps",
+        "p",
+        "num_slices",
+        "tail_frac",
+        "resonance_mass_center",
+        "resonance_mass_half_width",
+        "mmd_scales",
+        "standardize_raw_matching",
+        "decoder_num_noise_samples",
+        "x_reco_physics_w1",
+        "mass_kin_swd_components",
+        "space_weights",
+        "selection_score",
+    }
+)
+KNOWN_LOSS_KEYS = frozenset(DEFAULT_SPACE_WEIGHTS) | KNOWN_LOSS_SETTINGS
+
+
+def _format_unknown_keys(unknown: set[str], context: str) -> str:
+    known = sorted(KNOWN_LOSS_KEYS)
+    lines = []
+    for key in sorted(unknown):
+        nearest = difflib.get_close_matches(key, known, n=1, cutoff=0.4)
+        hint = f" (nearest known key: {nearest[0]})" if nearest else ""
+        lines.append(f"  - {key}{hint}")
+    return (
+        f"Unknown {context} key(s):\n"
+        + "\n".join(lines)
+        + f"\nValid {context} keys: {', '.join(known)}"
+    )
+
+
+def _require_finite_weight(name: str, value: Any) -> None:
+    number = float(value)
+    if not np.isfinite(number):
+        raise ValueError(f"loss weight {name!r} must be finite, got {value!r}")
+
+
+def validate_loss_config(loss_config: dict[str, Any]) -> None:
+    """Strictly validate a loss config before constructing a loss factory.
+
+    Rejects unknown keys (with a nearest-match hint) and obvious invalid
+    values, so a typo like ``pair_masss_w1`` fails fast instead of silently
+    disabling a term. Legacy ZLossFactory-style configs (kinds other than the
+    canonical/Jpsi dilepton kinds) are intentionally skipped: their key space
+    predates this validation and none of the checked-in configs use it.
+    """
+    if not isinstance(loss_config, dict):
+        raise ValueError(f"loss config must be a mapping, got {type(loss_config).__name__}")
+    kind = loss_config.get("kind")
+    if kind is not None and kind not in {
+        None,
+        CANONICAL_LOSS_KIND,
+        JPSI_DIMUON_LOSS_KIND,
+        "original_feature_ot_v1",
+    }:
+        return
+
+    unknown = set(loss_config) - KNOWN_LOSS_KEYS
+    if unknown:
+        raise ValueError(_format_unknown_keys(unknown, "loss"))
+
+    for key in DEFAULT_SPACE_WEIGHTS:
+        if key in loss_config:
+            _require_finite_weight(key, loss_config[key])
+    if "x_reco_physics_w1" in loss_config:
+        _require_finite_weight("x_reco_physics_w1", loss_config["x_reco_physics_w1"])
+
+    space_weights = loss_config.get("space_weights") or {}
+    if not isinstance(space_weights, dict):
+        raise ValueError("loss.space_weights must be a mapping")
+    for space in ("x", "z"):
+        if space not in space_weights:
+            continue
+        override = space_weights[space]
+        if not isinstance(override, dict):
+            raise ValueError(f"loss.space_weights.{space} must be a mapping")
+        unknown = set(override) - KNOWN_LOSS_KEYS
+        if unknown:
+            raise ValueError(_format_unknown_keys(unknown, f"loss.space_weights.{space}"))
+        for key in DEFAULT_SPACE_WEIGHTS:
+            if key in override:
+                _require_finite_weight(f"space_weights.{space}.{key}", override[key])
+
+    mass_kin = loss_config.get("mass_kin_swd_components") or {}
+    if not isinstance(mass_kin, dict):
+        raise ValueError("loss.mass_kin_swd_components must be a mapping")
+    unknown = set(mass_kin) - set(MASS_KIN_SWD_COMPONENT_KEYS)
+    if unknown:
+        raise ValueError(_format_unknown_keys(unknown, "loss.mass_kin_swd_components"))
+    for key in MASS_KIN_SWD_COMPONENT_KEYS:
+        if key in mass_kin:
+            value = float(mass_kin[key])
+            if not np.isfinite(value) or value < 0.0:
+                raise ValueError(
+                    f"loss.mass_kin_swd_components.{key} must be finite and non-negative, "
+                    f"got {mass_kin[key]!r}"
+                )
+
+    selection_score = loss_config.get("selection_score") or {}
+    if not isinstance(selection_score, dict):
+        raise ValueError("loss.selection_score must be a mapping")
+    unknown = set(selection_score) - set(SELECTION_SCORE_KEYS)
+    if unknown:
+        raise ValueError(_format_unknown_keys(unknown, "loss.selection_score"))
+    for key in SELECTION_SCORE_KEYS:
+        if key in selection_score:
+            _require_finite_weight(f"selection_score.{key}", selection_score[key])
+
+    for key in ("num_slices", "decoder_num_noise_samples"):
+        if key in loss_config:
+            value = loss_config[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"loss.{key} must be a positive integer, got {value!r}")
+    if "eps" in loss_config:
+        value = float(loss_config["eps"])
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"loss.eps must be positive and finite, got {loss_config['eps']!r}")
+    if "tail_frac" in loss_config:
+        value = float(loss_config["tail_frac"])
+        if not np.isfinite(value) or not 0.0 < value < 1.0:
+            raise ValueError(f"loss.tail_frac must lie in (0, 1), got {loss_config['tail_frac']!r}")
+    if "resonance_mass_half_width" in loss_config:
+        value = float(loss_config["resonance_mass_half_width"])
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(
+                f"loss.resonance_mass_half_width must be positive, got "
+                f"{loss_config['resonance_mass_half_width']!r}"
+            )
+
+
+def build_ee_physics_features(
+    x: torch.Tensor,
+    eps: float = 1e-6,
+    daughter_masses=None,
+    mass_from_energy: bool = False,
+) -> dict[str, torch.Tensor]:
+    """Differentiable CMS dilepton observables for [l- p4, l+ p4].
+
+    ``mass_from_energy`` selects the pair-mass definition. When True the
+    stored energy columns are authoritative and the direct
+    ``sqrt(E^2 - p^2)`` expression is used; this is correct for the theory
+    z-prior, whose energy columns carry truth-level information that is not
+    derivable from the momenta alone (its per-muon energies are not exactly
+    on shell). When False the cancellation-free transverse-mass/rapidity
+    decomposition from ``physics.invariant_mass_torch`` is used, which is the
+    float32-safe choice for detector-level x four-vectors whose energies are
+    derived from p and the daughter masses.
+    """
     if x.ndim != 2 or x.shape[1] != 8:
         raise ValueError(f"Expected tensor with shape [N, 8], got {tuple(x.shape)}.")
 
@@ -42,8 +226,11 @@ def build_ee_physics_features(x: torch.Tensor, eps: float = 1e-6) -> dict[str, t
     pair_py = py_m + py_p
     pair_pz = pz_m + pz_p
     pair_e = e_m + e_p
-    pair_mass2 = pair_e**2 - pair_px**2 - pair_py**2 - pair_pz**2
-    pair_mass = torch.sqrt(torch.clamp(pair_mass2, min=eps))
+    if mass_from_energy:
+        pair_mass2 = pair_e**2 - pair_px**2 - pair_py**2 - pair_pz**2
+        pair_mass = torch.sqrt(torch.clamp(pair_mass2, min=eps))
+    else:
+        pair_mass = invariant_mass_torch(x, daughter_masses=daughter_masses, eps=eps)
     pair_pt = torch.sqrt(torch.clamp(pair_px**2 + pair_py**2, min=eps))
     rapidity_ratio = torch.clamp(
         torch.clamp(pair_e + pair_pz, min=eps) / torch.clamp(pair_e - pair_pz, min=eps),
@@ -159,6 +346,26 @@ def _safe_torch_std(values: torch.Tensor, eps: float) -> torch.Tensor:
     )
 
 
+def _empirical_quantile(sorted_values: torch.Tensor, quantiles: torch.Tensor) -> torch.Tensor:
+    """Linear-interpolation empirical quantile function (differentiable).
+
+    ``sorted_values`` is an ascending 1-D tensor of ``n`` samples and
+    ``quantiles`` a 1-D tensor of probabilities in [0, 1]. Uses the
+    ``(n - 1) * q`` interpolation convention shared with NumPy/scipy, so the
+    result matches those offline reference implementations while remaining
+    differentiable with respect to ``sorted_values``.
+    """
+    n = sorted_values.numel()
+    positions = quantiles * (n - 1)
+    lower = torch.floor(positions).to(torch.long)
+    upper = torch.clamp(lower + 1, max=n - 1)
+    fraction = positions - lower.to(sorted_values.dtype)
+    return (
+        sorted_values[lower]
+        + fraction * (sorted_values[upper] - sorted_values[lower])
+    )
+
+
 class SpaceFeatureOTLoss:
     """Continuous feature OT loss for one four-vector space."""
 
@@ -169,30 +376,15 @@ class SpaceFeatureOTLoss:
         *,
         name: str,
         eps: float = 1e-6,
+        daughter_masses=None,
+        mass_from_energy: bool = False,
     ):
         self.name = name
         self.eps = float(loss_config.get("eps", eps))
         self.num_slices = int(loss_config.get("num_slices", 1000))
         self.p = int(loss_config.get("p", P))
-        self.weights = {
-            "raw_swd": 0.5,
-            "marginal_w1": 0.5,
-            "mass_w1": 2.0,
-            "resonance_mass_w1": 0.0,
-            "physics_swd": 1.0,
-            "mass_kin_swd": 0.0,
-            "transverse_w1": 0.5,
-            "longitudinal_w1": 0.4,
-            "tail_w1": 0.15,
-            "pair_mass_w1": 2.0,
-            "pair_pt_w1": 2.0,
-            "lepton_pt_w1": 1.0,
-            "delta_phi_w1": 0.5,
-            "delta_eta_w1": 0.5,
-            "pair_rapidity_w1": 0.5,
-            "physics_coord_swd": 0.5,
-            "mmd": 0.0,
-        }
+        self.mass_from_energy = bool(mass_from_energy)
+        self.weights = dict(DEFAULT_SPACE_WEIGHTS)
         self.weights.update(
             {
                 key: float(loss_config[key])
@@ -200,6 +392,7 @@ class SpaceFeatureOTLoss:
                 if key in loss_config
             }
         )
+        self.daughter_masses = validate_daughter_masses(daughter_masses)
         self.tail_frac = float(loss_config.get("tail_frac", 0.20))
         self.resonance_mass_center = float(
             loss_config.get("resonance_mass_center", 3.0969)
@@ -238,17 +431,45 @@ class SpaceFeatureOTLoss:
         self.raw_mean = np.mean(train_samples, axis=0)
         self.raw_std = _safe_numpy_std(train_samples)
 
+        # Invariant-mass statistics are computed in float64. Detector-level x
+        # spaces use the stable formula so boosted float32 pairs cannot distort
+        # the standardization scale; theory z-spaces use the stored energy
+        # columns, which carry truth-level information.
+        mass_train = invariant_mass_np(
+            train_samples,
+            daughter_masses=None if self.mass_from_energy else self.daughter_masses,
+            stable=not self.mass_from_energy,
+        )
+        self.mass_mean = torch.as_tensor(
+            float(np.mean(mass_train, dtype=np.float64)),
+            dtype=torch.float32,
+        )
+        mass_std_value = float(np.std(mass_train, dtype=np.float64))
+        if not np.isfinite(mass_std_value) or mass_std_value <= self.eps:
+            mass_std_value = 1.0
+        self.mass_std = torch.as_tensor(mass_std_value, dtype=torch.float32)
+
+        # Empirical training-sample standard deviation of delta_eta itself,
+        # used to normalize the delta_eta W1 term (replaces the ad-hoc
+        # std(eta1) + std(eta2) approximation).
+        work = np.asarray(train_samples, dtype=np.float64)
+        pt1 = np.hypot(work[:, 0], work[:, 1])
+        pt2 = np.hypot(work[:, 4], work[:, 5])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            eta1 = np.arcsinh(work[:, 2] / np.where(pt1 > 0.0, pt1, 1.0))
+            eta2 = np.arcsinh(work[:, 6] / np.where(pt2 > 0.0, pt2, 1.0))
+        delta_eta = eta1 - eta2
+        delta_eta_std = float(np.std(delta_eta, dtype=np.float64))
+        if not np.isfinite(delta_eta_std) or delta_eta_std <= self.eps:
+            delta_eta_std = 1.0
+        self.delta_eta_std = delta_eta_std
+
         with torch.no_grad():
             train = torch.as_tensor(train_samples, dtype=torch.float32)
-            mass = self.invariant_mass(train)
             features = self.physics_features(train)
             transverse = self.transverse_features(train)
             longitudinal = self.longitudinal_features(train)
             physics_coord = self.physics_coord_features(train)
-            self.mass_mean = mass.mean().detach()
-            self.mass_std = mass.std(unbiased=False).detach()
-            if not bool(torch.isfinite(self.mass_std).item()) or float(self.mass_std) <= self.eps:
-                self.mass_std = torch.ones_like(self.mass_std)
             self.feature_mean = features.mean(dim=0).detach()
             self.feature_std = _safe_torch_std(features, self.eps).detach()
             self.transverse_mean = transverse.mean(dim=0).detach()
@@ -290,7 +511,12 @@ class SpaceFeatureOTLoss:
         return torch.mean((self.standardize_raw(truth) - self.standardize_raw(pred)) ** 2)
 
     def invariant_mass(self, values: torch.Tensor) -> torch.Tensor:
-        return build_ee_physics_features(values, self.eps)["m_ee"]
+        return build_ee_physics_features(
+            values,
+            self.eps,
+            self.daughter_masses,
+            mass_from_energy=self.mass_from_energy,
+        )["m_ee"]
 
     def safe_eta(self, pt: torch.Tensor, pz: torch.Tensor) -> torch.Tensor:
         return torch.asinh(pz / torch.clamp(pt, min=self.eps))
@@ -302,10 +528,20 @@ class SpaceFeatureOTLoss:
         return 0.5 * torch.log(ratio)
 
     def physics_features(self, values: torch.Tensor) -> torch.Tensor:
-        return build_ee_physics_features(values, self.eps)["physics_features"]
+        return build_ee_physics_features(
+            values,
+            self.eps,
+            self.daughter_masses,
+            mass_from_energy=self.mass_from_energy,
+        )["physics_features"]
 
     def physics_coord_features(self, values: torch.Tensor) -> torch.Tensor:
-        return build_ee_physics_features(values, self.eps)["physics_coord_features"]
+        return build_ee_physics_features(
+            values,
+            self.eps,
+            self.daughter_masses,
+            mass_from_energy=self.mass_from_energy,
+        )["physics_coord_features"]
 
     def transverse_features(self, values: torch.Tensor) -> torch.Tensor:
         px1, py1 = values[:, 0], values[:, 1]
@@ -449,6 +685,13 @@ class SpaceFeatureOTLoss:
         gradient scale is comparable to the kinematics terms, and it targets
         only the resonance core: it fixes peak position/width without letting
         the mass marginal dominate the full 8-vector joint.
+
+        When the truth and prediction windows contain the same number of
+        events the original sorted-pair W1 is returned unchanged. When the
+        counts differ (e.g. the model has not yet populated the window), the
+        two empirical quantile functions are compared on a shared quantile
+        grid, which is the correct empirical W1 for unequal sample counts
+        instead of silently truncating to the smaller cardinality.
         """
         center = self.to_like(self.resonance_mass_center, truth_mass)
         half_width = self.to_like(self.resonance_mass_half_width, truth_mass)
@@ -457,8 +700,21 @@ class SpaceFeatureOTLoss:
         truth_selected = truth_mass[truth_window]
         pred_selected = pred_mass[pred_window]
         if truth_selected.numel() == 0 or pred_selected.numel() == 0:
+            # Documented remaining limitation: an empty window returns zero
+            # (no gradient) rather than introducing a new occupancy objective.
             return truth_mass.new_tensor(0.0)
-        return self.wasserstein_1d_sorted(truth_selected, pred_selected)
+        if truth_selected.numel() == pred_selected.numel():
+            return self.wasserstein_1d_sorted(truth_selected, pred_selected)
+        truth_sorted = torch.sort(truth_selected)[0]
+        pred_sorted = torch.sort(pred_selected)[0]
+        grid_size = max(truth_sorted.numel(), pred_sorted.numel())
+        quantiles = (
+            torch.arange(grid_size, dtype=truth_mass.dtype, device=truth_mass.device)
+            + 0.5
+        ) / grid_size
+        truth_quantiles = _empirical_quantile(truth_sorted, quantiles)
+        pred_quantiles = _empirical_quantile(pred_sorted, quantiles)
+        return torch.mean(torch.abs(truth_quantiles - pred_quantiles))
 
     def paired_physics_mse_standardized(
         self,
@@ -536,8 +792,18 @@ class SpaceFeatureOTLoss:
         """
         # Build the differentiable physics bundle once per side and reuse it for
         # every component instead of recomputing the feature stack repeatedly.
-        truth_named = build_ee_physics_features(truth, self.eps)
-        pred_named = build_ee_physics_features(pred, self.eps)
+        truth_named = build_ee_physics_features(
+            truth,
+            self.eps,
+            self.daughter_masses,
+            mass_from_energy=self.mass_from_energy,
+        )
+        pred_named = build_ee_physics_features(
+            pred,
+            self.eps,
+            self.daughter_masses,
+            mass_from_energy=self.mass_from_energy,
+        )
         if self.standardize_raw_matching:
             truth_std = self.standardize_raw(truth)
             pred_std = self.standardize_raw(pred)
@@ -592,11 +858,7 @@ class SpaceFeatureOTLoss:
             self.physics_coord_std,
         )
 
-        eta_norm = (
-            self.to_like(self.feature_std[2], truth)
-            + self.to_like(self.feature_std[3], truth)
-            + self.eps
-        )
+        eta_norm = self.to_like(self.delta_eta_std, truth) + self.eps
         components = {
             "raw_swd": sliced_wasserstein(truth_std, pred_std, self.num_slices, self.p),
             "marginal_w1": self._marginal_w1_std(truth_std, pred_std),
@@ -701,8 +963,16 @@ class SpaceFeatureOTLoss:
 class DualSpaceFeatureOTLoss:
     """Loss API with independent x-space and z-space normalization."""
 
-    def __init__(self, x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
+    def __init__(
+        self,
+        x_train: np.ndarray,
+        z_train: np.ndarray,
+        loss_config: dict[str, Any],
+        daughter_masses=None,
+    ):
+        validate_loss_config(loss_config)
         self.kind = str(loss_config.get("kind", CANONICAL_LOSS_KIND))
+        self.daughter_masses = validate_daughter_masses(daughter_masses)
         # v3.7 vanilla OTUS/SWAE mode: the only training terms are the raw
         # per-event reconstruction MSE and the 8D sliced-Wasserstein latent
         # term. All other component weights are ignored in this mode.
@@ -712,8 +982,20 @@ class DualSpaceFeatureOTLoss:
         x_loss_config.update(space_weight_overrides.get("x", {}))
         z_loss_config = dict(loss_config)
         z_loss_config.update(space_weight_overrides.get("z", {}))
-        self.x_space = SpaceFeatureOTLoss(x_train, x_loss_config, name="x")
-        self.z_space = SpaceFeatureOTLoss(z_train, z_loss_config, name="z")
+        self.x_space = SpaceFeatureOTLoss(
+            x_train,
+            x_loss_config,
+            name="x",
+            daughter_masses=self.daughter_masses,
+            mass_from_energy=False,
+        )
+        self.z_space = SpaceFeatureOTLoss(
+            z_train,
+            z_loss_config,
+            name="z",
+            daughter_masses=self.daughter_masses,
+            mass_from_energy=True,
+        )
         self.num_slices = int(loss_config.get("num_slices", 1000))
         self.decoder_num_noise_samples = max(1, int(loss_config.get("decoder_num_noise_samples", 1)))
         self.x_reco_physics_w1 = float(loss_config.get("x_reco_physics_w1", 0.0))
