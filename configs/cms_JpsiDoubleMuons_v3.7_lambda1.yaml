@@ -1,0 +1,5 @@
+extends: cms_JpsiDoubleMuons_v3.7_vanilla.yaml
+run_name: v3.7_lambda1
+stages:
+  - name: stage1_vanilla_otus_swae
+    lamb: 1.0

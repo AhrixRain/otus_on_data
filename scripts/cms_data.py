@@ -23,8 +23,52 @@ def load_config(path: Path) -> dict[str, Any]:
         config = json.loads(text)
     if not isinstance(config, dict):
         raise ValueError(f"Config must be a mapping: {path}")
+    parent_ref = config.pop("extends", None)
+    if parent_ref:
+        parent_path = (path.parent / str(parent_ref)).expanduser().resolve()
+        parent = load_config(parent_path)
+        config = _deep_merge(parent, config)
     config["_config_path"] = str(path)
     return config
+
+
+def _deep_merge(parent: Any, child: Any) -> Any:
+    """Recursively merge ``child`` over ``parent``.
+
+    Dictionaries merge key-by-key. Lists whose items are all dicts carrying a
+    ``name`` merge item-by-item by name (child overrides the matching parent
+    item and appends new named items). Any other value is replaced by the
+    child, so plain lists and scalars behave like normal overrides.
+    """
+    if isinstance(parent, dict) and isinstance(child, dict):
+        merged = deepcopy(parent)
+        for key, value in child.items():
+            if key in merged:
+                merged[key] = _deep_merge(merged[key], value)
+            else:
+                merged[key] = deepcopy(value)
+        return merged
+    if (
+        isinstance(parent, list)
+        and isinstance(child, list)
+        and parent
+        and child
+        and all(isinstance(item, dict) and "name" in item for item in [*parent, *child])
+    ):
+        merged = deepcopy(parent)
+        merged_names = {item["name"] for item in merged}
+        for item in child:
+            if item["name"] in merged_names:
+                idx = next(
+                    index
+                    for index, existing in enumerate(merged)
+                    if existing["name"] == item["name"]
+                )
+                merged[idx] = _deep_merge(merged[idx], item)
+            else:
+                merged.append(deepcopy(item))
+        return merged
+    return deepcopy(child)
 
 
 def resolve_path(value: str | Path, base_dir: Path | None = None) -> Path:
@@ -442,15 +486,30 @@ def split_unpaired(
     train_ratio: float,
     val_ratio: float,
     seed: int,
+    train_max: int | None = None,
+    val_max: int | None = None,
+    test_max: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     shuffled = arr[rng.permutation(len(arr))]
-    train_size = int(len(shuffled) * train_ratio)
-    val_size = int(len(shuffled) * val_ratio)
+    ratio_train_size = int(len(shuffled) * train_ratio)
+    ratio_val_size = int(len(shuffled) * val_ratio)
+    ratio_test_size = len(shuffled) - ratio_train_size - ratio_val_size
+    train_size = (
+        min(ratio_train_size, int(train_max))
+        if train_max is not None
+        else ratio_train_size
+    )
+    val_size = (
+        min(ratio_val_size, int(val_max)) if val_max is not None else ratio_val_size
+    )
+    test_size = (
+        min(ratio_test_size, int(test_max)) if test_max is not None else ratio_test_size
+    )
     return (
         shuffled[:train_size],
         shuffled[train_size : train_size + val_size],
-        shuffled[train_size + val_size :],
+        shuffled[train_size + val_size : train_size + val_size + test_size],
     )
 
 
@@ -496,12 +555,18 @@ def load_and_split(config: dict[str, Any], num_samples: int | None = None) -> di
         float(split_config["train_ratio"]),
         float(split_config["val_ratio"]),
         seed,
+        train_max=split_config.get("train_max"),
+        val_max=split_config.get("val_max"),
+        test_max=split_config.get("test_max"),
     )
     z_train, z_val, z_test = split_unpaired(
         z_data,
         float(split_config["train_ratio"]),
         float(split_config["val_ratio"]),
         seed + 1,
+        train_max=split_config.get("train_max"),
+        val_max=split_config.get("val_max"),
+        test_max=split_config.get("test_max"),
     )
     arrays = {
         "x_train": x_train,

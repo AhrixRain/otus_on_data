@@ -9,6 +9,7 @@ Stage-1/2 encoder-alignment diagnostic.
 from __future__ import annotations
 
 import csv
+import random
 from pathlib import Path
 from typing import Any, Callable
 
@@ -46,6 +47,37 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
     if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
         torch.mps.manual_seed(seed)
+
+
+def _snapshot_rng() -> dict[str, Any]:
+    """Snapshot Python/NumPy/torch RNG state (CUDA and MPS included)."""
+    state: dict[str, Any] = {
+        "random": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["cuda"] = [value.clone() for value in torch.cuda.get_rng_state_all()]
+    mps_backend = getattr(torch.backends, "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        try:
+            state["mps"] = torch.mps.get_rng_state()
+        except Exception:
+            pass
+    return state
+
+
+def _restore_rng(state: dict[str, Any]) -> None:
+    random.setstate(state["random"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"])
+    if "cuda" in state:
+        torch.cuda.set_rng_state_all(state["cuda"])
+    if "mps" in state:
+        try:
+            torch.mps.set_rng_state(state["mps"])
+        except Exception:
+            pass
 
 
 def finite(a: np.ndarray) -> np.ndarray:
@@ -191,20 +223,31 @@ def make_training_callback(
     *,
     seed: int,
     batch_size: int = 8192,
+    independent_rng: bool = False,
 ) -> Callable[[torch.nn.Module, int, str], None]:
     """Return a callback suitable for train_all_stages diagnostics_callback."""
     metric_path = run_dir / "encoder_alignment_diagnostic" / "metric_trajectory.csv"
 
     def callback(model: torch.nn.Module, global_epoch: int, stage: str, loss_factory: Any) -> None:
-        metrics = evaluate_encoder(
-            model,
-            x_eval,
-            z_eval,
-            device,
-            seed=seed,
-            batch_size=batch_size,
-            loss_factory=loss_factory,
-        )
+        def run() -> dict[str, Any]:
+            return evaluate_encoder(
+                model,
+                x_eval,
+                z_eval,
+                device,
+                seed=seed,
+                batch_size=batch_size,
+                loss_factory=loss_factory,
+            )
+
+        if independent_rng:
+            rng_state = _snapshot_rng()
+            try:
+                metrics = run()
+            finally:
+                _restore_rng(rng_state)
+        else:
+            metrics = run()
         row = {"global_epoch": int(global_epoch), "stage": stage}
         row.update(metrics)
         row.pop("z_ks", None)

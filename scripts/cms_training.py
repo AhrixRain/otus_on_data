@@ -467,6 +467,7 @@ class HistoryLogger:
         "train_loss",
         "train_x_loss",
         "train_z_loss",
+        "train_z_loss_weighted",
         "train_alt_x_loss",
         "train_x_constraint_loss",
         "eval_loss",
@@ -481,7 +482,17 @@ class HistoryLogger:
         "grad_norm_encoder_reco_weighted",
         "grad_norm_encoder_anchor_weighted",
         "grad_norm_encoder_total",
+        "grad_norm_decoder_total",
         "grad_cosine_latent_reco",
+        "v37_lambda",
+        "learning_rate",
+        "batch_size",
+        "num_slices",
+        "n_train_x",
+        "n_train_z",
+        "n_val_x",
+        "n_val_z",
+        "global_step",
     ] + component_fields + weighted_component_fields + latent_component_fields + latent_component_weighted_fields
 
     def __init__(self, csv_path: Path):
@@ -518,6 +529,7 @@ def train_standard_epoch(
         "loss": 0.0,
         "x_loss": 0.0,
         "z_loss": 0.0,
+        "z_loss_weighted": 0.0,
         "alt_x_loss": 0.0,
         "x_constraint_loss": 0.0,
         "grad_norm_encoder_latent": 0.0,
@@ -527,6 +539,7 @@ def train_standard_epoch(
         "grad_norm_encoder_reco_weighted": 0.0,
         "grad_norm_encoder_anchor_weighted": 0.0,
         "grad_norm_encoder_total": 0.0,
+        "grad_norm_decoder_total": 0.0,
         "grad_cosine_latent_reco": 0.0,
     }
     nbatches = 0
@@ -598,10 +611,15 @@ def train_standard_epoch(
             total_grad_norm = grad_norm(
                 [param.grad for param in encoder_params if param.grad is not None]
             )
+        decoder_params = [param for param in model.decoder.parameters() if param.requires_grad]
+        decoder_total_norm = grad_norm(
+            [param.grad for param in decoder_params if param.grad is not None]
+        )
         optimizer.step()
         sums["loss"] += as_float(loss)
         sums["x_loss"] += as_float(x_loss)
         sums["z_loss"] += as_float(z_loss)
+        sums["z_loss_weighted"] += stage["lamb"] * as_float(z_loss)
         sums["alt_x_loss"] += as_float(alt_x_loss)
         sums["x_constraint_loss"] += as_float(x_constraint_loss)
         sums["grad_norm_encoder_latent"] += grad_norm(grad_latent)
@@ -617,6 +635,7 @@ def train_standard_epoch(
             stage["nu_e"] * grad_norm(grad_anchor)
         )
         sums["grad_norm_encoder_total"] += total_grad_norm
+        sums["grad_norm_decoder_total"] += decoder_total_norm
         cosine = grad_cosine(grad_latent, grad_reco)
         sums["grad_cosine_latent_reco"] += 0.0 if cosine is None else cosine
         for key, value in getattr(loss_factory, "latest_components", {}).items():
@@ -655,7 +674,13 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
             x_tilde = first_tensor(model.decode(z_tilde))
             x_loss = loss_factory.x_reco_loss(x, x_tilde)
             z_loss = loss_factory.z_prior_loss(z, z_tilde)
-            alt_x_loss = loss_factory.x_sim_loss(x, first_tensor(model.decode(z)))
+            if getattr(loss_factory, "vanilla_v3_7", False):
+                # v3.7 training-time validation only needs the two training
+                # terms; the direct z -> x generator path is evaluated offline
+                # per checkpoint (scripts/eval_v37.py) and never backpropagated.
+                alt_x_loss = x.new_tensor(0.0)
+            else:
+                alt_x_loss = loss_factory.x_sim_loss(x, first_tensor(model.decode(z)))
             loss = loss_factory.validation_score(
                 {
                     "x_loss": x_loss,
@@ -776,6 +801,7 @@ def train_all_stages(
     history_epoch = 0
     history_step = 0
     best_eval_loss: float | None = None
+    vanilla_v3_7 = bool(config.get("loss", {}).get("vanilla_v3_7", False))
     total_epochs = sum(
         int(stage["epochs"]) for stage in config["stages"] if stage.get("enabled", True)
     )
@@ -908,6 +934,10 @@ def train_all_stages(
                     "train_loss": train_losses["loss"],
                     "train_x_loss": train_losses["x_loss"],
                     "train_z_loss": train_losses["z_loss"],
+                    "train_z_loss_weighted": train_losses.get(
+                        "z_loss_weighted",
+                        train_losses.get("z_loss", 0.0) * stage["lamb"],
+                    ),
                     "train_alt_x_loss": train_losses.get("alt_x_loss", ""),
                     "train_x_constraint_loss": train_losses.get("x_constraint_loss", ""),
                     "eval_loss": eval_loss,
@@ -930,6 +960,7 @@ def train_all_stages(
                     "grad_norm_encoder_reco_weighted",
                     "grad_norm_encoder_anchor_weighted",
                     "grad_norm_encoder_total",
+                    "grad_norm_decoder_total",
                     "grad_cosine_latent_reco",
                 ):
                     row[gradient_field] = train_losses.get(gradient_field, "")
@@ -938,11 +969,22 @@ def train_all_stages(
                     + HistoryLogger.latent_component_weighted_fields
                 ):
                     row[latent_field] = train_losses.get(latent_field, "")
+                row["v37_lambda"] = stage["lamb"] if vanilla_v3_7 else ""
+                row["learning_rate"] = stage["lr"]
+                row["batch_size"] = config.get("loader_info", {}).get(
+                    "train_batch_size", ""
+                )
+                row["num_slices"] = stage["num_slices"]
+                row["n_train_x"] = train_loaders[0].n
+                row["n_train_z"] = train_loaders[1].n
+                row["n_val_x"] = eval_loaders[0].n
+                row["n_val_z"] = eval_loaders[1].n
+                row["global_step"] = history_step
                 logger.append(row)
                 is_best = best_eval_loss is None or selection_score < best_eval_loss
                 if is_best:
                     best_eval_loss = selection_score
-                save_callback(history_epoch, selection_score, is_best)
+                save_callback(history_epoch, selection_score, is_best, eval_losses)
 
                 if early_enabled:
                     stage_improved = (

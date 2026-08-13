@@ -1,0 +1,176 @@
+# v3.7 Vanilla OTUS / SWAE base configuration (J/psi -> mu+mu-).
+#
+# Objective isolation experiment: L = L_reco + lambda * L_SW with
+#   L_reco = mean((x - D(E(x)))^2)                     (raw per-event MSE)
+#   L_SW   = sliced Wasserstein(E(x_batch), z_prior_batch)   (standardized 8D)
+#
+# All legacy component weights below are explicitly zeroed as defense in
+# depth. The vanilla_v3_7 flag makes the loss factory bypass every other
+# component entirely, so the trained gradients are exactly the two terms.
+#
+# This file is the shared base; the five lambda scan configs extend it and
+# override ONLY the stage lambda and the run identifier.
+
+paths:
+  repo_root: .
+  data_root: data
+  cms_root_file: Run2012BC_DoubleMuParked_Muons.root
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_1M.hdf5
+  output_root: outputs/cms_JpsiDoubleMuons
+
+run_name: v3.7_vanilla_base
+
+data:
+  channel: muon
+  root_step_size: 100 MB
+
+device: auto
+seed: 0
+float_type: float32
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+  # Phase A screening counts. Caps are upper bounds applied after the
+  # deterministic seed-based shuffle; if the source has fewer events the
+  # actual available count is used and reported.
+  train_max: 500000
+  val_max: 100000
+  test_max: 100000
+
+# This reduced ROOT file exposes only nMuon, Muon_pt, Muon_eta, Muon_phi,
+# Muon_mass, and Muon_charge. Do not add isolation/ID/IP cuts unless the file
+# is regenerated with those branches.
+muon_selection:
+  muon_pt_min: 2.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 2.6
+  jpsi_mass_max: 3.5
+
+# Same CondNoiseAutoencoder architecture as outputs/cms_doubleelectron/v5_mps.
+# Deliberately unchanged for v3.7: this experiment isolates the objective,
+# not the architecture.
+model:
+  class: CondNoiseAutoencoder
+  num_hidden_layers: 4
+  dim_per_hidden_layer: 512
+  activation: ReLU
+  sigma_fun: softplus
+  sigma_floor: 0.001
+  stoch_enc: true
+  stoch_dec: true
+  raw_io: true
+
+loss:
+  kind: cms_jpsi_doublemuon_loss
+  vanilla_v3_7: true
+  # Every non-vanilla component is disabled explicitly.
+  raw_swd: 0.0
+  marginal_w1: 0.0
+  mass_w1: 0.0
+  resonance_mass_w1: 0.0
+  physics_swd: 0.0
+  mass_kin_swd: 0.0
+  transverse_w1: 0.0
+  longitudinal_w1: 0.0
+  tail_w1: 0.0
+  pair_mass_w1: 0.0
+  pair_pt_w1: 0.0
+  lepton_pt_w1: 0.0
+  delta_phi_w1: 0.0
+  delta_eta_w1: 0.0
+  pair_rapidity_w1: 0.0
+  physics_coord_swd: 0.0
+  mmd: 0.0
+  x_reco_physics_w1: 0.0
+  space_weights:
+    z:
+      raw_swd: 0.0
+      marginal_w1: 0.0
+      mass_w1: 0.0
+      resonance_mass_w1: 0.0
+      physics_swd: 0.0
+      mass_kin_swd: 0.0
+      transverse_w1: 0.0
+      longitudinal_w1: 0.0
+      tail_w1: 0.0
+      pair_mass_w1: 0.0
+      pair_pt_w1: 0.0
+      lepton_pt_w1: 0.0
+      delta_phi_w1: 0.0
+      delta_eta_w1: 0.0
+      pair_rapidity_w1: 0.0
+      physics_coord_swd: 0.0
+      mmd: 0.0
+    x:
+      raw_swd: 0.0
+      marginal_w1: 0.0
+      mass_w1: 0.0
+      resonance_mass_w1: 0.0
+      physics_swd: 0.0
+      mass_kin_swd: 0.0
+      transverse_w1: 0.0
+      longitudinal_w1: 0.0
+      tail_w1: 0.0
+      pair_mass_w1: 0.0
+      pair_pt_w1: 0.0
+      lepton_pt_w1: 0.0
+      delta_phi_w1: 0.0
+      delta_eta_w1: 0.0
+      pair_rapidity_w1: 0.0
+      physics_coord_swd: 0.0
+      mmd: 0.0
+  # Combined checkpoint score: transparent sum of validation z-prior SW and
+  # validation reconstruction MSE. The direct generator path is not included
+  # (it is evaluated offline per checkpoint).
+  selection_score:
+    x_sim: 0.0
+    z_prior: 1.0
+    x_reco: 1.0
+    cycle: 0.0
+  decoder_num_noise_samples: 1
+
+loaders:
+  train_batch_size: 20000
+  eval_batch_size: 20000
+  preload_data_to_accelerator: false
+
+evaluation:
+  min_truth_count: 20
+  mass_range: [2.6, 3.5]
+  mass_bin_width: 0.01
+  mass_label: "m(mumu) [GeV]"
+  channel_title: "CMS DoubleMuParked: J/psi -> mumu"
+  reference_mass: 3.0969
+  reference_label: "m_J/psi"
+  diagnostic_freq: 10
+  # v3.7: diagnostics snapshot and restore the global RNG so the fixed
+  # diagnostic draws cannot perturb the training RNG stream.
+  independent_diagnostic_rng: true
+  # Fixed subset and projection seed used by scripts/eval_v37.py so all five
+  # lambda runs share identical evaluation draws and SW projections.
+  v37_sw_batch_size: 20000
+  sw_eval_seed: 12345
+
+stages:
+  # One continuous objective for all 300 epochs. No stage progression, no
+  # decoder-only Stage 3, no anchors, no cycle terms, no physics terms.
+  - name: stage1_vanilla_otus_swae
+    mode: standard
+    enabled: true
+    epochs: 300
+    lr: 0.001
+    beta: 1.0
+    lamb: 1.0
+    tau: 0.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1000
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false
+    early_stopping:
+      enabled: false
+      patience: 100

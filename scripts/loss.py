@@ -703,6 +703,10 @@ class DualSpaceFeatureOTLoss:
 
     def __init__(self, x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, Any]):
         self.kind = str(loss_config.get("kind", CANONICAL_LOSS_KIND))
+        # v3.7 vanilla OTUS/SWAE mode: the only training terms are the raw
+        # per-event reconstruction MSE and the 8D sliced-Wasserstein latent
+        # term. All other component weights are ignored in this mode.
+        self.vanilla_v3_7 = bool(loss_config.get("vanilla_v3_7", False))
         space_weight_overrides = loss_config.get("space_weights", {})
         x_loss_config = dict(loss_config)
         x_loss_config.update(space_weight_overrides.get("x", {}))
@@ -757,6 +761,27 @@ class DualSpaceFeatureOTLoss:
         return loss
 
     def z_prior_loss(self, z_true: torch.Tensor, z_encoded: torch.Tensor) -> torch.Tensor:
+        if self.vanilla_v3_7:
+            if self.z_space.standardize_raw_matching:
+                truth_std = self.z_space.standardize_raw(z_true)
+                pred_std = self.z_space.standardize_raw(z_encoded)
+            else:
+                truth_std = z_true
+                pred_std = z_encoded
+            value = sliced_wasserstein(
+                truth_std,
+                pred_std,
+                self.num_slices,
+                self.z_space.p,
+            )
+            # The raw (unweighted) SW value is the scalar multiplied by the
+            # stage lambda in the trainer. The *_weighted alias here uses the
+            # per-component config weight (1.0); the stage-weighted value is
+            # logged separately as train_z_loss_weighted.
+            self.latest_components["z_raw_swd"] = value
+            self.latest_components["z_raw_swd_raw"] = value
+            self.latest_components["z_raw_swd_weighted"] = value
+            return value
         loss = self._weighted_distribution_loss(self.z_space, z_true, z_encoded, "z")
         # Per-component marginal W1 (standardized), the channel-independent
         # marginal term discussed in the encoder-alignment diagnostic.
@@ -783,6 +808,10 @@ class DualSpaceFeatureOTLoss:
         return self._weighted_distribution_loss(self.x_space, x_true, x_from_z, "x")
 
     def x_reco_loss(self, x_true: torch.Tensor, x_reco: torch.Tensor) -> torch.Tensor:
+        if self.vanilla_v3_7:
+            value = torch.mean((x_true - x_reco) ** 2)
+            self.latest_components["x_reco_mse_raw"] = value
+            return value
         loss = self.paired_mse_standardized(x_true, x_reco, self.standardize_x_raw)
         if self.x_reco_physics_w1 > 0.0:
             loss = loss + self.x_reco_physics_w1 * self.x_space.paired_physics_mse_standardized(

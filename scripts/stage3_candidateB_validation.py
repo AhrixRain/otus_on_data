@@ -377,7 +377,12 @@ def main() -> None:
     status_path = run_dir / "status.json"
     checkpoint_epochs = {int(value) for value in args.checkpoint_epochs.split(",") if value.strip()}
 
-    def save_checkpoint(epoch: int, best_eval_loss: float | None, is_best: bool) -> None:
+    def save_checkpoint(
+        epoch: int,
+        best_eval_loss: float | None,
+        is_best: bool,
+        eval_losses: dict[str, Any] | None = None,
+    ) -> None:
         payload = checkpoint_payload(model, config, stats, epoch, best_eval_loss, report)
         torch.save(payload, run_dir / "last_model.pt")
         if is_best:
@@ -455,8 +460,13 @@ def main() -> None:
                 flush=True,
             )
 
-    def wrap_save_callback(epoch: int, eval_loss: float | None, is_best: bool) -> None:
-        save_checkpoint(epoch + start_epoch, eval_loss, is_best)
+    def wrap_save_callback(
+        epoch: int,
+        eval_loss: float | None,
+        is_best: bool,
+        eval_losses: dict[str, Any] | None = None,
+    ) -> None:
+        save_checkpoint(epoch + start_epoch, eval_loss, is_best, eval_losses)
 
     def wrap_stage_checkpoint(stage_name: str, epoch: int, eval_loss: float | None) -> None:
         save_stage_checkpoint(stage_name, epoch + start_epoch, eval_loss)

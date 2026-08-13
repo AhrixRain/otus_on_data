@@ -97,7 +97,7 @@ def apply_cli_overrides(config: dict, args: argparse.Namespace) -> dict:
 
 def make_run_dir(config: dict, run_name: str | None, dry_run: bool) -> Path:
     output_root = Path(config["paths"]["output_root"])
-    run_id = run_name or time.strftime("run_%Y%m%d_%H%M%S")
+    run_id = run_name or config.get("run_name") or time.strftime("run_%Y%m%d_%H%M%S")
     run_dir = output_root / run_id
     if not dry_run and run_dir.exists() and any(
         (run_dir / name).exists() for name in ("best_model.pt", "last_model.pt")
@@ -292,7 +292,8 @@ def main() -> None:
     raw_config = load_config(args.config)
     config = resolve_config(apply_cli_overrides(raw_config, args))
     config["device"] = args.device
-    config["run_name"] = args.run_name
+    if args.run_name is not None:
+        config["run_name"] = args.run_name
     config["num_samples"] = args.num_samples
     config["smoke_test"] = bool(args.smoke_test)
 
@@ -349,6 +350,9 @@ def main() -> None:
         device,
         seed=int(config.get("seed", 0)),
         batch_size=eval_batch_size,
+        independent_rng=bool(
+            config.get("evaluation", {}).get("independent_diagnostic_rng", False)
+        ),
     )
     diagnostic_freq = int(config.get("evaluation", {}).get("diagnostic_freq", 10))
 
@@ -367,11 +371,36 @@ def main() -> None:
         args.progress_log_steps,
     )
 
-    def save_checkpoint(epoch: int, best_eval_loss: float | None, is_best: bool) -> None:
+    best_z_prior_loss: float | None = None
+    best_cycle_loss: float | None = None
+    vanilla_v3_7 = bool(config.get("loss", {}).get("vanilla_v3_7", False))
+
+    def save_checkpoint(
+        epoch: int,
+        best_eval_loss: float | None,
+        is_best: bool,
+        eval_losses: dict[str, Any] | None = None,
+    ) -> None:
+        nonlocal best_z_prior_loss, best_cycle_loss
         payload = checkpoint_payload(model, config, stats, epoch, best_eval_loss, report)
         torch.save(payload, run_dir / "last_model.pt")
         if is_best:
             shutil.copy2(run_dir / "last_model.pt", run_dir / "best_model.pt")
+            if vanilla_v3_7:
+                shutil.copy2(run_dir / "last_model.pt", run_dir / "best_combined.pt")
+        if vanilla_v3_7 and eval_losses is not None:
+            z_loss = eval_losses.get("z_loss")
+            x_loss = eval_losses.get("x_loss")
+            if z_loss is not None and (
+                best_z_prior_loss is None or z_loss < best_z_prior_loss
+            ):
+                best_z_prior_loss = z_loss
+                shutil.copy2(run_dir / "last_model.pt", run_dir / "best_z_prior.pt")
+            if x_loss is not None and (
+                best_cycle_loss is None or x_loss < best_cycle_loss
+            ):
+                best_cycle_loss = x_loss
+                shutil.copy2(run_dir / "last_model.pt", run_dir / "best_cycle.pt")
 
     def save_stage_checkpoint(stage_name: str, epoch: int, eval_loss: float | None) -> None:
         """Keep a named checkpoint at every stage boundary (diagnostic support).
@@ -412,6 +441,8 @@ def main() -> None:
         save_checkpoint(0, None, is_best=True)
 
     (run_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
+    if vanilla_v3_7:
+        shutil.copy2(run_dir / "last_model.pt", run_dir / "checkpoint_final.pt")
     diag_dir = run_dir / "encoder_alignment_diagnostic"
     diag_dir.mkdir(parents=True, exist_ok=True)
     loss_fields = [
