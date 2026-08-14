@@ -24,7 +24,8 @@
 
 ## 1. Project identity
 
-- Repo: /Users/liziqing/Desktop/Codex/otus_on_data
+- Repo: /Users/liziqing/Desktop/Codex/otus_on_data (current machine:
+  /Users/ahrimarin/Desktop/otus_on_data; same content, moved 2026-08-14)
 - What: **OTUS** (Optimal-Transport-based Unfolding and Simulation, SWAE) applied
   to **CMS 2012 Open Data J/psi -> mu+mu-** in the DoubleMuParked sample, with a
   MadGraph5 truth-level prior. Sister studies: successful Z->e+e- OTUS
@@ -57,8 +58,10 @@
   Jpsi_v3.5 (main staged model), Jpsi_v3.5_stage_diag, Jpsi_v3.6A_no_explicit_mass
   (mass ablation), stage2_vs_stage3_diagnostic, stage_diagnostic_v35_vs_v36a,
   encoder_alignment_diagnostic, stage3_candidateB_validation, v3.7_lambda1/3,
-  ab_plots{,_example,_smoke}, **Jpsi_v3.8_vanilla_paper_all_data_seed0**
-  (newest; diverged, see §4.4).
+  ab_plots{,_example,_smoke}, Jpsi_v3.8_vanilla_paper_all_data_seed0
+  (diverged, see §4.4), Jpsi_v3.9_F1_restricted (aborted pre-cut warmup,
+  2 epochs, kept for provenance), **Jpsi_v3.9_F1_restricted_ptmax100**
+  (launched 2026-08-15; ~181.5k steps, ~13h on MPS).
 - **Provenance gap (important):** for all runs *except* v3.8, the checkpoints
   (.pt), train_log.csv, status.json, history.json, config.resolved.json,
   metrics.json, per-run summary.{json,md}, and the .plot_cache were **deleted**;
@@ -72,7 +75,10 @@
   (loaders.train_sampler: shuffled_without_replacement,
   loaders.eval_sampler: deterministic_sequential), loss.vanilla_swae,
   scripts/preflight.py, scripts/verify_v38_gradients.py,
-  tests/test_v38_vanilla.py.
+  tests/test_v38_vanilla.py. v3.9 (2026-08-15) added:
+  cms_data.filter_theory_prior + theory_prior_selection cache metadata +
+  optional muon_pt_max in the muon loader; scripts/prior_kinematics.py,
+  scripts/data_kinematics.py (E1 dumps); tests/test_v39_f1.py (10 tests).
 
 ## 3. Established findings (from the read-only failure investigation)
 
@@ -167,6 +173,38 @@
 | encoder candidates (5k) | 0.088-0.506 | 0.19-0.29 | — | 0.55-0.94 | 44-95 |
 | candidateB stage3 ep20/100/best (5k) | ~0.21/0.20/0.21 | — | — | 0.141/0.846/0.705 | 53.7 (frozen) |
 
+### 4.5 E1 kinematics dump (2026-08-15; artifact-measured via
+scripts/prior_kinematics.py + scripts/data_kinematics.py)
+
+Prior files (1M events each, FDL/zData, daughters exactly massless: E = |p|):
+- signal cms_jpsi_mumu_mg5_8tev_1M.hdf5: pair mass E-based mean 3.0969,
+  std 5.7 MeV (p-based std 0.2 MeV: the mass smearing lives in the stored E,
+  z-space authority); muon pz std 244 GeV, |eta| up to 12.2 (median 3.1);
+  pair pT (vector) median 1.83, max 110 GeV — not pure 2->1 (recoil present);
+  100% of events have mass in [3.0369, 3.1569].
+- inclusive cms_mumu_inclusive_mg5_8tev_1M.hdf5: **pure 2->1** — pair pT
+  (vector) ≡ 0 exactly; pair mass median 3.38, range 2.56-329 GeV; J/psi-window
+  events have muon pT = m/2 ~ 1.55 GeV, so **0 of 1M pass** both-muons pT>3 +
+  |eta|<2.4 + mass window. Refutes the original F1 "inclusive file windowed"
+  design (§7): the inclusive file is unusable as a fiducial-matched prior.
+- v3.9 theory_prior_selection (pT>3, |eta|<2.4, mass window) keeps **5,995 of
+  1M signal events (0.60%)**; filtered pair pT median 10.1, mean 12.1.
+
+CMS data (Run2012BC_DoubleMuParked_Muons.root):
+- 149,322,456 stored muons; **hard 3.0 GeV trigger floor: zero muons below
+  3.0 GeV** — answers §6.5 (the pT>2 vs pT>3 OS-pair counts are identical
+  because no muons exist in (2,3] GeV). 148,124,900 (99.2%) pass |eta|<2.4
+  (matches §4.1's muon count; the "(pT>2, |eta|<2.4)" label there was
+  effectively a pT-only count).
+- Junk tail: 0.40% of muons above 100 GeV, 0.14% above 200 GeV, 0.027% above
+  1 TeV (max ~16.8 TeV) — misreconstructed junk inside the mass window,
+  unproducible by the prior (muon pT support ends ~94 GeV) and a raw-SWD
+  gradient hazard.
+- Signal region [3.0369, 3.1569] (loader selection): pair mass mean 3.094,
+  std 31 MeV (E-based); muon pT median 12.4; pair pT median 26.0, mean 27.4,
+  p95 47.4. The prior stays ~2.5x softer than the parked-B data even after
+  trigger matching (known residual limitation of the MG5 file).
+
 ### 4.4 v3.8 vanilla-paper run (artifact-measured)
 - Config: configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml
   (raw-coordinate SWD, beta=lambda=1, p=2, 1000 slices, batch 20k, 300 epochs,
@@ -201,50 +239,62 @@
 
 ## 6. Open questions (ranked)
 
-1. **Kinematic support of the priors (highest priority):** what are pair pT/eta
-   distributions of cms_jpsi_mumu_... and cms_mumu_inclusive_...? Is the
-   signal prior at zero pT (LO 2->1)? Does the inclusive prior's window overlap
-   the CMS pair-pT spectrum? *Cheap check: load with h5py in the cms env.*
+1. ~~Kinematic support of the priors~~ **ANSWERED 2026-08-15**: see §4.5. The
+   signal prior is boosted+recoil (not pure 2->1), passes the trigger-matched
+   selection at 0.60%; the inclusive prior is pure 2->1 and passes at 0.00%.
 2. **v3.8 divergence mechanism:** gradient blow-up from raw SWD on a delta
-   prior? Verify via a rerun's gradient-norm log or a short diagnostic.
+   prior? Partially confirmed: v3.8 latent grad norm reached 73.8k at epoch
+   290 (train_log.csv, artifact-measured). The v3.9 F1-restricted pilot
+   (running 2026-08-15) tests the bounded-support hypothesis directly.
 3. **Stage-3 checkpoint policy:** should the science product be final
    instead of best, or should the selection score be re-weighted?
 4. **Prefix sampling bias** of --num-samples (file-order cap) — quantify.
-5. **Notebook oddity:** identical OS-pair counts at pT>2 and pT>3 GeV
-   (7,177,454) — plausibly the DoubleMuParked trigger's ~3 GeV leg floor;
-   unexplained, not pursued.
+5. ~~Notebook oddity~~ **ANSWERED 2026-08-15**: hard 3.0 GeV trigger floor in
+   the skim (zero stored muons below 3.0 GeV); no muons exist in (2,3] GeV,
+   hence identical pT>2 and pT>3 pair counts (§4.5).
 
-## 7. Proposed fix roadmap (design only — not implemented)
+## 7. Proposed fix roadmap (status: E1 done, F1 implemented as v3.9, running)
 
 Paper-grounded, one-factor-at-a-time:
-- **F1 (primary) — composition-matched prior:** use the inclusive MG5 file
-  windowed to [2.6, 3.5] GeV (precomputed file copy, or a
-  theory_prior_mass_window loader option) so p(z) and p(x) share the same
-  process mixture and mass support; or regenerate the prior with a physical
-  J/psi pT spectrum if the inclusive file also lacks pT support.
+- **E1 (precondition) — DONE 2026-08-15.** Prior + data kinematics dumped
+  (§4.5; scripts/prior_kinematics.py, scripts/data_kinematics.py).
+- **F1 (primary) — composition-matched prior.** REVISED by E1: the inclusive
+  file is pure 2->1 (pair pT = 0) and unusable; the implemented variant is the
+  committed v3.9 pilot: restricted-decoder signal-region scope
+  [3.0369, 3.1569] + the signal MG5 prior filtered through the
+  trigger-equivalent selection (theory_prior_selection: pT>3, |eta|<2.4, mass
+  window — implemented in scripts/cms_data.filter_theory_prior) + a
+  muon_pt_max 100 GeV junk-tail guard (optional key in the muon loader).
+  Prior survives at 0.60% (5,995 events) — a statistics limitation to watch.
+  Config: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
+  (run_name Jpsi_v3.9_F1_restricted_ptmax100, launched 2026-08-15).
+  Residual known mismatch: prior pair-pT median ~10 GeV vs data ~26 GeV.
 - **F2 — paper anchor warmup:** beta_E=beta_D=50 -> 0 (first ~80 of 300 epochs)
-  on the mu- 3-momentum (prevents charge-inversion solutions).
+  on the mu- 3-momentum (prevents charge-inversion solutions). Not started.
 - **F3 — lambda treatment:** lambda scan {0.1, 1, 10} + upward annealing;
   consider p=1 for the latent SWD (tail-robust); optional gradient clipping as
-  a guard.
-- **Fallback — paper's restricted decoder (§6.3.2):** restrict the decoder data
-  term to the signal region with 1_S/P_D(S) reweighting, making the scope
-  explicit (OTUS models the signal region; continuum handled separately).
-- **Precondition E1 (no retraining):** dump prior kinematics (see §6.1).
-- Sequencing: F1 first as a single controlled change against the frozen v3.8
+  a guard. Not started.
+- **Fallback — paper's restricted decoder (§6.3.2):** subsumed into the v3.9
+  pilot (signal-region scope). The 1_S/P_D(S) reweighting itself is NOT
+  implemented — v3.9 uses the plain restricted scope instead.
+- Sequencing: v3.9 first as a single controlled change against the frozen v3.8
   config; then F2, F3 separately; never bundle.
 
 ## 8. Environment & tooling constraints (from the last DSH sessions)
 
-- **Session 4 (2026-08-15) — conda → .venv.** The project environment is now a
-  project-local virtual environment `.venv/` (Python 3.12.13 arm64 via homebrew)
-  holding the `cms` environment, installed from `requirements-cms-mps.txt`
-  (uproot/awkward/h5py/numpy/scipy/torch-MPS/jupyter etc.). Activate with
-  `source .venv/bin/activate`, or run `.venv/bin/python` directly. All runbook
-  commands and script docstrings now use `.venv/bin/python` instead of
-  `conda run -n cms`; `.venv/` is git-ignored. source-verified (created +
-  installed this session). pip/network to pypi worked this session (the install
-  was explicitly authorized).
+- **Session 4 (2026-08-15) — conda → .venv.** The project environment was
+  converted to a project-local virtual environment `.venv/` (Python 3.12.13
+  arm64 via homebrew) holding the `cms` environment, installed from
+  `requirements-cms-mps.txt` (uproot/awkward/h5py/numpy/scipy/torch-MPS/
+  jupyter etc.). All runbook commands and script docstrings use
+  `.venv/bin/python`; `.venv/` is git-ignored. source-verified.
+- **Session 5 (2026-08-15) — machine moved; conda cms env available.** On the
+  current machine /Users/ahrimarin/Desktop/otus_on_data the `.venv` does not
+  exist, but miniforge provides the `cms` conda env:
+  /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python (Python 3.10.20,
+  numpy 2.2.5, h5py 3.16.0, scipy, torch 2.12.1 MPS available, uproot 5.7.4,
+  awkward 2.9.0). Use that interpreter for all runbook commands on this
+  machine. source-verified (imports + device report).
 
 - The **cms conda environment was not present** on the DSH session PATH
   (conda: command not found); no Python with numpy/uproot/h5py/torch was
@@ -294,6 +344,11 @@ Paper-grounded, one-factor-at-a-time:
 - Vanilla-paper: configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml
   (runbook: docs/Jpsi_v3.8_vanilla_paper_runbook.md; production command NOT
   to be re-run without authorization).
+- v3.9 F1-restricted pilot: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
+  (run_name Jpsi_v3.9_F1_restricted_ptmax100; extends v3.8; signal-region
+  scope + trigger-matched prior + muon_pt_max 100).
+- E1 kinematics dumps: scripts/prior_kinematics.py, scripts/data_kinematics.py
+  (see §4.5 for the measured numbers).
 - Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
 - Stage comparisons: scripts/stage_diagnostic.py; v3.7/v3.8 three-path eval:
   scripts/eval_v37.py; gradient audits: scripts/verify_v37_gradients.py,
@@ -331,3 +386,19 @@ Paper-grounded, one-factor-at-a-time:
   stage3_candidateB_validation.py, stage3_candidateB_report.py); refreshed the
   requirements-file header comments. Left README.md's upstream py36-otus note
   and the notebook cell outputs untouched.
+- **2026-08-15 — Session 5 (E1 kinematics + v3.9 F1-restricted pilot).** Found
+  the committed-but-unrun v3.9 F1 design (commit 48fb0ca31: filter_theory_prior
+  + v3.9 config). On this machine the `cms` conda env is the interpreter
+  (§8). Ran E1: prior kinematics (both MG5 files), CMS trigger floor, and
+  signal-region pair kinematics; all numbers in §4.5; answered §6.1 and §6.5.
+  Discovered the skim's junk tail (muons up to ~16.8 TeV in the mass window)
+  and the prior's 0.60% pass rate (5,995 events). Added the optional
+  muon_pt_max guard to the muon loader (scripts/cms_data.py), set it to
+  100 GeV in the v3.9 config, and rewrote the config header with the measured
+  E1 facts. Wrote scripts/prior_kinematics.py, scripts/data_kinematics.py,
+  tests/test_v39_f1.py (10 tests, all green; full suite passes). First v3.9
+  launch (pre-cut config) was killed during epoch 2 and left as
+  Jpsi_v3.9_F1_restricted (provenance only); the production pilot is
+  Jpsi_v3.9_F1_restricted_ptmax100 (300 epochs, ~181.5k steps, ~13h MPS,
+  launched this session). Early signal: epoch-1 train loss ~233 vs v3.8's
+  ~3,245 (bounded support confirms the hypothesis direction).

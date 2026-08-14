@@ -19,18 +19,35 @@
 # composition mismatch. Restricting both domains to the signal region with a
 # trigger-matched prior bounds the raw SWD support and restores approximate
 # injectivity.
+#
+# E1 measurements (2026-08-15, scripts/prior_kinematics.py +
+# scripts/data_kinematics.py, artifact-measured):
+#   - CMS trigger floor confirmed: ZERO stored muons below pT 3.0 GeV.
+#   - Signal prior passes the trigger-equivalent selection at 0.60% (5995 of
+#     1M events); the inclusive MG5 file is pure 2->1 (pair pT == 0) and
+#     passes it at 0.00% in the J/psi window - unusable as the prior.
+#   - Data signal-region pair pT median ~26 GeV vs filtered prior median
+#     ~10 GeV: the MG5 file is softer than the parked-B data; the transport
+#     must absorb a ~2.5x pair-pT shift (known residual limitation).
+#   - The skim contains junk muons up to ~16.8 TeV inside the mass window
+#     (0.40% of muons above 100 GeV): muon_pt_max removes them.
 
 extends: cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml
 
-run_name: Jpsi_v3.9_F1_restricted
+run_name: Jpsi_v3.9_F1_restricted_ptmax100
 
 paths:
   theory_prior_file: cms_jpsi_mumu_mg5_8tev_1M.hdf5
 
 muon_selection:
-  muon_pt_min: 2.0          # data-side cut kept verbatim (the file has a hard
-                            # 3 GeV trigger floor; see E1 measurements)
-  muon_abs_eta_max: 2.4
+  muon_pt_min: 2.0          # no-op vs the hard 3 GeV trigger floor (E1: zero
+                            # stored muons below 3.0 GeV; artifact-measured)
+  muon_pt_max: 100.0        # junk-tail guard: the skim contains misreconstructed
+                            # muons up to 16.8 TeV inside the mass window
+                            # (0.40% of muons above 100 GeV; unphysical at 8 TeV).
+                            # The MG5 prior's muon pT support ends at ~94 GeV,
+                            # so events beyond that can never be transported.
+  muon_abs_eta_max: 2.4     # ~no-op: 99.2% of stored muons pass (E1)
   jpsi_mass_min: 3.0369     # signal region (paper restricted-decoder scope)
   jpsi_mass_max: 3.1569
 

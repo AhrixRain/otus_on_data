@@ -329,10 +329,17 @@ def load_cms_muon_x_data(
                 "charge": arrays["Muon_charge"],
             }
         )
-        selected = muons[
-            (muons.pt > float(selection["muon_pt_min"]))
-            & (np.abs(muons.eta) < float(selection["muon_abs_eta_max"]))
-        ]
+        keep = (muons.pt > float(selection["muon_pt_min"])) & (
+            np.abs(muons.eta) < float(selection["muon_abs_eta_max"])
+        )
+        if selection.get("muon_pt_max") is not None:
+            # Optional junk-tail guard. The reduced skim contains
+            # misreconstructed muons with multi-TeV pT inside the mass window
+            # (unphysical at 8 TeV); the MG5 prior's muon pT support ends at
+            # ~94 GeV, so events beyond that can never be matched by the
+            # transport and poison the raw-coordinate SWD gradients.
+            keep = keep & (muons.pt < float(selection["muon_pt_max"]))
+        selected = muons[keep]
         rows = _pair_p4_rows(
             selected,
             mass_min=float(selection["jpsi_mass_min"]),
