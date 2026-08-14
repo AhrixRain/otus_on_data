@@ -113,8 +113,10 @@
    signal-only prior.
 2. **Stage-3 schedule + checkpoint selection degrade the cycle (high).** v3.5
    stage 3 (beta=0.15, tau=2.0, encoder frozen) plus the sim-weighted validation
-   score (1.0*x_sim + 1.0*z_prior + 0.5*x_reco) select the sim-best =
-   cycle-worst checkpoint.
+   score (1.0*x_sim + 1.0*z_prior + 0.5*x_reco) — 2026-08-15 refinement: the
+   score is z_prior-dominated (~9.2 of ~10.5) and the cycle term (weight 0.5,
+   scale ~1.7) is masked, so checkpoint selection is effectively blind to the
+   cycle; see §6.3 for the measured trajectory.
 3. **Z-scale loss recipe transferred untuned (historical, fixed in v3.5).** Run A's
    z-scored mass W1 (weight 2.0+2.0, mass sigma ~10 MeV) had ~100x-amplified
    gradients; v3.5 uses resonance W1 in GeV units instead.
@@ -310,8 +312,16 @@ than v3.8 — bounded support is behaving as hypothesized. Eval z lags train z
    run; the catastrophic generator came from a converged-but-degenerate
    solution where D(z~prior) is never trained (§4.4). The v3.9 F1-restricted
    pilot (running 2026-08-15) tests whether matched support closes the hole.
-3. **Stage-3 checkpoint policy:** should the science product be final
-   instead of best, or should the selection score be re-weighted?
+3. ~~Stage-3 checkpoint policy~~ **ANSWERED 2026-08-15** (v3.5 history.json,
+   artifact-measured): the score = 1.0*x_sim + 1.0*z_prior + 0.5*x_reco is
+   dominated by z_prior (~9.2 of ~10.5) in standardized units; with the
+   encoder frozen in stage 3, z_prior is nearly constant, so the score's
+   dynamics come from x_sim/x_reco fluctuations at ~20x smaller scale. The
+   cycle (x_reco 1.67@ep160 -> 1.84@ep200) is masked by the z_prior scale —
+   "best" (ep160) vs "final" (ep200) differ by ~0.25 score units driven
+   mostly by x_sim (0.477 vs 0.546). For v3.10's stage-3 policy: re-weight
+   the cycle term upward (or z-score each term) so the cycle actually
+   influences selection.
 4. ~~Prefix sampling bias~~ **ANSWERED 2026-08-15**: negligible. The 1M
    file-prefix cap reproduces the full x_test statistics within ~1% (muon pT
    median 12.4 vs 12.59; pair pT median 26.0 vs 26.05; mass mean 3.086 vs
