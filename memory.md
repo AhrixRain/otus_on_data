@@ -409,6 +409,8 @@ Paper-grounded, one-factor-at-a-time:
   (extends v3.5; validated, not launched).
 - E1 kinematics dumps: scripts/prior_kinematics.py, scripts/data_kinematics.py
   (see §4.5 for the measured numbers).
+- Verdict tables: scripts/eval_verdict.py --eval-dir <run>/eval (W1/KS +
+  shape stats per path; baselines in §4.3b).
 - Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
 - Stage comparisons: scripts/stage_diagnostic.py; v3.7/v3.8 three-path eval:
   scripts/eval_v37.py; gradient audits: scripts/verify_v37_gradients.py,
