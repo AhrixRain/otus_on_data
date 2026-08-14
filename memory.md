@@ -62,11 +62,19 @@
   (diverged, see §4.4), Jpsi_v3.9_F1_restricted (aborted pre-cut warmup,
   2 epochs, kept for provenance), **Jpsi_v3.9_F1_restricted_ptmax100**
   (launched 2026-08-15; ~181.5k steps, ~13h on MPS).
-- **Provenance gap (important):** for all runs *except* v3.8, the checkpoints
-  (.pt), train_log.csv, status.json, history.json, config.resolved.json,
-  metrics.json, per-run summary.{json,md}, and the .plot_cache were **deleted**;
-  only PNGs and eval/comparisons/*/mass_histograms.npz survive. v3.8's eval
-  NPZs and plots are committed to git.
+- **Provenance gap (old machine only):** for all runs *except* v3.8, the
+  checkpoints (.pt), train_log.csv, status.json, history.json,
+  config.resolved.json, metrics.json, per-run summary.{json,md}, and the
+  .plot_cache were **deleted** on the old machine; only PNGs and
+  eval/comparisons/*/mass_histograms.npz survive there. v3.8's eval NPZs and
+  plots are committed to git.
+- **Machine-state correction (2026-08-15, current machine):** on
+  /Users/ahrimarin/Desktop/otus_on_data the provenance files DO exist for all
+  listed runs — jpsi_v1, jpsi_v2_5pct, Jpsi_v3, Jpsi_v3.5 (best_model.pt,
+  history.json, train_log.csv, status.json), Jpsi_v3.6A (all stage
+  checkpoints), v3.7_lambda1/3 (best_combined/best_cycle/best_z_prior +
+  final). Any historical checkpoint can be re-evaluated with the current
+  scripts/eval.py harness directly. artifact-measured (directory listings).
 - **Code state:** active pipeline = scripts/ (train, cms_data, cms_model,
   cms_training, loss, physics, metrics, eval, eval_v37, plot, preflight,
   verify_v37/v38_gradients, plot_jpsi_all_runs, diagnostics) +
