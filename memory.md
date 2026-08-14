@@ -260,6 +260,12 @@ The reconstruction term converges ~instantly (0.66 by epoch 10) and the
 latent SWD keeps decreasing on the train side with ~200x tamer gradients
 than v3.8 — bounded support is behaving as hypothesized. Eval z lags train z
 (14.6 vs 4.1 at epoch 10) and will be the number to watch at epochs 20/50+.
+Pilot caveat (hypothesis, high confidence): the eval SWD computes 1000
+projection slices over only z_val=599 events (<1 point/slice), so eval_z is
+sparse-slice noisy and biased upward — do not over-interpret its
+fluctuations; checkpoint selection (selection score = eval loss) is
+consequently noisy too, so the verdict should eval BOTH best_model.pt and
+checkpoint_final.pt.
 
 ### 4.4 v3.8 vanilla-paper run (artifact-measured)
 - Config: configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml
