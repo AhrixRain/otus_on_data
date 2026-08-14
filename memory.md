@@ -232,12 +232,12 @@ CMS data (Run2012BC_DoubleMuParked_Muons.root):
   std 31 MeV (E-based); muon pT median 12.4; pair pT median 26.0, mean 27.4,
   p95 47.4. The prior stays ~2.5x softer than the parked-B data even after
   trigger matching (known residual limitation of the MG5 file).
-- Per-coordinate support coverage (full x_test vs z_test, artifact-measured
-  2026-08-15; z_test n=600 so the prior quantiles are noisy): data px/py span
-  ±27 GeV (p99) vs prior ±11-16 GeV; 72-87% of data events fall inside the
-  prior's empirical 1-99% range per transverse coordinate; pz coverage ~94%;
-  E coverage ~95%. The encoder must transport ~20% of data events (the
-  high-pT tail) into a ~2x-narrower transverse support — a bounded continuous
+- Per-coordinate support coverage (full x_test vs the full 5,995-event
+  filtered prior, artifact-measured 2026-08-15): data px/py span ±27 GeV
+  (p99) vs prior ±14-15 GeV; ~83-84% of data events fall inside the prior's
+  empirical 1-99% range per transverse coordinate; pz coverage 93-94%; E
+  coverage ~96%. The encoder must transport ~16% of data events (the high-pT
+  tail) into a ~2x-narrower transverse support — a bounded continuous
   distortion the SWD can in principle absorb, at the cost of unfolding
   fidelity.
 
