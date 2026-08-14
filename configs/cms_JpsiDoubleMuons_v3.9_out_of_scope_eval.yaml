@@ -1,0 +1,33 @@
+# Out-of-scope diagnostic for the v3.9 F1-restricted model.
+#
+# Evaluation-only config: feeds the FULL [2.6, 3.5] window data (continuum
+# included) to the signal-region-trained v3.9 model. The prior stays the
+# trigger-matched filtered prior (the model's actual training prior).
+#
+# Expected behavior (hypothesis): the encoder crushes the continuum onto the
+# delta prior, so the unfolding and reconstruction paths degrade outside the
+# signal region — quantifying exactly how much of v3.8's failure came from the
+# continuum vs the unbounded prior support.
+#
+# Usage (after Jpsi_v3.9_F1_restricted_ptmax100 finishes; MPS serialized):
+#   python scripts/eval.py \
+#     --config configs/cms_JpsiDoubleMuons_v3.9_out_of_scope_eval.yaml \
+#     --checkpoint outputs/cms_JpsiDoubleMuons/Jpsi_v3.9_F1_restricted_ptmax100/best_model.pt \
+#     --device mps \
+#     --output-dir outputs/cms_JpsiDoubleMuons/Jpsi_v3.9_F1_restricted_ptmax100/eval_out_of_scope
+#
+# Note: scripts/cms_model.load_model_from_checkpoint merges the CLI config
+# over the checkpoint config (preserving the checkpoint's daughter-mass
+# semantics and train stats), so the CLI config fully drives the eval data
+# selection. source-verified.
+
+extends: cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
+
+run_name: Jpsi_v3.9_F1_restricted_out_of_scope_eval
+
+muon_selection:
+  muon_pt_min: 2.0
+  muon_pt_max: 100.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 2.6       # full v3.8 window for the diagnostic
+  jpsi_mass_max: 3.5

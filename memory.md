@@ -425,6 +425,9 @@ Paper-grounded, one-factor-at-a-time:
   scope + trigger-matched prior + muon_pt_max 100).
 - v3.10 staged+restricted draft: configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml
   (extends v3.5; validated, not launched).
+- v3.9 out-of-scope diagnostic: configs/cms_JpsiDoubleMuons_v3.9_out_of_scope_eval.yaml
+  (full-window data fed to the v3.9 model; eval.py's CLI config drives the
+  eval data selection — source-verified in cms_model.load_model_from_checkpoint).
 - E1 kinematics dumps: scripts/prior_kinematics.py, scripts/data_kinematics.py
   (see §4.5 for the measured numbers).
 - Verdict tables: scripts/eval_verdict.py --eval-dir <run>/eval (W1/KS +
