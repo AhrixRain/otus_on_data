@@ -1,0 +1,44 @@
+# v3.10 staged + restricted-scope candidate (design draft; not yet run).
+#
+# Motivation (memory.md session 5): the v3.9 F1-restricted pilot tests the
+# vanilla two-term objective on the signal region with a trigger-matched
+# prior. Independent of its verdict, v3.5's staged physics loss is the only
+# objective so far that produced a good generator, because it constrains the
+# D(z~prior) path directly (x_sim distribution terms) — the exact hole the
+# vanilla objective has (memory.md root cause #4 refinement). This config
+# combines v3.5's objective and stage schedule with v3.9's data scope:
+#
+#   - DATA: signal region [3.0369, 3.1569] GeV, muon pT < 100 GeV junk guard
+#     (E1: hard 3 GeV trigger floor; skim junk reaches ~16.8 TeV).
+#   - PRIOR: signal MG5 file filtered through the trigger-equivalent
+#     selection (5,995 events; theory_prior_selection).
+#
+# Everything else (loss weights, stages 50/50/100 with anchors, lr schedule,
+# architecture, loaders) is inherited verbatim from cms_JpsiDoubleMuons_mps.yaml.
+# Known residual mismatch: prior pair pT ~2.5x softer than the parked-B data
+# (memory.md 4.5) — the staged loss's physics terms will expose how far the
+# transport can absorb it.
+#
+# Launch only after Jpsi_v3.9_F1_restricted_ptmax100 finishes (MPS is
+# serialized); see memory.md section 7 for sequencing.
+
+extends: cms_JpsiDoubleMuons_mps.yaml
+
+run_name: Jpsi_v3.10_staged_restricted
+
+paths:
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_1M.hdf5
+
+muon_selection:
+  muon_pt_min: 2.0          # no-op vs the hard 3 GeV trigger floor (E1)
+  muon_pt_max: 100.0        # junk-tail guard (E1: misreconstructed muons to 16.8 TeV)
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 3.0369     # signal region (paper restricted-decoder scope)
+  jpsi_mass_max: 3.1569
+
+# Trigger-equivalent fiducial selection for the MG5 prior (truth level).
+theory_prior_selection:
+  muon_pt_min: 3.0          # matches the measured 3 GeV trigger floor
+  muon_abs_eta_max: 2.4
+  mass_min: 3.0369          # signal region, same as the data window
+  mass_max: 3.1569

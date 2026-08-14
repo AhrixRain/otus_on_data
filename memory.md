@@ -296,6 +296,14 @@ Paper-grounded, one-factor-at-a-time:
   Config: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
   (run_name Jpsi_v3.9_F1_restricted_ptmax100, launched 2026-08-15).
   Residual known mismatch: prior pair-pT median ~10 GeV vs data ~26 GeV.
+- **v3.10 (drafted 2026-08-15, NOT launched)** — staged + restricted:
+  configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml extends the v3.5
+  staged config with the v3.9 data scope (signal region + junk cut +
+  trigger-matched prior). Rationale: v3.5's loss is the only objective that
+  produced a good generator because its x_sim terms constrain D(z~prior)
+  directly (the vanilla hole, §3.2 cause #4). Dry-run validated. Launch only
+  after v3.9 finishes (MPS serialized). Stage-3 checkpoint-policy fix (cause
+  #2) is deliberately NOT bundled.
 - **F2 — paper anchor warmup:** beta_E=beta_D=50 -> 0 (first ~80 of 300 epochs)
   on the mu- 3-momentum (prevents charge-inversion solutions). Not started.
 - **F3 — lambda treatment:** lambda scan {0.1, 1, 10} + upward annealing;
@@ -374,6 +382,8 @@ Paper-grounded, one-factor-at-a-time:
 - v3.9 F1-restricted pilot: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
   (run_name Jpsi_v3.9_F1_restricted_ptmax100; extends v3.8; signal-region
   scope + trigger-matched prior + muon_pt_max 100).
+- v3.10 staged+restricted draft: configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml
+  (extends v3.5; validated, not launched).
 - E1 kinematics dumps: scripts/prior_kinematics.py, scripts/data_kinematics.py
   (see §4.5 for the measured numbers).
 - Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
