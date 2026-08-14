@@ -432,6 +432,9 @@ Paper-grounded, one-factor-at-a-time:
   (see §4.5 for the measured numbers).
 - Verdict tables: scripts/eval_verdict.py --eval-dir <run>/eval (W1/KS +
   shape stats per path; baselines in §4.3b).
+- Generator-quality check: scripts/sample_generator.py (decodes the full
+  filtered prior K times with fresh noise; needed for v3.9 whose z_test is
+  only 600 events vs 100k for v3.5/v3.8).
 - Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
 - Stage comparisons: scripts/stage_diagnostic.py; v3.7/v3.8 three-path eval:
   scripts/eval_v37.py; gradient audits: scripts/verify_v37_gradients.py,
