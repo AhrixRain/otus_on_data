@@ -112,7 +112,12 @@
    gradients; v3.5 uses resonance W1 in GeV units instead.
 4. **Degenerate prior makes the paper objective ill-conditioned (v3.8).** Raw
    SWD against a delta-like prior has huge, noisy gradients; observed late-stage
-   divergence.
+   divergence. 2026-08-15 refinement (source-verified + artifact-measured): the
+   deeper structural issue is that the vanilla objective never constrains
+   D(z~prior) directly — D is only trained through the cycle x->E(x)->D(E(x)),
+   so when the latent SWD fails (non-injectivity), D(z~prior) is never
+   exercised and the generator degrades catastrophically while the cycle loss
+   stays small (§4.4 trajectory).
 
 ### 3.3 What works
 - **v3.5 generator (z->x simulation) is a genuine success** at the mass level:
@@ -214,8 +219,17 @@ CMS data (Run2012BC_DoubleMuParked_Muons.root):
     KS = 0.896 (only 0.5% in window);
   - reconstruction: pred mean 2.92, std 19.18, W1 = 1.59;
   - unfolding: pred mean 6.25, std 23.26, W1 = 2.46 vs a 5.7-MeV-wide prior.
-  - Loss-curve PNGs (pixel-profiled) suggest late-stage blow-up (losses rise in
-    the final octile).
+  - Loss trajectory (train_log.csv, artifact-measured 2026-08-15): NOT a
+    monotonic blow-up. Train loss plateaued at ~100-400 from epoch 10 onward;
+    eval bounced (best 127.3 near epoch 280); a transient spike at epoch 290
+    (train 1304, latent grad norm 73,774) recovered by epoch 300 (298 / 4563).
+    The catastrophic D(z_test) numbers come from a converged-but-degenerate
+    solution: the vanilla objective never constrains D(z~prior) directly —
+    D is only trained through the cycle x -> E(x) -> D(E(x)). When the latent
+    SWD fails to place E(x) on the prior's support (continuum crush), D is
+    never exercised on z ~ p(z) and fabricates garbage there while the cycle
+    still looks acceptable. The v3.9 restricted pilot directly tests whether
+    matched support lets the SWD succeed, which is what closes this hole.
 - Interpretation (hypothesis, high confidence): raw SWD against the
   degenerate prior is ill-conditioned; the literal paper objective does not
   transfer to a delta-like signal-only prior vs continuum-laden data.
@@ -242,13 +256,18 @@ CMS data (Run2012BC_DoubleMuParked_Muons.root):
 1. ~~Kinematic support of the priors~~ **ANSWERED 2026-08-15**: see §4.5. The
    signal prior is boosted+recoil (not pure 2->1), passes the trigger-matched
    selection at 0.60%; the inclusive prior is pure 2->1 and passes at 0.00%.
-2. **v3.8 divergence mechanism:** gradient blow-up from raw SWD on a delta
-   prior? Partially confirmed: v3.8 latent grad norm reached 73.8k at epoch
-   290 (train_log.csv, artifact-measured). The v3.9 F1-restricted pilot
-   (running 2026-08-15) tests the bounded-support hypothesis directly.
+2. ~~v3.8 divergence mechanism~~ **REFINED 2026-08-15**: the "divergence" was
+   a transient epoch-290 spike (latent grad 73.8k) on an otherwise-plateaued
+   run; the catastrophic generator came from a converged-but-degenerate
+   solution where D(z~prior) is never trained (§4.4). The v3.9 F1-restricted
+   pilot (running 2026-08-15) tests whether matched support closes the hole.
 3. **Stage-3 checkpoint policy:** should the science product be final
    instead of best, or should the selection score be re-weighted?
-4. **Prefix sampling bias** of --num-samples (file-order cap) — quantify.
+4. ~~Prefix sampling bias~~ **ANSWERED 2026-08-15**: negligible. The 1M
+   file-prefix cap reproduces the full x_test statistics within ~1% (muon pT
+   median 12.4 vs 12.59; pair pT median 26.0 vs 26.05; mass mean 3.086 vs
+   3.0943 GeV, std 28.4 vs 28.1 MeV). artifact-measured vs the full-run data
+   cache.
 5. ~~Notebook oddity~~ **ANSWERED 2026-08-15**: hard 3.0 GeV trigger floor in
    the skim (zero stored muons below 3.0 GeV); no muons exist in (2,3] GeV,
    hence identical pT>2 and pT>3 pair counts (§4.5).
