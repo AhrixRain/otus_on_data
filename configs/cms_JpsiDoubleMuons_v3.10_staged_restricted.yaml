@@ -19,6 +19,14 @@
 # (memory.md 4.5) — the staged loss's physics terms will expose how far the
 # transport can absorb it.
 #
+# ONE deliberate change vs v3.5 besides the scope: the checkpoint-selection
+# score is re-weighted so the cycle term is no longer masked (memory.md 6.3,
+# artifact-measured: v3.5's score = 1.0*x_sim + 1.0*z_prior + 0.5*x_reco was
+# z_prior-dominated, ~9.2 of ~10.5 units, because the encoder is frozen in
+# stage 3; the cycle term ~1.7*0.5 never influenced selection). With
+# x_sim: 5.0 and x_reco: 5.0 the generator AND the cycle both steer
+# checkpoint selection in stage 3. Training dynamics are untouched.
+#
 # Launch only after Jpsi_v3.9_F1_restricted_ptmax100 finishes (MPS is
 # serialized); see memory.md section 7 for sequencing.
 
@@ -42,3 +50,11 @@ theory_prior_selection:
   muon_abs_eta_max: 2.4
   mass_min: 3.0369          # signal region, same as the data window
   mass_max: 3.1569
+
+# Re-weighted checkpoint selection (see header; the only non-scope change vs
+# the v3.5 parent). Selection only; does not affect training gradients.
+loss:
+  selection_score:
+    x_sim: 5.0
+    z_prior: 1.0
+    x_reco: 5.0

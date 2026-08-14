@@ -60,8 +60,11 @@
   encoder_alignment_diagnostic, stage3_candidateB_validation, v3.7_lambda1/3,
   ab_plots{,_example,_smoke}, Jpsi_v3.8_vanilla_paper_all_data_seed0
   (diverged, see §4.4), Jpsi_v3.9_F1_restricted (aborted pre-cut warmup,
-  2 epochs, kept for provenance), **Jpsi_v3.9_F1_restricted_ptmax100**
-  (launched 2026-08-15; ~181.5k steps, ~13h on MPS).
+  2 epochs, kept for provenance), Jpsi_v3.9_F1_restricted_ptmax100
+  (TERMINATED at epoch ~20 by user request 2026-08-15; kept on disk.
+  Preliminary metrics at that point: train loss ~4.4, eval 15.1, generator
+  mass W1 ~1.48/KS 0.56 — early-training immaturity, not a verdict. The user
+  will run the final fix later; see docs/Jpsi_F1_fix_runbook.md).
 - **Provenance gap (old machine only):** for all runs *except* v3.8, the
   checkpoints (.pt), train_log.csv, status.json, history.json,
   config.resolved.json, metrics.json, per-run summary.{json,md}, and the
@@ -353,14 +356,15 @@ Paper-grounded, one-factor-at-a-time:
   Config: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
   (run_name Jpsi_v3.9_F1_restricted_ptmax100, launched 2026-08-15).
   Residual known mismatch: prior pair-pT median ~10 GeV vs data ~26 GeV.
-- **v3.10 (drafted 2026-08-15, NOT launched)** — staged + restricted:
-  configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml extends the v3.5
-  staged config with the v3.9 data scope (signal region + junk cut +
-  trigger-matched prior). Rationale: v3.5's loss is the only objective that
+- **v3.10 (IMPLEMENTED 2026-08-15, not launched — the user runs it later)** —
+  staged + restricted: configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml
+  extends the v3.5 staged config with the v3.9 data scope (signal region +
+  junk cut + trigger-matched prior) AND the re-weighted checkpoint-selection
+  score (x_sim 5.0 / z_prior 1.0 / x_reco 5.0) so the cycle is no longer
+  masked (§6.3 finding). Rationale: v3.5's loss is the only objective that
   produced a good generator because its x_sim terms constrain D(z~prior)
-  directly (the vanilla hole, §3.2 cause #4). Dry-run validated. Launch only
-  after v3.9 finishes (MPS serialized). Stage-3 checkpoint-policy fix (cause
-  #2) is deliberately NOT bundled.
+  directly (the vanilla hole, §3.2 cause #4). Dry-run validated. THIS IS THE
+  RECOMMENDED FIX RUN.
 - **F2 — paper anchor warmup:** beta_E=beta_D=50 -> 0 (first ~80 of 300 epochs)
   on the mu- 3-momentum (prevents charge-inversion solutions). Not started.
 - **F3 — lambda treatment:** lambda scan {0.1, 1, 10} + upward annealing;
@@ -444,6 +448,8 @@ Paper-grounded, one-factor-at-a-time:
 - v3.9 out-of-scope diagnostic: configs/cms_JpsiDoubleMuons_v3.9_out_of_scope_eval.yaml
   (full-window data fed to the v3.9 model; eval.py's CLI config drives the
   eval data selection — source-verified in cms_model.load_model_from_checkpoint).
+- **Runbook for the deferred runs: docs/Jpsi_F1_fix_runbook.md** (exact
+  commands for v3.10/v3.9 training, evaluation, baselines, guardrails).
 - E1 kinematics dumps: scripts/prior_kinematics.py, scripts/data_kinematics.py
   (see §4.5 for the measured numbers).
 - Verdict tables: scripts/eval_verdict.py --eval-dir <run>/eval (W1/KS +
@@ -488,6 +494,14 @@ Paper-grounded, one-factor-at-a-time:
   stage3_candidateB_validation.py, stage3_candidateB_report.py); refreshed the
   requirements-file header comments. Left README.md's upstream py36-otus note
   and the notebook cell outputs untouched.
+- **2026-08-15 — Session 5 continued (user handover).** At the user's request
+  ("implement the fix first, without actual running, terminate the current
+  runs"), terminated the v3.9 pilot at epoch ~20 (kept on disk; preliminary
+  metrics recorded in §2) and finalized the fix implementation: v3.10
+  config gained the re-weighted checkpoint-selection score (§6.3 finding),
+  dry-run validated; wrote docs/Jpsi_F1_fix_runbook.md with all run/eval
+  commands; committed. No training runs in progress — the user runs the fix
+  later.
 - **2026-08-15 — Session 5 (E1 kinematics + v3.9 F1-restricted pilot).** Found
   the committed-but-unrun v3.9 F1 design (commit 48fb0ca31: filter_theory_prior
   + v3.9 config). On this machine the `cms` conda env is the interpreter
