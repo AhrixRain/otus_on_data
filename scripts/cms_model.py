@@ -94,8 +94,9 @@ def checkpoint_payload(
     epoch: int,
     eval_loss: float | None,
     device_report: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "model_state_dict": model.state_dict(),
         "config": config,
         "stats": {key: value.tolist() for key, value in stats.items()},
@@ -103,6 +104,9 @@ def checkpoint_payload(
         "eval_loss": None if eval_loss is None else float(eval_loss),
         "device_report": device_report,
     }
+    if metadata is not None:
+        payload["run_metadata"] = metadata
+    return payload
 
 
 def load_model_from_checkpoint(

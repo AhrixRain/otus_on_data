@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Three-path evaluation for the v3.7 vanilla OTUS/SWAE experiment.
+"""Three-path evaluation for the vanilla OTUS/SWAE experiments (v3.7/v3.8).
 
 For each requested checkpoint, evaluates on the fixed held-out test sample:
 
@@ -7,9 +7,9 @@ For each requested checkpoint, evaluates on the fixed held-out test sample:
   B. cycle:             x_cycle = D(E(x_test))      vs. x_test CMS
   C. generator:         x_gen   = D(z_test)         vs. x_test CMS
 
-All stochastic draws and SW projections use fixed seeds, so every lambda run
-is evaluated on exactly the same events/projections. Training is never
-started by this script.
+All stochastic draws and SW projections use fixed seeds, so every checkpoint
+(including every lambda run) is evaluated on exactly the same
+events/projections. Training is never started by this script.
 """
 
 from __future__ import annotations
@@ -237,6 +237,7 @@ def evaluate_checkpoint(
     num_slices: int,
     sw_eval_seed: int,
     output_dir: Path,
+    mode: str,
 ) -> dict[str, Any]:
     model, model_config, _stats, checkpoint = load_model_from_checkpoint(
         checkpoint_path,
@@ -290,6 +291,18 @@ def evaluate_checkpoint(
     gen_mean_ks, gen_max_ks = ks_summary(gen_component_ks)
     gen_phys_mean_ks, gen_phys_max_ks = ks_summary(gen_physics_ks)
 
+    cycle_metrics = {
+        "reco_mse_raw": float(np.mean((x_eval - x_cycle) ** 2)),
+        "reco_mse_standardized": standardized_mse_np(loss_factory, x_eval, x_cycle),
+        "mass_ks": maybe_ks(invariant_mass(x_eval), invariant_mass(x_cycle)),
+        "pt_ks": maybe_ks(pair_pt(x_eval), pair_pt(x_cycle)),
+        "mean_ks_8d": cycle_mean_ks,
+        "max_ks_8d": cycle_max_ks,
+        "component_ks": cycle_component_ks,
+        "mean_ks_physics": cycle_phys_mean_ks,
+        "max_ks_physics": cycle_phys_max_ks,
+        "physics_ks": cycle_physics_ks,
+    }
     summary = {
         "checkpoint": str(checkpoint_path.resolve()),
         "checkpoint_kind": checkpoint_path.stem,
@@ -316,18 +329,10 @@ def evaluate_checkpoint(
             "z_physics_max_ks": z_phys_max_ks,
             "z_physics_ks": z_physics_ks,
         },
-        "cycle": {
-            "reco_mse_raw": float(np.mean((x_eval - x_cycle) ** 2)),
-            "reco_mse_standardized": standardized_mse_np(loss_factory, x_eval, x_cycle),
-            "mass_ks": maybe_ks(invariant_mass(x_eval), invariant_mass(x_cycle)),
-            "pt_ks": maybe_ks(pair_pt(x_eval), pair_pt(x_cycle)),
-            "mean_ks_8d": cycle_mean_ks,
-            "max_ks_8d": cycle_max_ks,
-            "component_ks": cycle_component_ks,
-            "mean_ks_physics": cycle_phys_mean_ks,
-            "max_ks_physics": cycle_phys_max_ks,
-            "physics_ks": cycle_physics_ks,
-        },
+        # "cycle" is retained for v3.7 output compatibility; v3.8 outputs use
+        # the "reconstruction" name for the same x -> z -> x path.
+        "cycle": cycle_metrics,
+        "reconstruction": cycle_metrics,
         "generator": {
             "mass_ks": maybe_ks(invariant_mass(x_eval), invariant_mass(x_gen)),
             "pt_ks": maybe_ks(pair_pt(x_eval), pair_pt(x_gen)),
@@ -341,7 +346,7 @@ def evaluate_checkpoint(
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = output_dir / "v37_eval_summary.json"
+    summary_path = output_dir / f"{mode}_eval_summary.json"
     summary_path.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -374,8 +379,10 @@ def main() -> int:
     if checkpoint_arg.is_dir():
         candidates = [
             "best_model.pt",
+            "best_combined.pt",
             "best_z_prior.pt",
             "best_cycle.pt",
+            "best_reconstruction.pt",
             "checkpoint_final.pt",
             "last_model.pt",
         ]
@@ -383,7 +390,7 @@ def main() -> int:
             checkpoint_arg / name for name in candidates if (checkpoint_arg / name).exists()
         ]
         if not checkpoint_paths:
-            print("ERROR: no v3.7 checkpoints found in", checkpoint_arg, file=sys.stderr)
+            print("ERROR: no vanilla-SWAE checkpoints found in", checkpoint_arg, file=sys.stderr)
             return 2
     else:
         checkpoint_paths = [checkpoint_arg]
@@ -396,19 +403,27 @@ def main() -> int:
         or config.get("loaders", {}).get("eval_batch_size", 20000)
     )
     sw_batch_size = int(
-        args.sw_batch_size or eval_config.get("v37_sw_batch_size", batch_size)
+        args.sw_batch_size
+        or eval_config.get("sw_batch_size")
+        or eval_config.get("v37_sw_batch_size", batch_size)
     )
     sw_eval_seed = int(eval_config.get("sw_eval_seed", seed + 3))
 
-    if not bool(loss_config.get("vanilla_v3_7", False)):
-        print("ERROR: --config does not enable vanilla_v3_7.", file=sys.stderr)
+    vanilla_v3_7 = bool(loss_config.get("vanilla_v3_7", False))
+    vanilla_swae = bool(loss_config.get("vanilla_swae", False)) or vanilla_v3_7
+    if not vanilla_swae:
+        print(
+            "ERROR: --config does not enable vanilla_v3_7 or vanilla_swae.",
+            file=sys.stderr,
+        )
         return 2
+    mode = "v37" if vanilla_v3_7 else "v38"
 
     for checkpoint_path in checkpoint_paths:
         if args.output_dir is not None:
-            out_dir = args.output_dir / "v37_eval" / checkpoint_path.stem
+            out_dir = args.output_dir / f"{mode}_eval" / checkpoint_path.stem
         else:
-            out_dir = checkpoint_path.parent / "v37_eval" / checkpoint_path.stem
+            out_dir = checkpoint_path.parent / f"{mode}_eval" / checkpoint_path.stem
         evaluate_checkpoint(
             checkpoint_path,
             config,
@@ -420,6 +435,7 @@ def main() -> int:
             num_slices=num_slices,
             sw_eval_seed=sw_eval_seed,
             output_dir=out_dir,
+            mode=mode,
         )
 
     print("Using device:", device)

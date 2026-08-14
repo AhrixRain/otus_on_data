@@ -4,8 +4,10 @@ import argparse
 import csv
 import json
 import os
+import platform
 import random
 import shutil
+import subprocess
 import sys
 import time
 from copy import deepcopy
@@ -18,6 +20,7 @@ import torch
 
 from cms_data import (
     array_stats,
+    file_fingerprint,
     load_and_split_cached,
     load_config,
     resolve_config,
@@ -27,6 +30,9 @@ from cms_model import build_model, checkpoint_payload
 from cms_training import HistoryLogger, build_loaders, build_loss_factory, train_all_stages
 from device_utils import device_report, select_device
 from encoder_diagnostics import make_training_callback
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,13 +106,113 @@ def make_run_dir(config: dict, run_name: str | None, dry_run: bool) -> Path:
     run_id = run_name or config.get("run_name") or time.strftime("run_%Y%m%d_%H%M%S")
     run_dir = output_root / run_id
     if not dry_run and run_dir.exists() and any(
-        (run_dir / name).exists() for name in ("best_model.pt", "last_model.pt")
+        (run_dir / name).exists()
+        for name in ("best_model.pt", "last_model.pt", "checkpoint_final.pt")
     ):
         raise FileExistsError(
             f"Refusing to overwrite existing checkpoint directory: {run_dir}. "
             "Use a new --run-name or --output-dir."
         )
     return run_dir
+
+
+def git_revision(repo_root: Path) -> dict[str, Any]:
+    """Best-effort Git identity of the working tree; never raises."""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            "commit": commit.stdout.strip() or None,
+            "dirty_worktree": bool(status.stdout.strip()),
+            "status_lines": status.stdout.splitlines() if status.stdout.strip() else [],
+        }
+    except Exception as exc:
+        return {"commit": None, "dirty_worktree": None, "error": str(exc)}
+
+
+def software_info() -> dict[str, Any]:
+    return {
+        "platform": platform.platform(),
+        "python": sys.version,
+        # str() is required: torch.__version__ is a TorchVersion object, which
+        # is JSON-serializable but breaks torch.load(weights_only=True) when
+        # embedded in checkpoint metadata.
+        "torch": str(torch.__version__),
+        "numpy": np.__version__,
+    }
+
+
+def collect_run_metadata(
+    config: dict[str, Any],
+    arrays: dict[str, np.ndarray],
+    loader_info: dict[str, Any],
+    device: torch.device,
+    report: dict[str, Any],
+    cache_info: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolved run identity stored in run_metadata.json and each checkpoint."""
+    paths = config["paths"]
+    split_config = config.get("data_split", {})
+    cap_keys = ("train_max", "val_max", "test_max")
+    caps_configured = any(split_config.get(key) is not None for key in cap_keys)
+    stages = [stage for stage in config.get("stages", []) if stage.get("enabled", True)]
+    return {
+        "run_name": config.get("run_name"),
+        "config_path": config.get("_config_path"),
+        "resolved_loss": config.get("loss", {}),
+        "data_paths": {
+            "cms_root_file": paths["cms_root_file"],
+            "theory_prior_file": paths["theory_prior_file"],
+        },
+        "file_fingerprints": {
+            "cms_root_file": file_fingerprint(paths["cms_root_file"]),
+            "theory_prior_file": file_fingerprint(paths["theory_prior_file"]),
+        },
+        "selected_counts": {
+            "cms": int(sum(len(arrays[key]) for key in ("x_train", "x_val", "x_test"))),
+            "mg5": int(sum(len(arrays[key]) for key in ("z_train", "z_val", "z_test"))),
+            "exact_when_no_caps": not caps_configured,
+        },
+        "split_counts": {key: int(len(arrays[key])) for key in sorted(arrays)},
+        "data_caps": {key: split_config.get(key) for key in cap_keys},
+        "loader_info": loader_info,
+        "train_batch_size": loader_info.get("train_batch_size"),
+        "eval_batch_size": loader_info.get("eval_batch_size"),
+        "num_slices": int(stages[0].get("num_slices", 1000)) if stages else None,
+        "seed": int(config.get("seed", 0)),
+        "total_epochs": int(sum(int(s.get("epochs", 0)) for s in stages)),
+        "software": software_info(),
+        "device": str(device),
+        "device_report": report,
+        "git": git_revision(REPO_ROOT),
+        "data_cache": cache_info,
+    }
+
+
+def validate_loaded_arrays(arrays: dict[str, np.ndarray]) -> None:
+    """Fail-fast structural validation of freshly loaded split arrays."""
+    expected = {"x_train", "x_val", "x_test", "z_train", "z_val", "z_test"}
+    actual = set(arrays)
+    if actual != expected:
+        raise ValueError(f"Unexpected split array keys: {sorted(actual ^ expected)}")
+    for key in sorted(arrays):
+        arr = arrays[key]
+        if arr.ndim != 2 or arr.shape[1] != 8:
+            raise ValueError(f"{key} has shape {arr.shape}, expected (N, 8).")
+        if arr.shape[0] < 1:
+            raise ValueError(f"{key} is empty.")
+        if not np.isfinite(arr).all():
+            raise ValueError(f"{key} contains non-finite values.")
 
 
 def set_seed(seed: int) -> None:
@@ -303,6 +409,7 @@ def main() -> None:
     report = device_report(device)
     run_dir = make_run_dir(config, args.run_name, args.dry_run)
     config["run_name"] = run_dir.name
+    config["_config_path"] = str(args.config.expanduser().resolve())
 
     print("Using device:", device)
     print("Device report:", json.dumps(report, sort_keys=True))
@@ -316,6 +423,7 @@ def main() -> None:
         use_cache=True,
     )
     print("Data cache:", json.dumps(cache_info, sort_keys=True))
+    validate_loaded_arrays(arrays)
     for key, value in arrays.items():
         print(f"{key}: shape={value.shape}, dtype={value.dtype}")
 
@@ -344,6 +452,15 @@ def main() -> None:
     )
     config["loader_info"] = loader_info
     print("Loader info:", json.dumps(loader_info, sort_keys=True))
+    run_metadata = collect_run_metadata(
+        config,
+        arrays,
+        loader_info,
+        device,
+        report,
+        cache_info,
+    )
+    print("Run metadata:", json.dumps(run_metadata, indent=2, sort_keys=True))
 
     eval_batch_size = int(loader_info.get("eval_batch_size", 8192))
     diag_x_eval = arrays["x_test"][: min(len(arrays["x_test"]), eval_batch_size)]
@@ -367,6 +484,10 @@ def main() -> None:
 
     run_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(config, run_dir / "config.resolved.json")
+    (run_dir / "run_metadata.json").write_text(
+        json.dumps(run_metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     logger = HistoryLogger(run_dir / "train_log.csv")
     progress_reporter = ProgressReporter(
         run_dir,
@@ -379,6 +500,7 @@ def main() -> None:
     best_z_prior_loss: float | None = None
     best_cycle_loss: float | None = None
     vanilla_v3_7 = bool(config.get("loss", {}).get("vanilla_v3_7", False))
+    vanilla_swae = bool(config.get("loss", {}).get("vanilla_swae", False)) or vanilla_v3_7
 
     def save_checkpoint(
         epoch: int,
@@ -387,13 +509,21 @@ def main() -> None:
         eval_losses: dict[str, Any] | None = None,
     ) -> None:
         nonlocal best_z_prior_loss, best_cycle_loss
-        payload = checkpoint_payload(model, config, stats, epoch, best_eval_loss, report)
+        payload = checkpoint_payload(
+            model,
+            config,
+            stats,
+            epoch,
+            best_eval_loss,
+            report,
+            metadata=run_metadata,
+        )
         torch.save(payload, run_dir / "last_model.pt")
         if is_best:
             shutil.copy2(run_dir / "last_model.pt", run_dir / "best_model.pt")
-            if vanilla_v3_7:
+            if vanilla_swae:
                 shutil.copy2(run_dir / "last_model.pt", run_dir / "best_combined.pt")
-        if vanilla_v3_7 and eval_losses is not None:
+        if vanilla_swae and eval_losses is not None:
             z_loss = eval_losses.get("z_loss")
             x_loss = eval_losses.get("x_loss")
             if z_loss is not None and (
@@ -405,7 +535,12 @@ def main() -> None:
                 best_cycle_loss is None or x_loss < best_cycle_loss
             ):
                 best_cycle_loss = x_loss
-                shutil.copy2(run_dir / "last_model.pt", run_dir / "best_cycle.pt")
+                if vanilla_v3_7:
+                    # Historical v3.7 filename retained for backward
+                    # compatibility; v3.8 uses best_reconstruction.pt.
+                    shutil.copy2(run_dir / "last_model.pt", run_dir / "best_cycle.pt")
+                else:
+                    shutil.copy2(run_dir / "last_model.pt", run_dir / "best_reconstruction.pt")
 
     def save_stage_checkpoint(stage_name: str, epoch: int, eval_loss: float | None) -> None:
         """Keep a named checkpoint at every stage boundary (diagnostic support).
@@ -415,7 +550,15 @@ def main() -> None:
         be compared against it (see scripts/stage_diagnostic.py).
         """
         checkpoint_path = run_dir / f"checkpoint_{stage_name}.pt"
-        payload = checkpoint_payload(model, config, stats, epoch, eval_loss, report)
+        payload = checkpoint_payload(
+            model,
+            config,
+            stats,
+            epoch,
+            eval_loss,
+            report,
+            metadata=run_metadata,
+        )
         torch.save(payload, checkpoint_path)
         print(
             f"Saved stage-boundary checkpoint: {checkpoint_path} "
@@ -446,7 +589,7 @@ def main() -> None:
         save_checkpoint(0, None, is_best=True)
 
     (run_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-    if vanilla_v3_7:
+    if vanilla_swae:
         shutil.copy2(run_dir / "last_model.pt", run_dir / "checkpoint_final.pt")
     diag_dir = run_dir / "encoder_alignment_diagnostic"
     diag_dir.mkdir(parents=True, exist_ok=True)

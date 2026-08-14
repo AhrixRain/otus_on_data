@@ -168,6 +168,16 @@ conda run -n cms python scripts/train.py \
   --run-name Jpsi_v3.6A_no_explicit_mass --device auto
 ```
 
+### v3.8 vanilla SWAE (raw-coordinate latent SWD, all data)
+
+`configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml` runs the pure two-term
+SWAE objective `L = beta * L_reco + lambda * L_SW` with the latent
+sliced Wasserstein on raw physical coordinates, all selected CMS+MG5 events
+under an 80/10/10 split, and deterministic epoch-wise loaders without
+replacement. See `docs/Jpsi_v3.8_vanilla_paper_runbook.md` for the full
+definition, preflight/dry-run/smoke commands, and the production command
+(which must only be started with explicit authorization).
+
 Training now also writes a named checkpoint at every stage boundary
 (`checkpoint_stage1_anchor_warmup.pt`, `checkpoint_stage2_joint_transport.pt`,
 `checkpoint_stage3_decoder_response_mass_protected.pt`) in addition to

@@ -58,6 +58,7 @@ KNOWN_LOSS_SETTINGS = frozenset(
     {
         "kind",
         "vanilla_v3_7",
+        "vanilla_swae",
         "eps",
         "p",
         "num_slices",
@@ -973,10 +974,19 @@ class DualSpaceFeatureOTLoss:
         validate_loss_config(loss_config)
         self.kind = str(loss_config.get("kind", CANONICAL_LOSS_KIND))
         self.daughter_masses = validate_daughter_masses(daughter_masses)
-        # v3.7 vanilla OTUS/SWAE mode: the only training terms are the raw
-        # per-event reconstruction MSE and the 8D sliced-Wasserstein latent
-        # term. All other component weights are ignored in this mode.
+        # Vanilla OTUS/SWAE mode (v3.7 and v3.8): the only training terms are
+        # the raw per-event reconstruction MSE and the 8D sliced-Wasserstein
+        # latent term. All other component weights are ignored in this mode.
+        #
+        # ``vanilla_v3_7`` is the historical name and is retained verbatim:
+        # it selects the vanilla mode with the standardized latent SWD that
+        # v3.7 used by default. ``vanilla_swae`` is the generalized name and
+        # selects the same two-term mode; whether its latent SWD operates on
+        # raw or standardized coordinates is controlled explicitly by
+        # ``standardize_raw_matching`` (v3.8 sets it false for raw-coordinate
+        # latent SWD). Existing v3.7 configs/checkpoints are unaffected.
         self.vanilla_v3_7 = bool(loss_config.get("vanilla_v3_7", False))
+        self.vanilla_swae = bool(loss_config.get("vanilla_swae", False)) or self.vanilla_v3_7
         space_weight_overrides = loss_config.get("space_weights", {})
         x_loss_config = dict(loss_config)
         x_loss_config.update(space_weight_overrides.get("x", {}))
@@ -1043,7 +1053,12 @@ class DualSpaceFeatureOTLoss:
         return loss
 
     def z_prior_loss(self, z_true: torch.Tensor, z_encoded: torch.Tensor) -> torch.Tensor:
-        if self.vanilla_v3_7:
+        if self.vanilla_swae:
+            if z_true.shape[0] != z_encoded.shape[0]:
+                raise ValueError(
+                    "Vanilla SWAE latent SWD requires equal batch cardinalities: "
+                    f"z_true has {z_true.shape[0]} rows, z_encoded has {z_encoded.shape[0]} rows."
+                )
             if self.z_space.standardize_raw_matching:
                 truth_std = self.z_space.standardize_raw(z_true)
                 pred_std = self.z_space.standardize_raw(z_encoded)
@@ -1090,7 +1105,7 @@ class DualSpaceFeatureOTLoss:
         return self._weighted_distribution_loss(self.x_space, x_true, x_from_z, "x")
 
     def x_reco_loss(self, x_true: torch.Tensor, x_reco: torch.Tensor) -> torch.Tensor:
-        if self.vanilla_v3_7:
+        if self.vanilla_swae:
             value = torch.mean((x_true - x_reco) ** 2)
             self.latest_components["x_reco_mse_raw"] = value
             return value

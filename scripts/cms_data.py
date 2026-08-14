@@ -390,6 +390,115 @@ def file_fingerprint(path: str | Path) -> dict[str, Any]:
     }
 
 
+def sha256_fingerprint(path: str | Path) -> str:
+    """Full-content SHA-256 fingerprint (used by the explicit preflight)."""
+    resolved = Path(path).expanduser().resolve()
+    digest = hashlib.sha256()
+    with resolved.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def inspect_theory_prior(path: str | Path) -> dict[str, Any]:
+    """Read-only structural report for an MG5 HDF5 prior file."""
+    resolved = Path(path).expanduser().resolve()
+    report: dict[str, Any] = {
+        "path": str(resolved),
+        "exists": resolved.exists(),
+    }
+    if not resolved.exists():
+        report["error"] = "file not found"
+        return report
+    report["size_bytes"] = int(resolved.stat().st_size)
+    report["sha256"] = sha256_fingerprint(resolved)
+    try:
+        import h5py
+
+        with h5py.File(resolved, "r") as handle:
+            report["top_level_keys"] = sorted(handle.keys())
+            dataset_key: str | None = None
+            if "FDL" in handle and isinstance(handle["FDL"], h5py.Group) and "zData" in handle["FDL"]:
+                dataset_key = "FDL/zData"
+                dataset = handle["FDL/zData"]
+            elif "zData" in handle:
+                dataset_key = "zData"
+                dataset = handle["zData"]
+            else:
+                report["error"] = "Could not find z prior. Expected FDL/zData or zData."
+                return report
+            array = np.asarray(dataset)
+            report["dataset_key"] = dataset_key
+            report["shape"] = list(array.shape)
+            report["dtype"] = str(array.dtype)
+            report["eight_dimensional_compatible"] = (
+                array.ndim >= 2 and array.shape[1] >= 8
+            )
+            report["all_finite"] = bool(np.isfinite(array[:]).all())
+            report["finite_check"] = "full-array" if report["all_finite"] else "failed"
+    except Exception as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+    return report
+
+
+def inspect_cms_root(
+    path: str | Path,
+    selection: dict[str, Any],
+    channel: str = "muon",
+) -> dict[str, Any]:
+    """Read-only structural report for a CMS ROOT file (no selection pass)."""
+    resolved = Path(path).expanduser().resolve()
+    report: dict[str, Any] = {
+        "path": str(resolved),
+        "exists": resolved.exists(),
+    }
+    if not resolved.exists():
+        report["error"] = "file not found"
+        return report
+    report["size_bytes"] = int(resolved.stat().st_size)
+    report["sha256"] = sha256_fingerprint(resolved)
+    normalized_channel = str(channel).strip().lower().replace("-", "_")
+    if normalized_channel in {"muon", "doublemuon", "doublemuons", "mumu", "jpsi_mumu"}:
+        required_branches = [
+            "nMuon",
+            "Muon_pt",
+            "Muon_eta",
+            "Muon_phi",
+            "Muon_mass",
+            "Muon_charge",
+        ]
+    else:
+        required_branches = [
+            "nElectron",
+            "Electron_pt",
+            "Electron_eta",
+            "Electron_phi",
+            "Electron_mass",
+            "Electron_charge",
+            "Electron_pfRelIso03_all",
+            "Electron_dxy",
+            "Electron_dz",
+        ]
+    try:
+        import uproot
+
+        with uproot.open(resolved) as root_file:
+            report["tree_names"] = sorted(root_file.keys())
+            events = root_file["Events"]
+            available = set(events.keys())
+            report["total_event_count"] = int(events.num_entries)
+            report["required_branches"] = required_branches
+            report["missing_branches"] = sorted(set(required_branches) - available)
+            report["branches_present"] = sorted(available)
+            if report["missing_branches"]:
+                report["error"] = (
+                    "missing required branches: " + ", ".join(report["missing_branches"])
+                )
+    except Exception as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+    return report
+
+
 def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict[str, Any]:
     """Everything that can change the selected/split arrays.
 

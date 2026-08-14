@@ -108,12 +108,152 @@ class ResampleTensorLoader:
             yield self.tensor.index_select(0, idx)
 
 
+_EPOCH_SEED_STRIDE = 1_000_003
+
+
+def _aligned_batch_sizes(n_ref: int, batch_size: int) -> list[int]:
+    """Batch-size schedule aligned to a reference domain of ``n_ref`` rows.
+
+    Returns one entry per training/evaluation step. Every entry except the
+    last is ``batch_size``; the last entry is the incomplete remainder
+    (or ``batch_size`` when ``n_ref`` is divisible). The paired loader in the
+    other domain uses the same schedule so every comparison, including the
+    final one, receives equal batch cardinalities.
+    """
+    if n_ref <= 0:
+        raise ValueError(f"Reference domain size must be positive, got {n_ref}.")
+    steps = max(1, math.ceil(n_ref / batch_size))
+    sizes = [batch_size] * (steps - 1)
+    sizes.append(n_ref - (steps - 1) * batch_size)
+    return sizes
+
+
+class _CycleSafeTensorLoader:
+    """Shared cursor logic for loaders that traverse a permutation cyclically.
+
+    A batch of size ``s`` is filled by advancing a cursor through the current
+    permutation; if the cursor reaches the end, the loader continues into the
+    next permutation. Because every batch size is at most ``self.n`` (the
+    batch size is clamped to the smaller domain in ``build_loaders``), a batch
+    never duplicates a row within itself.
+    """
+
+    def __init__(self, tensor: torch.Tensor, batch_sizes: list[int]):
+        self.tensor = tensor
+        self.batch_sizes = [int(size) for size in batch_sizes]
+        self.n = int(tensor.shape[0])
+        if self.n <= 0:
+            raise ValueError("Loader tensor must contain at least one row.")
+        for size in self.batch_sizes:
+            if size <= 0:
+                raise ValueError(f"Batch sizes must be positive, got {self.batch_sizes}.")
+            if size > self.n:
+                raise ValueError(
+                    f"Batch size {size} exceeds domain size {self.n}; "
+                    "clamp the batch size to the smaller domain first."
+                )
+
+    def __len__(self) -> int:
+        return len(self.batch_sizes)
+
+
+class ShuffledNoReplacementLoader(_CycleSafeTensorLoader):
+    """Deterministic, epoch-wise shuffled traversal without replacement.
+
+    Each epoch derives a fresh seeded ``torch.Generator`` from
+    ``seed + epoch * _EPOCH_SEED_STRIDE`` and draws a random permutation of
+    every event. Batches are yielded in order against the shared schedule, so
+    the larger (reference) domain is visited exactly once before it would
+    reshuffle. If this domain is smaller, the cursor cycles into a freshly
+    reshuffled permutation whenever it exhausts one, so every event is still
+    visited at least once per epoch. The number of repeated events for a
+    smaller domain is ``len(reference schedule total) - n``.
+
+    Validation and test loaders must instead use
+    ``DeterministicSequentialLoader``.
+    """
+
+    def __init__(self, tensor: torch.Tensor, batch_sizes: list[int], seed: int):
+        super().__init__(tensor, batch_sizes)
+        self.seed = int(seed)
+        self.epoch = 0
+        # Total rows this loader yields in one epoch against the shared
+        # schedule; events beyond its own n are repeats caused by the unequal
+        # domain policy.
+        self.repeated_events = max(0, sum(self.batch_sizes) - self.n)
+
+    def __iter__(self):
+        epoch_seed = self.seed + self.epoch * _EPOCH_SEED_STRIDE
+        self.epoch += 1
+        generator = torch.Generator().manual_seed(epoch_seed)
+        permutation = torch.randperm(self.n, generator=generator)
+        position = 0
+        for size in self.batch_sizes:
+            chunks = []
+            remaining = size
+            while remaining > 0:
+                take = min(remaining, self.n - position)
+                chunks.append(permutation[position : position + take])
+                position += take
+                remaining -= take
+                if position >= self.n:
+                    permutation = torch.randperm(self.n, generator=generator)
+                    position = 0
+            yield self.tensor.index_select(0, torch.cat(chunks).to(self.tensor.device))
+
+
+class DeterministicSequentialLoader(_CycleSafeTensorLoader):
+    """Deterministic validation/test traversal without random resampling.
+
+    Yields the domain in stored order against the shared schedule. A domain
+    smaller than the reference repeats from the beginning (with no shuffling)
+    so that both complete splits are covered at least once and every batch
+    keeps equal cardinality. Two iterations over the same loader produce
+    byte-identical batches.
+    """
+
+    def __init__(self, tensor: torch.Tensor, batch_sizes: list[int]):
+        super().__init__(tensor, batch_sizes)
+        self.repeated_events = max(0, sum(self.batch_sizes) - self.n)
+
+    def __iter__(self):
+        position = 0
+        for size in self.batch_sizes:
+            chunks = []
+            remaining = size
+            while remaining > 0:
+                take = min(remaining, self.n - position)
+                chunks.append(
+                    torch.arange(
+                        position,
+                        position + take,
+                        dtype=torch.long,
+                        device=self.tensor.device,
+                    )
+                )
+                position += take
+                remaining -= take
+                if position >= self.n:
+                    position = 0
+            yield self.tensor.index_select(0, torch.cat(chunks))
+
+
+TRAIN_SAMPLER_POLICIES = {
+    "random_with_replacement",
+    "shuffled_without_replacement",
+}
+EVAL_SAMPLER_POLICIES = {
+    "random_with_replacement",
+    "deterministic_sequential",
+}
+
+
 def build_loaders(
     config: dict[str, Any],
     arrays: dict[str, np.ndarray],
     batch_size_override: int | None,
     device: torch.device,
-) -> tuple[tuple[ResampleTensorLoader, ResampleTensorLoader], tuple[ResampleTensorLoader, ResampleTensorLoader], dict[str, Any]]:
+) -> tuple[tuple[Any, Any], tuple[Any, Any], dict[str, Any]]:
     loader_config = config["loaders"]
     train_batch_size = int(batch_size_override or loader_config["train_batch_size"])
     eval_batch_size = int(loader_config["eval_batch_size"])
@@ -135,6 +275,23 @@ def build_loaders(
         math.ceil(max(len(arrays["x_val"]), len(arrays["z_val"])) / eval_batch_size),
     )
 
+    train_sampler = str(
+        loader_config.get("train_sampler", "random_with_replacement")
+    )
+    eval_sampler = str(
+        loader_config.get("eval_sampler", "random_with_replacement")
+    )
+    if train_sampler not in TRAIN_SAMPLER_POLICIES:
+        raise ValueError(
+            f"Unknown loaders.train_sampler {train_sampler!r}; expected one of "
+            f"{sorted(TRAIN_SAMPLER_POLICIES)}."
+        )
+    if eval_sampler not in EVAL_SAMPLER_POLICIES:
+        raise ValueError(
+            f"Unknown loaders.eval_sampler {eval_sampler!r}; expected one of "
+            f"{sorted(EVAL_SAMPLER_POLICIES)}."
+        )
+
     preload = bool(loader_config.get("preload_data_to_accelerator", False))
     loader_device = device if preload and device.type in {"cuda"} else torch.device("cpu")
     tensor_kwargs = {"dtype": torch.float32}
@@ -143,20 +300,58 @@ def build_loaders(
         for key, value in arrays.items()
         if key in {"x_train", "x_val", "z_train", "z_val"}
     }
-    train_loaders = (
-        ResampleTensorLoader(tensors["x_train"], train_batch_size, steps_per_epoch),
-        ResampleTensorLoader(tensors["z_train"], train_batch_size, steps_per_epoch),
-    )
-    eval_loaders = (
-        ResampleTensorLoader(tensors["x_val"], eval_batch_size, eval_steps_per_epoch),
-        ResampleTensorLoader(tensors["z_val"], eval_batch_size, eval_steps_per_epoch),
-    )
+
+    seed = int(config.get("seed", 0))
+    train_repeated_x = None
+    train_repeated_z = None
+    if train_sampler == "random_with_replacement":
+        train_loaders = (
+            ResampleTensorLoader(tensors["x_train"], train_batch_size, steps_per_epoch),
+            ResampleTensorLoader(tensors["z_train"], train_batch_size, steps_per_epoch),
+        )
+    else:
+        train_batch_sizes = _aligned_batch_sizes(
+            max(len(arrays["x_train"]), len(arrays["z_train"])),
+            train_batch_size,
+        )
+        train_loaders = (
+            ShuffledNoReplacementLoader(tensors["x_train"], train_batch_sizes, seed),
+            ShuffledNoReplacementLoader(tensors["z_train"], train_batch_sizes, seed + 1),
+        )
+        train_repeated_x = train_loaders[0].repeated_events
+        train_repeated_z = train_loaders[1].repeated_events
+
+    eval_repeated_x = None
+    eval_repeated_z = None
+    if eval_sampler == "random_with_replacement":
+        eval_loaders = (
+            ResampleTensorLoader(tensors["x_val"], eval_batch_size, eval_steps_per_epoch),
+            ResampleTensorLoader(tensors["z_val"], eval_batch_size, eval_steps_per_epoch),
+        )
+    else:
+        eval_batch_sizes = _aligned_batch_sizes(
+            max(len(arrays["x_val"]), len(arrays["z_val"])),
+            eval_batch_size,
+        )
+        eval_loaders = (
+            DeterministicSequentialLoader(tensors["x_val"], eval_batch_sizes),
+            DeterministicSequentialLoader(tensors["z_val"], eval_batch_sizes),
+        )
+        eval_repeated_x = eval_loaders[0].repeated_events
+        eval_repeated_z = eval_loaders[1].repeated_events
+
     info = {
         "train_batch_size": train_batch_size,
         "eval_batch_size": eval_batch_size,
         "steps_per_epoch": steps_per_epoch,
         "eval_steps_per_epoch": eval_steps_per_epoch,
         "loader_device": str(loader_device),
+        "train_sampler": train_sampler,
+        "eval_sampler": eval_sampler,
+        "train_repeated_x": train_repeated_x,
+        "train_repeated_z": train_repeated_z,
+        "eval_repeated_x": eval_repeated_x,
+        "eval_repeated_z": eval_repeated_z,
     }
     return train_loaders, eval_loaders, info
 
@@ -490,6 +685,7 @@ class HistoryLogger:
         "grad_norm_decoder_total",
         "grad_cosine_latent_reco",
         "v37_lambda",
+        "v38_lambda",
         "learning_rate",
         "batch_size",
         "num_slices",
@@ -679,10 +875,10 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
             x_tilde = first_tensor(model.decode(z_tilde))
             x_loss = loss_factory.x_reco_loss(x, x_tilde)
             z_loss = loss_factory.z_prior_loss(z, z_tilde)
-            if getattr(loss_factory, "vanilla_v3_7", False):
-                # v3.7 training-time validation only needs the two training
-                # terms; the direct z -> x generator path is evaluated offline
-                # per checkpoint (scripts/eval_v37.py) and never backpropagated.
+            if getattr(loss_factory, "vanilla_swae", False):
+                # Vanilla SWAE (v3.7/v3.8) training-time validation only needs
+                # the two training terms; the direct z -> x generator path is
+                # evaluated offline per checkpoint and never backpropagated.
                 alt_x_loss = x.new_tensor(0.0)
             else:
                 alt_x_loss = loss_factory.x_sim_loss(x, first_tensor(model.decode(z)))
@@ -807,6 +1003,7 @@ def train_all_stages(
     history_step = 0
     best_eval_loss: float | None = None
     vanilla_v3_7 = bool(config.get("loss", {}).get("vanilla_v3_7", False))
+    vanilla_swae_flag = bool(config.get("loss", {}).get("vanilla_swae", False))
     total_epochs = sum(
         int(stage["epochs"]) for stage in config["stages"] if stage.get("enabled", True)
     )
@@ -975,6 +1172,7 @@ def train_all_stages(
                 ):
                     row[latent_field] = train_losses.get(latent_field, "")
                 row["v37_lambda"] = stage["lamb"] if vanilla_v3_7 else ""
+                row["v38_lambda"] = stage["lamb"] if vanilla_swae_flag else ""
                 row["learning_rate"] = stage["lr"]
                 row["batch_size"] = config.get("loader_info", {}).get(
                     "train_batch_size", ""
