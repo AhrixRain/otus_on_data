@@ -5,7 +5,7 @@ Run after `scripts/stage3_candidateB_validation.py` and
 `scripts/stage_diagnostic.py` have produced the per-checkpoint eval/plot
 outputs and trajectory CSVs:
 
-    conda run -n cms python scripts/stage3_candidateB_report.py \
+    .venv/bin/python scripts/stage3_candidateB_report.py \
         --package outputs/cms_JpsiDoubleMuons/stage3_candidateB_validation
 
 The package must contain:
@@ -710,7 +710,7 @@ def main() -> None:
     lines.append("")
     lines.append("```bash")
     lines.append(
-        "conda run -n cms python scripts/train.py "
+        ".venv/bin/python scripts/train.py "
         "--config configs/cms_JpsiDoubleMuons_encoder_candidateB.yaml "
         "--run-name Jpsi_candidateB_full --device auto"
     )

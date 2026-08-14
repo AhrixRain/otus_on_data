@@ -536,6 +536,7 @@ def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict
         metadata["theory_prior_mixture_seed"] = int(config.get("seed", 0)) + 17
     else:
         metadata["theory_prior_file"] = file_fingerprint(paths["theory_prior_file"])
+    metadata["theory_prior_selection"] = config.get("theory_prior_selection")
     return metadata
 
 
@@ -762,6 +763,64 @@ def load_and_split_cached(
     }
 
 
+def filter_theory_prior(
+    z_data: np.ndarray,
+    selection: dict[str, Any] | None,
+) -> np.ndarray:
+    """Apply a fiducial/trigger-equivalent selection to a theory prior array.
+
+    Rows are ``[N, 8] = [mu- px, py, pz, E, mu+ px, py, pz, E]``. The
+    selection keys mirror the data-side muon selection
+    (``muon_pt_min``, ``muon_abs_eta_max``) plus an optional pair mass window
+    (``mass_min``, ``mass_max``). The pair mass uses the z-space convention:
+    stored energies are authoritative and daughters are massless (matching
+    ``DualSpaceFeatureOTLoss`` z-space ``mass_from_energy=True``).
+
+    With ``selection`` falsy the input is returned unchanged (historical
+    behavior for configs without ``theory_prior_selection``).
+    """
+    if not selection:
+        return z_data
+    z = np.asarray(z_data, dtype=np.float64)
+    if z.ndim != 2 or z.shape[1] != 8 or len(z) == 0:
+        raise ValueError(f"theory prior must be [N, 8], got {z.shape}")
+    px1, py1, pz1 = z[:, 0], z[:, 1], z[:, 2]
+    px2, py2, pz2 = z[:, 4], z[:, 5], z[:, 6]
+    energy1, energy2 = z[:, 3], z[:, 7]
+    pt1 = np.hypot(px1, py1)
+    pt2 = np.hypot(px2, py2)
+    pabs1 = np.sqrt(px1**2 + py1**2 + pz1**2)
+    pabs2 = np.sqrt(px2**2 + py2**2 + pz2**2)
+    eta1 = np.arctanh(np.clip(pz1 / pabs1, -1.0 + 1e-7, 1.0 - 1e-7))
+    eta2 = np.arctanh(np.clip(pz2 / pabs2, -1.0 + 1e-7, 1.0 - 1e-7))
+    mass2 = (energy1 + energy2) ** 2 - (
+        (px1 + px2) ** 2 + (py1 + py2) ** 2 + (pz1 + pz2) ** 2
+    )
+    mass = np.sqrt(np.maximum(mass2, 0.0))
+
+    keep = np.ones(len(z), dtype=bool)
+    pt_min = selection.get("muon_pt_min")
+    if pt_min is not None:
+        pt_min = float(pt_min)
+        keep &= (pt1 > pt_min) & (pt2 > pt_min)
+    eta_max = selection.get("muon_abs_eta_max")
+    if eta_max is not None:
+        eta_max = float(eta_max)
+        keep &= (np.abs(eta1) < eta_max) & (np.abs(eta2) < eta_max)
+    mass_min = selection.get("mass_min")
+    mass_max = selection.get("mass_max")
+    if mass_min is not None and mass_max is not None:
+        keep &= (mass > float(mass_min)) & (mass < float(mass_max))
+
+    filtered = z_data[keep]
+    if len(filtered) == 0:
+        raise ValueError(
+            "theory_prior_selection removed every prior event; relax the prior "
+            "selection or check the prior file."
+        )
+    return filtered
+
+
 def load_theory_prior_z(theory_prior_file: Path) -> np.ndarray:
     import h5py
 
@@ -877,6 +936,7 @@ def load_and_split(config: dict[str, Any], num_samples: int | None = None) -> di
         )
     else:
         z_data = load_theory_prior_z(Path(paths["theory_prior_file"]))
+    z_data = filter_theory_prior(z_data, config.get("theory_prior_selection"))
 
     x_data = apply_num_samples(x_data, num_samples)
     z_data = apply_num_samples(z_data, num_samples)

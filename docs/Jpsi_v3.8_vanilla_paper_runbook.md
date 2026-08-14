@@ -113,7 +113,7 @@ charge-ordered into `[mu- p4, mu+ p4]` rows. The HDF5 prior key is
 Apple Silicon / MPS (this machine):
 
 ```bash
-conda run -n cms python -c "import torch; print(torch.__version__, torch.backends.mps.is_available())"
+.venv/bin/python -c "import torch; print(torch.__version__, torch.backends.mps.is_available())"
 ```
 
 Training uses `--device auto`, which selects CUDA, then MPS, then CPU. Set
@@ -132,7 +132,7 @@ python scripts/train.py --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.
 ## Preflight (fail-fast data validation, no run directory)
 
 ```bash
-conda run -n cms python scripts/preflight.py \
+.venv/bin/python scripts/preflight.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml --device auto
 ```
 
@@ -147,7 +147,7 @@ never creates or overwrites a run directory. Optional:
 ## Full-data dry run (loads and splits everything, no training)
 
 ```bash
-conda run -n cms python scripts/train.py \
+.venv/bin/python scripts/train.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto --dry-run
 ```
@@ -157,7 +157,7 @@ Reuses the cache written by preflight and exits without writing files.
 ## Smoke test (one epoch, small explicit sample cap)
 
 ```bash
-conda run -n cms python scripts/train.py \
+.venv/bin/python scripts/train.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto \
   --run-name Jpsi_v3.8_vanilla_paper_smoke_seed0 \
@@ -174,12 +174,12 @@ success.
 Verify gradients and reload:
 
 ```bash
-conda run -n cms python scripts/verify_v38_gradients.py \
+.venv/bin/python scripts/verify_v38_gradients.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto --num-samples 2000 \
   --checkpoint outputs/cms_JpsiDoubleMuons/Jpsi_v3.8_vanilla_paper_smoke_seed0/best_combined.pt
 
-conda run -n cms python scripts/eval_v37.py \
+.venv/bin/python scripts/eval_v37.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --checkpoint outputs/cms_JpsiDoubleMuons/Jpsi_v3.8_vanilla_paper_smoke_seed0 \
   --device auto --num-samples 5000
@@ -188,7 +188,7 @@ conda run -n cms python scripts/eval_v37.py \
 ## Production command (NOT EXECUTED)
 
 ```bash
-conda run -n cms python scripts/train.py \
+.venv/bin/python scripts/train.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto \
   --run-name Jpsi_v3.8_vanilla_paper_all_data_seed0 \
@@ -201,7 +201,7 @@ Durable detached logging variant:
 RUN_NAME=Jpsi_v3.8_vanilla_paper_all_data_seed0
 RUN_DIR=outputs/cms_JpsiDoubleMuons/$RUN_NAME
 mkdir -p "$RUN_DIR"
-nohup caffeinate -dims env PYTHONUNBUFFERED=1 conda run -n cms python scripts/train.py \
+nohup caffeinate -dims env PYTHONUNBUFFERED=1 .venv/bin/python scripts/train.py \
   --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto \
   --run-name "$RUN_NAME" \

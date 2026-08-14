@@ -6,7 +6,7 @@ networks on every graph.  Both models are evaluated on the same cached
 selected/split rows, so the comparison is apples-to-apples.
 
 Example:
-    conda run -n cms python scripts/test_plot.py \
+    .venv/bin/python scripts/test_plot.py \
         --config-a configs/cms_JpsiDoubleMuons_ab_A_mass.yaml \
         --checkpoint-a outputs/cms_JpsiDoubleMuons/jpsi_ab_A/best_model.pt \
         --config-b configs/cms_JpsiDoubleMuons_ab_B_no_mass.yaml \

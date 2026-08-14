@@ -2,7 +2,7 @@
 """Aggregate encoder-alignment diagnostics into a machine-readable report.
 
 Example:
-    conda run -n cms python scripts/encoder_alignment_report.py \
+    .venv/bin/python scripts/encoder_alignment_report.py \
         --runs control=outputs/cms_JpsiDoubleMuons/encoder_diag_control \
         --runs candidateA=outputs/cms_JpsiDoubleMuons/encoder_diag_candidateA \
         --runs candidateB=outputs/cms_JpsiDoubleMuons/encoder_diag_candidateB \

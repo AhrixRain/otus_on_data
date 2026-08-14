@@ -1,0 +1,43 @@
+# v3.9 F1-restricted pilot: paper restricted-decoder scope + fiducial-matched prior.
+#
+# Single controlled change relative to the frozen v3.8 vanilla-paper config:
+#   1. DATA scope is the J/psi signal region [3.0369, 3.1569] GeV only
+#      (paper 2101.08944 section 6.3.2 restricted decoder; the continuum is
+#      out of scope, so OTUS models the signal region explicitly).
+#   2. THEORY PRIOR is the signal MG5 file filtered through the same effective
+#      selection the DoubleMuParked skim imposes on the data: muon pT > 3 GeV
+#      (trigger leg floor measured in the file; see memory.md E1 findings) and
+#      |eta| < 2.4, inside the signal-region mass window.
+#
+# Everything else (vanilla two-term objective, raw-coordinate latent SWD,
+# 300-epoch schedule, batch 20000, seed 0, architecture) is inherited
+# verbatim from the v3.8 config, which this file extends.
+#
+# Hypothesis (E1 + memory.md section 3.2 cause #1/#4): the v3.8 divergence is
+# driven by the prior's unbounded longitudinal-boost support (muon pz std
+# 244 GeV, |eta| up to 7.25) and the delta-prior vs continuum-laden-data
+# composition mismatch. Restricting both domains to the signal region with a
+# trigger-matched prior bounds the raw SWD support and restores approximate
+# injectivity.
+
+extends: cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml
+
+run_name: Jpsi_v3.9_F1_restricted
+
+paths:
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_1M.hdf5
+
+muon_selection:
+  muon_pt_min: 2.0          # data-side cut kept verbatim (the file has a hard
+                            # 3 GeV trigger floor; see E1 measurements)
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 3.0369     # signal region (paper restricted-decoder scope)
+  jpsi_mass_max: 3.1569
+
+# Trigger-equivalent fiducial selection applied to the MG5 prior (truth level).
+# Without this key the prior is used unfiltered (v3.8 behavior).
+theory_prior_selection:
+  muon_pt_min: 3.0          # matches the measured 3 GeV floor in the skim
+  muon_abs_eta_max: 2.4     # matches the data muon selection
+  mass_min: 3.0369          # signal region, same as the data window
+  mass_max: 3.1569

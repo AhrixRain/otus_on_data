@@ -22,8 +22,8 @@ The summary answers two questions depending on how the checkpoints are labeled:
   * v3.5 vs v3.6A (no explicit mass) -> "Did removing explicit invariant-mass
     supervision improve x -> z / x -> z -> x without destroying z -> x?"
 
-Run with the same conda environment used for training/eval, e.g.
-`conda run -n cms python scripts/stage_diagnostic.py ...`.
+Run with the same .venv environment used for training/eval, e.g.
+`.venv/bin/python scripts/stage_diagnostic.py ...`.
 """
 
 from __future__ import annotations

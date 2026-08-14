@@ -4,13 +4,20 @@ This workflow runs the CMS DoubleElectron OTUS training without CUDA-specific pa
 
 ## Environment
 
+The environment is managed with a project-local virtual environment (`.venv`)
+instead of conda. The single `cms` environment serves the CMS workflows on
+this machine.
+
 ```bash
-conda create -n cms-mps python=3.11 -y
-conda activate cms-mps
+python3.12 -m venv .venv
+source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install -r requirements-cms-mps.txt
-python -m ipykernel install --user --name cms-mps --display-name "Python (cms-mps)"
+python -m ipykernel install --user --name cms --display-name "Python (cms)"
 ```
+
+Activate with `source .venv/bin/activate`; alternatively run commands directly
+with `.venv/bin/python` without activation.
 
 The config expects these input files:
 
@@ -160,10 +167,10 @@ The J/psi dimuon workflow uses the same CLI with `configs/cms_JpsiDoubleMuons_mp
 `configs/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml`:
 
 ```bash
-conda run -n cms python scripts/train.py \
+.venv/bin/python scripts/train.py \
   --config configs/cms_JpsiDoubleMuons_mps.yaml \
   --run-name Jpsi_v3.5_stage_diag --device auto
-conda run -n cms python scripts/train.py \
+.venv/bin/python scripts/train.py \
   --config configs/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml \
   --run-name Jpsi_v3.6A_no_explicit_mass --device auto
 ```
@@ -190,7 +197,7 @@ Compare checkpoints with identical eval/plot settings (e.g. end of Stage 2 vs
 the best Stage-3 checkpoint, or v3.5 vs v3.6A):
 
 ```bash
-conda run -n cms python scripts/stage_diagnostic.py \
+.venv/bin/python scripts/stage_diagnostic.py \
   --config configs/cms_JpsiDoubleMuons_mps.yaml \
   --checkpoint stage2_end=outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/checkpoint_stage2_joint_transport.pt \
   --checkpoint best_stage3=outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/best_model.pt \

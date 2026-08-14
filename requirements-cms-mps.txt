@@ -1,5 +1,5 @@
 # CMS DoubleElectron environment dependencies for Apple Silicon / MPS.
-# Use with Miniforge on Mac mini M4.
+# Install into the project-local .venv (see README_MPS.md).
 # IMPORTANT:
 # - Do NOT use the PyTorch CUDA wheel index on macOS.
 # - Do NOT install torch==...+cu126 on Apple Silicon.

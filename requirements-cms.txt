@@ -1,5 +1,5 @@
 # CMS DoubleElectron environment dependencies.
-# Captured from the local conda env named "cms".
+# Captured from the CUDA (Linux) cms environment.
 #
 # The installed PyTorch packages are CUDA 12.6 builds. When installing with pip,
 # use the PyTorch CUDA wheel index, for example:
