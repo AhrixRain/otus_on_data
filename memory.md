@@ -186,6 +186,21 @@
 | encoder candidates (5k) | 0.088-0.506 | 0.19-0.29 | — | 0.55-0.94 | 44-95 |
 | candidateB stage3 ep20/100/best (5k) | ~0.21/0.20/0.21 | — | — | 0.141/0.846/0.705 | 53.7 (frozen) |
 
+### 4.3b Fresh same-harness baselines (2026-08-15, eval.py, mass range
+[2.6,3.5], 90 bins; artifact-measured on this machine):
+
+| Checkpoint | sim W1 [GeV] | sim KS | reco W1 | reco KS | unfold W1 | unfold KS |
+|---|---|---|---|---|---|---|
+| v3.5 best_model (ep160) | 0.0086 | 0.045 | 0.1244 | 0.520 | 0.0103 | 0.440 |
+| v3.8 best_combined (ep280) | 20.90 | 0.896 | 1.594 | 0.594 | 5.086 | 0.618 |
+
+Scope caveat for the v3.9 verdict: these baselines were evaluated on the FULL
+[2.6,3.5] window (continuum included); v3.9's eval is on the signal region
+only, so its W1/KS are structurally smaller. The v3.9 verdict must compare
+(a) same-scope W1/KS plus shape stats (peak mean/std vs signal-region data),
+and (b) out-of-scope behavior (feeding full-window data to the v3.9 model) as
+a diagnostic.
+
 ### 4.5 E1 kinematics dump (2026-08-15; artifact-measured via
 scripts/prior_kinematics.py + scripts/data_kinematics.py)
 
