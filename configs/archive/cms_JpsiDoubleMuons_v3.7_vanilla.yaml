@@ -150,7 +150,7 @@ evaluation:
   # v3.7: diagnostics snapshot and restore the global RNG so the fixed
   # diagnostic draws cannot perturb the training RNG stream.
   independent_diagnostic_rng: true
-  # Fixed subset and projection seed used by scripts/eval_v37.py so all five
+  # Fixed subset and projection seed used by scripts/legacy/eval_v37.py so all five
   # lambda runs share identical evaluation draws and SW projections.
   v37_sw_batch_size: 20000
   sw_eval_seed: 12345

@@ -346,7 +346,6 @@ class CmsLossSmokeTest(unittest.TestCase):
             {"kind": CANONICAL_LOSS_KIND, "num_slices": 4},
         ).x_space
         center = 3.0969
-        half = 0.06
         truth_mass = torch.tensor(
             [center - 0.01, center, center + 0.01, 2.5, 4.0],
             dtype=torch.float32,

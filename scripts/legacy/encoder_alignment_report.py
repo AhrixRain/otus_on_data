@@ -2,7 +2,7 @@
 """Aggregate encoder-alignment diagnostics into a machine-readable report.
 
 Example:
-    .venv/bin/python scripts/encoder_alignment_report.py \
+    .venv/bin/python scripts/legacy/encoder_alignment_report.py \
         --runs control=outputs/cms_JpsiDoubleMuons/archive/encoder_diag_control \
         --runs candidateA=outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateA \
         --runs candidateB=outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateB \
@@ -14,8 +14,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 import shutil
 from pathlib import Path
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from typing import Any
 
 import matplotlib

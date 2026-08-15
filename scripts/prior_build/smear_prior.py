@@ -8,8 +8,8 @@ The pair-mass width response is calibrated against the CMS data (std ~ 27.9 MeV
 in the signal window) via --calibrate.
 
 Usage:
-  python scripts/smear_prior.py --in in.hdf5 --out smeared.hdf5 [--a 0.013] [--seed 0]
-  python scripts/smear_prior.py --in in.hdf5 --calibrate [--target-std 0.0279]
+  python scripts/prior_build/smear_prior.py --in in.hdf5 --out smeared.hdf5 [--a 0.013] [--seed 0]
+  python scripts/prior_build/smear_prior.py --in in.hdf5 --calibrate [--target-std 0.0279]
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.cms_data import load_theory_prior_z  # noqa: E402
 from scripts.physics import invariant_mass_np  # noqa: E402

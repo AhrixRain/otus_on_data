@@ -102,9 +102,8 @@ def validate_loss_config(loss_config: dict[str, Any]) -> None:
 
     Rejects unknown keys (with a nearest-match hint) and obvious invalid
     values, so a typo like ``pair_masss_w1`` fails fast instead of silently
-    disabling a term. Legacy ZLossFactory-style configs (kinds other than the
-    canonical/Jpsi dilepton kinds) are intentionally skipped: their key space
-    predates this validation and none of the checked-in configs use it.
+    disabling a term. Kinds other than the canonical/Jpsi dilepton kinds are
+    intentionally skipped because their key space predates this validation.
     """
     if not isinstance(loss_config, dict):
         raise ValueError(f"loss config must be a mapping, got {type(loss_config).__name__}")
@@ -1149,7 +1148,3 @@ class CmsDoubleElectronLossFactory(DualSpaceFeatureOTLoss):
 
 class CmsJpsiDoubleMuonLossFactory(DualSpaceFeatureOTLoss):
     """J/psi dimuon alias of the same charge-ordered dilepton OTUS loss."""
-
-
-class OriginalOtusFeatureLossFactory(CmsDoubleElectronLossFactory):
-    """Compatibility alias for older configs/imports."""

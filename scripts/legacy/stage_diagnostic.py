@@ -3,7 +3,7 @@
 
 The standard use case is the OTUS-on-CMS J/psi pipeline:
 
-    python scripts/stage_diagnostic.py \
+    python scripts/legacy/stage_diagnostic.py \
         --config configs/archive/cms_JpsiDoubleMuons_mps.yaml \
         --checkpoint stage2_end=outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.5/checkpoint_stage2_joint_transport.pt \
         --checkpoint best_stage3=outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.5/best_model.pt \
@@ -23,7 +23,7 @@ The summary answers two questions depending on how the checkpoints are labeled:
     supervision improve x -> z / x -> z -> x without destroying z -> x?"
 
 Run with the same .venv environment used for training/eval, e.g.
-`.venv/bin/python scripts/stage_diagnostic.py ...`.
+`.venv/bin/python scripts/legacy/stage_diagnostic.py ...`.
 """
 
 from __future__ import annotations
@@ -33,12 +33,16 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from typing import Any
 
 import numpy as np
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
@@ -591,9 +595,9 @@ def main() -> None:
                 {
                     "title": "Stage-3 effect (stage2_end -> best/final stage3)",
                     "lines": [
-                        f"Q: Does x -> z -> x closure become substantially worse after "
-                        f"entering decoder-only Stage 3 while z -> x improves?",
-                        f"A: {answer}",
+                        "Q: Does x -> z -> x closure become substantially worse after "
+                        "entering decoder-only Stage 3 while z -> x improves?",
+                        f"A: {answer}"
                         f"  cycle mass std % change: {verdict['criteria']['cycle_mass_std_pct_change']}",
                         f"  cycle mass KS delta: {verdict['criteria']['cycle_mass_ks_delta']}",
                         f"  cycle pT KS delta: {verdict['criteria']['cycle_pt_ks_delta']}",

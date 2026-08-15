@@ -1,39 +1,17 @@
-This directory contains the core utility functions called by the experiment and plotting notebooks.
+# utilityFunctions/
 
-Below we list a summary of the files and the functions within them.
+Upstream OTUS experiment utilities, shared by the paper notebooks.
 
-----------------------------------------------
-LorentzVector.py:
-    Class of functions related to calculating properties of Lorentz 4-vectors.
+The active CMS pipeline (`scripts/`) imports only:
 
-configs.py:
-    This file sets a series of global configuration settings relevant to training the models.
+- `models.py`  — Autoencoder / CondNoiseAutoencoder architectures.
+- `func_utils.py` — anchor loss and legacy SWAE helpers.
+- `configs.py` — imported by `models.py` / `func_utils.py` for their legacy
+  global defaults; the CMS pipeline does not use its device/data settings.
 
-func_utils.py
-    This file defines a myriad of utility functions used in both the experiment and plotting notebooks.
+Everything else is used exclusively by the historical `experiments/` and
+`PaperPlots/` notebooks:
 
-models.py
-    This file defines the network architecture models used in the experiments.
-
-plot_utils.py
-    This file defines a myriad of plotting specific functions used in both the experiment and plotting notebooks.
-
-ppttbar_utils.py
-    This file defines functions used in the ppttbar experiment notebook.
-    
-ppzee_utils.py
-    This file defines functions used in the ppzee experiment notebook.
-
-split_hdf5data.py
-    Preprocesses the .hdf5 data to split it into trainin, validation, and testing fractions.
-
-top_masses.py
-    This file defines function to calculate the various invariant mass quantities for analyzing the results of the ppttbar 
-    experiment.
-    
-ppttbar_constraints.py
-    This file defines functions which determine whether an event passes the hard threshold cut.
-    
-----------------------------------------------
-
-All code is commented with details about the functions, their inputs, and their outputs.
+- `LorentzVector.py`, `top_masses.py`, `ppttbar_constraints.py`,
+  `ppttbar_utils.py` — top-quark pair analyses.
+- `ppzee_utils.py`, `plot_utils.py` — pp->Zee experiment utilities/plotting.

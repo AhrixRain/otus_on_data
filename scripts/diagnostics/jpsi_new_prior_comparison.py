@@ -8,10 +8,10 @@ Loads the version-3 split caches in outputs/cms_JpsiDoubleMuons/archive/.plot_ca
 
 Prior files:
   - OLD: data/cms_jpsi_mumu_mg5_8tev_1M.hdf5        (signal-only delta, 1M events)
-  - NEW: data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5     (85/15 mixed, 94,880 events)
+  - NEW: data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5 (85/15 mixed, ptj=5, 94,880 events)
 
 Mass convention: training-exact x-space (stable p-based formula, physical muon masses).
-Outputs a 3x2 panel figure to experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png
+Outputs a 3x2 panel figure to experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu_ptj5.png
 and prints the same summary numbers to stdout.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.cms_data import load_theory_prior_z  # noqa: E402
@@ -34,8 +34,8 @@ CACHE_DIR = ROOT / "outputs/cms_JpsiDoubleMuons/archive/.plot_cache"
 SIGNAL_CACHE = "0ed04817d72bb34f84ed"
 FULL_CACHE = "410ce075cc7cc2e067c8"
 OLD_PRIOR = ROOT / "data/cms_jpsi_mumu_mg5_8tev_1M.hdf5"
-NEW_PRIOR = ROOT / "data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5"
-OUT_PNG = ROOT / "experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png"
+NEW_PRIOR = ROOT / "data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5"
+OUT_PNG = ROOT / "experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu_ptj5.png"
 
 MASS_LO, MASS_HI = 3.0369, 3.1569
 M_PSI = 3.0969
@@ -126,7 +126,7 @@ def main():
     mnew = mass(znew)
     npt1, npt2, neta1, neta2, npair_pt = kin(znew)
     new_pass = keep_new.mean() * 100
-    print("NEW MG5 prior (mixed 85/15): n = " + f"{len(znew):,}" + "; "
+    print("NEW MG5 prior (ptj=5, mixed 85/15): n = " + f"{len(znew):,}" + "; "
           + f"{keep_new.sum():,}" + " pass the data selection (" + f"{new_pass:.2f}" + "%)")
     print("  mass: mean " + f"{mnew.mean():.5f}" + "  std " + f"{mnew.std()*1000:.1f}" + " MeV")
     print("  muon pT: median " + f"{np.median(np.concatenate([npt1, npt2])):.2f}")
@@ -158,7 +158,7 @@ def main():
     c_data, c_old, c_new = "black", "crimson", "steelblue"
     lab_data = "CMS data (signal window)"
     lab_old = "old MG5 prior (filtered, delta)"
-    lab_new = "new MG5 prior (85/15 mixed)"
+    lab_new = "new MG5 prior (ptj=5, 85/15 mixed)"
 
     # (0,0) mass, full window
     ax = axes[0, 0]

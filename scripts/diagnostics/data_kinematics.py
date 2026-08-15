@@ -7,10 +7,10 @@ the number of muons passing pT>2 / pT>3 with |eta|<2.4.
 
 Part B (signal-region pairs): reuses scripts.cms_data.load_cms_x_data with
 the given selection to produce charge-ordered OS pairs in the mass window,
-then prints the same kinematic summary as scripts/prior_kinematics.py.
+then prints the same kinematic summary as scripts/diagnostics/prior_kinematics.py.
 
 Usage:
-  python scripts/data_kinematics.py \
+  python scripts/diagnostics/data_kinematics.py \
       --root data/Run2012BC_DoubleMuParked_Muons.root \
       --pt-min 2.0 --eta-max 2.4 --mass-min 3.0369 --mass-max 3.1569 \
       --max-selected 1000000
@@ -24,10 +24,10 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.cms_data import load_cms_x_data  # noqa: E402
-from scripts.prior_kinematics import analyze  # noqa: E402
+from scripts.diagnostics.prior_kinematics import analyze  # noqa: E402
 
 
 def trigger_floor(root: Path) -> None:

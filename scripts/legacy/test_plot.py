@@ -6,7 +6,7 @@ networks on every graph.  Both models are evaluated on the same cached
 selected/split rows, so the comparison is apples-to-apples.
 
 Example:
-    .venv/bin/python scripts/test_plot.py \
+    .venv/bin/python scripts/legacy/test_plot.py \
         --config-a configs/archive/cms_JpsiDoubleMuons_ab_A_mass.yaml \
         --checkpoint-a outputs/cms_JpsiDoubleMuons/archive/jpsi_ab_A/best_model.pt \
         --config-b configs/archive/cms_JpsiDoubleMuons_ab_B_no_mass.yaml \
@@ -20,10 +20,14 @@ import argparse
 import json
 import sys
 from pathlib import Path
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from typing import Any
 
 
-_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -538,7 +542,7 @@ def main() -> None:
     m_x_to_z_b = plot_lib.inv_mass_ee(out_b["z_encoded"])
 
     plot_lib.log_progress("Writing x-space mass plot.")
-    mass_info = paper_ratio_plot_multi(
+    paper_ratio_plot_multi(
         truth=m_x,
         series=x_series,
         bins=mass_bins,

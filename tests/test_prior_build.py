@@ -11,9 +11,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.lhe_to_prior_hdf5 import parse_lhe_events, select_dimuons  # noqa: E402
-from scripts.mix_prior import main as mix_main  # noqa: E402
-from scripts.smear_prior import calibrate, filter_trigger_matched, smear_rows  # noqa: E402
+from scripts.prior_build.lhe_to_prior_hdf5 import parse_lhe_events, select_dimuons  # noqa: E402
+from scripts.prior_build.mix_prior import main as mix_main  # noqa: E402
+from scripts.prior_build.smear_prior import calibrate, filter_trigger_matched, smear_rows  # noqa: E402
 
 SYNTHETIC_LHE = """<LesHouchesEvents version="3.0">
 <header>

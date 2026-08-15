@@ -21,7 +21,6 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-import cms_data  # noqa: E402
 from cms_data import (  # noqa: E402
     inspect_cms_root,
     inspect_theory_prior,
@@ -30,10 +29,8 @@ from cms_data import (  # noqa: E402
     sha256_fingerprint,
 )
 
-import cms_training  # noqa: E402
 from cms_training import (  # noqa: E402
     DeterministicSequentialLoader,
-    ShuffledNoReplacementLoader,
     _aligned_batch_sizes,
     build_loaders,
     build_loss_factory,

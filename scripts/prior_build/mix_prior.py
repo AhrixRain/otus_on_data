@@ -8,7 +8,7 @@ smaller component driving the total (so no component is upsampled unless
 --allow-upsample is given).
 
 Usage:
-  python scripts/mix_prior.py --signal sig.hdf5 --continuum dy.hdf5 \
+  python scripts/prior_build/mix_prior.py --signal sig.hdf5 --continuum dy.hdf5 \
       --out mixed.hdf5 [--frac-signal 0.85] [--seed 0]
 """
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.cms_data import load_theory_prior_z  # noqa: E402
 

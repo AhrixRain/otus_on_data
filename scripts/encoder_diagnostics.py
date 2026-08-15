@@ -16,7 +16,6 @@ from typing import Any, Callable
 import numpy as np
 import torch
 
-from cms_data import array_stats
 from cms_training import first_tensor
 from metrics import invariant_mass
 

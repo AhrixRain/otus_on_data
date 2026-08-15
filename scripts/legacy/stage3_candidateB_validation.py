@@ -3,7 +3,7 @@
 
 This is a thin validation wrapper for the OTUS-on-CMS J/psi Candidate B run:
 
-    .venv/bin/python scripts/stage3_candidateB_validation.py \
+    .venv/bin/python scripts/legacy/stage3_candidateB_validation.py \
         --config configs/archive/cms_JpsiDoubleMuons_encoder_candidateB.yaml \
         --checkpoint outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateB/checkpoint_stage2_joint_transport.pt \
         --output-dir outputs/cms_JpsiDoubleMuons/archive/stage3_candidateB_validation/training \
@@ -30,6 +30,10 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from typing import Any
 
 import numpy as np
@@ -48,7 +52,6 @@ from cms_training import (
     build_loaders,
     build_loss_factory,
     first_tensor,
-    flat_grad_vector,
     grad_cosine,
     grad_norm,
     train_all_stages,

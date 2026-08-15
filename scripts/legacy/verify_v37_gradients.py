@@ -18,7 +18,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import numpy as np
 import torch
@@ -153,8 +155,6 @@ def main() -> int:
     encoder_params = [param for param in model.encoder.parameters() if param.requires_grad]
     decoder_params = [param for param in model.decoder.parameters() if param.requires_grad]
     all_params = [*encoder_params, *decoder_params]
-    encoder_names = [f"encoder.{i}:{name}" for i, name in enumerate(encoder_params)]
-    decoder_names = [f"decoder.{i}:{name}" for i, name in enumerate(decoder_params)]
 
     reco_grads = grads_for(reco_loss, all_params)
     sw_grads = grads_for(sw_loss, all_params)

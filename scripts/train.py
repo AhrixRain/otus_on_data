@@ -547,7 +547,7 @@ def main() -> None:
 
         Training math/schedule are unchanged; this only preserves the model at
         the end of each stage (e.g. epoch 100 after Stage 2) so later stages can
-        be compared against it (see scripts/stage_diagnostic.py).
+        be compared against it (see scripts/legacy/stage_diagnostic.py).
         """
         checkpoint_path = run_dir / f"checkpoint_{stage_name}.pt"
         payload = checkpoint_payload(

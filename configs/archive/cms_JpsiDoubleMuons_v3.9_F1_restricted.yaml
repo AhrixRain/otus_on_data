@@ -20,8 +20,8 @@
 # trigger-matched prior bounds the raw SWD support and restores approximate
 # injectivity.
 #
-# E1 measurements (2026-08-15, scripts/prior_kinematics.py +
-# scripts/data_kinematics.py, artifact-measured):
+# E1 measurements (2026-08-15, scripts/diagnostics/prior_kinematics.py +
+# scripts/diagnostics/data_kinematics.py, artifact-measured):
 #   - CMS trigger floor confirmed: ZERO stored muons below pT 3.0 GeV.
 #   - Signal prior passes the trigger-equivalent selection at 0.60% (5995 of
 #     1M events); the inclusive MG5 file is pure 2->1 (pair pT == 0) and

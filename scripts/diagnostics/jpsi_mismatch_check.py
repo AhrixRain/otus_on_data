@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.physics import invariant_mass_np  # noqa: E402
@@ -185,11 +185,10 @@ def main() -> None:
     print(f"    full-window data events fully inside prior box: {np.sum(jinside):,} / {len(xfull):,} ({np.mean(jinside)*100:.1f}%)")
     print(f"    full-window data pair pT above prior max ({zfpair_pt.max():.1f} GeV): {np.mean(fpair_pt > zfpair_pt.max())*100:.2f}%")
     # composition summary
-    n_win_signal = sig_under
     print("\n[9] Composition summary (full window [2.6,3.5]):")
-    print(f"    sideband est. of J/psi signal in window: {n_win_signal/len(xfull)*100:.1f}%  "
-          f"| continuum: {100 - n_win_signal/len(xfull)*100:.1f}%")
-    print(f"    prior composition: 100% on-shell J/psi, 0% continuum -> the two populations")
+    print(f"    sideband est. of J/psi signal in window: {sig_under/len(xfull)*100:.1f}%  "
+          f"| continuum: {100 - sig_under/len(xfull)*100:.1f}%")
+    print("    prior composition: 100% on-shell J/psi, 0% continuum -> the two populations")
     print("    do NOT match; the SWAE must crush ~57% continuum onto a signal-only prior.")
 
     # ---------------- population-level pass-rate / hardness asymmetry ----------------

@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """Assemble the Stage-3 Candidate B validation package and final report.
 
-Run after `scripts/stage3_candidateB_validation.py` and
-`scripts/stage_diagnostic.py` have produced the per-checkpoint eval/plot
+Run after `scripts/legacy/stage3_candidateB_validation.py` and
+`scripts/legacy/stage_diagnostic.py` have produced the per-checkpoint eval/plot
 outputs and trajectory CSVs:
 
-    .venv/bin/python scripts/stage3_candidateB_report.py \
+    .venv/bin/python scripts/legacy/stage3_candidateB_report.py \
         --package outputs/cms_JpsiDoubleMuons/archive/stage3_candidateB_validation
 
 The package must contain:
@@ -25,9 +25,14 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 import math
 import shutil
 from pathlib import Path
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from typing import Any
 
 import matplotlib
@@ -692,7 +697,7 @@ def main() -> None:
         "Selection rule (per the validation brief): cycle closure first, then latent "
         "alignment (mean 8D KS must not regress by more than 0.05 vs Candidate B Stage-2), "
         "then decoder z->x reconstruction, then aggregate loss. "
-        f"By cycle mass/pT KS, the candidate ranking is: "
+        "By cycle mass/pT KS, the candidate ranking is: "
         + ", ".join(ranked)
         + "."
     )

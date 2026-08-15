@@ -7,7 +7,7 @@ sampling (no replacement limits beyond counts) converts to an unweighted
 sample of --n events.
 
 Usage:
-  python scripts/reweight_prior.py --in prior.hdf5 --ref-cache <npz> \
+  python scripts/prior_build/reweight_prior.py --in prior.hdf5 --ref-cache <npz> \
       --out reweighted.hdf5 --n 80000 --max-weight 20 --seed 0
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.cms_data import load_theory_prior_z  # noqa: E402
 

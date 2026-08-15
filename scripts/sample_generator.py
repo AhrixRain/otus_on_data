@@ -49,7 +49,6 @@ def main() -> int:
     )
     from scripts.cms_model import load_model_from_checkpoint
     from scripts.eval import decode_in_batches, write_mass_comparison
-    from scripts.metrics import residual_metrics
 
     config = resolve_config(load_config(args.config))
     device = torch.device(

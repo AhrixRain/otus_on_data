@@ -9,16 +9,6 @@ import numpy as np
 import torch
 
 from cms_model import set_trainable
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-UTILITY_DIR = REPO_ROOT / "utilityFunctions"
-import sys
-
-if str(UTILITY_DIR) not in sys.path:
-    sys.path.insert(0, str(UTILITY_DIR))
-
-from func_utils import anchor_loss, data_loss, sliced_wd  # noqa: E402
 from loss import (  # noqa: E402
     CANONICAL_LOSS_KIND,
     JPSI_DIMUON_LOSS_KIND,
@@ -26,8 +16,6 @@ from loss import (  # noqa: E402
     CmsJpsiDoubleMuonLossFactory,
 )
 
-
-P = 2
 
 
 def first_tensor(value):
@@ -356,245 +344,6 @@ def build_loaders(
     return train_loaders, eval_loaders, info
 
 
-class ZLossFactory:
-    def __init__(self, x_train: np.ndarray, z_train: np.ndarray, loss_config: dict[str, float]):
-        self.x_train_mean = np.mean(x_train, axis=0)
-        self.x_train_std = np.where(np.std(x_train, axis=0) == 0, 1.0, np.std(x_train, axis=0))
-        self.z_train_mean = np.mean(z_train, axis=0)
-        self.z_train_std = np.where(np.std(z_train, axis=0) == 0, 1.0, np.std(z_train, axis=0))
-        self.weights = {
-            "lambda_z8": 0.5,
-            "lambda_marginal": 0.8,
-            "lambda_mass": 1.8,
-            "lambda_phys": 0.7,
-            "lambda_transverse": 0.8,
-            "lambda_longitudinal": 0.8,
-            "lambda_tail": 0.2,
-        }
-        self.weights.update(loss_config)
-        self.num_slices = 1000
-        self.p = 2
-        self.eps = 1e-6
-
-        with torch.no_grad():
-            z_train_torch = torch.as_tensor(z_train, dtype=torch.float32)
-            m_z_train = self.dilepton_mass_torch(z_train_torch)
-            self.m_z_mean = m_z_train.mean().detach()
-            self.m_z_std = m_z_train.std().detach()
-            fz_train = self.z_physics_features(z_train_torch)
-            self.fz_mean = fz_train.mean(dim=0).detach()
-            self.fz_std = fz_train.std(dim=0).detach()
-            trans_train = self.z_transverse_features(z_train_torch)
-            self.trans_mean = trans_train.mean(dim=0).detach()
-            self.trans_std = trans_train.std(dim=0).detach()
-            long_train = self.z_longitudinal_features(z_train_torch)
-            self.long_mean = long_train.mean(dim=0).detach()
-            self.long_std = long_train.std(dim=0).detach()
-
-    def set_num_slices(self, num_slices: int) -> None:
-        self.num_slices = int(num_slices)
-
-    def to_like(self, value, ref):
-        if isinstance(value, torch.Tensor):
-            return value.detach().to(dtype=ref.dtype, device=ref.device)
-        return torch.as_tensor(value, dtype=ref.dtype, device=ref.device)
-
-    def wasserstein_1d_sorted(self, a, b):
-        a = torch.sort(a.reshape(-1))[0]
-        b = torch.sort(b.reshape(-1))[0]
-        n = min(a.numel(), b.numel())
-        return torch.mean(torch.abs(a[:n] - b[:n]) ** self.p)
-
-    def weighted_marginal_wd(self, a, b, weights):
-        weights = self.to_like(weights, a)
-        loss = a.new_tensor(0.0)
-        for j in range(a.shape[1]):
-            loss = loss + weights[j] * self.wasserstein_1d_sorted(a[:, j], b[:, j])
-        return loss / torch.sum(weights)
-
-    def tail_wasserstein_abs(self, a, b, tail_frac=0.20):
-        a = torch.sort(torch.abs(a.reshape(-1)))[0]
-        b = torch.sort(torch.abs(b.reshape(-1)))[0]
-        n = min(a.numel(), b.numel())
-        start = max(0, min(int((1.0 - tail_frac) * n), n - 1))
-        return torch.mean(torch.abs(a[start:n] - b[start:n]) ** self.p)
-
-    def standardize_x_raw(self, x):
-        return (x - self.to_like(self.x_train_mean, x)) / (self.to_like(self.x_train_std, x) + self.eps)
-
-    def standardize_z_raw(self, z):
-        return (z - self.to_like(self.z_train_mean, z)) / (self.to_like(self.z_train_std, z) + self.eps)
-
-    def paired_mse_standardized(self, a, b, standardize_fun):
-        return torch.mean((standardize_fun(a) - standardize_fun(b)) ** 2)
-
-    def dilepton_mass_torch(self, z):
-        px = z[:, 0] + z[:, 4]
-        py = z[:, 1] + z[:, 5]
-        pz = z[:, 2] + z[:, 6]
-        energy = z[:, 3] + z[:, 7]
-        return torch.sqrt(torch.clamp(energy**2 - px**2 - py**2 - pz**2, min=self.eps))
-
-    def safe_eta_from_pt_pz(self, pt, pz):
-        p = torch.sqrt(pt**2 + pz**2 + self.eps)
-        return torch.log(torch.clamp(p + pz, min=self.eps) / (pt + self.eps))
-
-    def z_physics_features(self, z):
-        px1, py1, pz1, energy1 = z[:, 0], z[:, 1], z[:, 2], z[:, 3]
-        px2, py2, pz2, energy2 = z[:, 4], z[:, 5], z[:, 6], z[:, 7]
-        pt1 = torch.sqrt(px1**2 + py1**2 + self.eps)
-        pt2 = torch.sqrt(px2**2 + py2**2 + self.eps)
-        eta1 = self.safe_eta_from_pt_pz(pt1, pz1)
-        eta2 = self.safe_eta_from_pt_pz(pt2, pz2)
-        px = px1 + px2
-        py = py1 + py2
-        pz = pz1 + pz2
-        energy = energy1 + energy2
-        mll = self.dilepton_mass_torch(z)
-        ptll = torch.sqrt(px**2 + py**2 + self.eps)
-        yll = 0.5 * torch.log(
-            torch.clamp(energy + pz, min=self.eps) / torch.clamp(energy - pz, min=self.eps)
-        )
-        dot = px1 * px2 + py1 * py2
-        cross = px1 * py2 - py1 * px2
-        cos_dphi = torch.clamp(dot / (pt1 * pt2 + self.eps), min=-1.0, max=1.0)
-        sin_dphi = torch.clamp(cross / (pt1 * pt2 + self.eps), min=-1.0, max=1.0)
-        return torch.stack([pt1, eta1, pt2, eta2, mll, ptll, yll, cos_dphi, sin_dphi], dim=1)
-
-    def z_transverse_features(self, z):
-        px1, py1 = z[:, 0], z[:, 1]
-        px2, py2 = z[:, 4], z[:, 5]
-        pt1 = torch.sqrt(px1**2 + py1**2 + self.eps)
-        pt2 = torch.sqrt(px2**2 + py2**2 + self.eps)
-        px_sum = px1 + px2
-        py_sum = py1 + py2
-        ptll = torch.sqrt(px_sum**2 + py_sum**2 + self.eps)
-        px_diff = px1 - px2
-        py_diff = py1 - py2
-        dot = px1 * px2 + py1 * py2
-        cross = px1 * py2 - py1 * px2
-        cos_dphi = torch.clamp(dot / (pt1 * pt2 + self.eps), min=-1.0, max=1.0)
-        sin_dphi = torch.clamp(cross / (pt1 * pt2 + self.eps), min=-1.0, max=1.0)
-        return torch.stack(
-            [px1, py1, px2, py2, pt1, pt2, px_sum, py_sum, ptll, px_diff, py_diff, cos_dphi, sin_dphi],
-            dim=1,
-        )
-
-    def z_longitudinal_features(self, z):
-        px1, py1, pz1, energy1 = z[:, 0], z[:, 1], z[:, 2], z[:, 3]
-        px2, py2, pz2, energy2 = z[:, 4], z[:, 5], z[:, 6], z[:, 7]
-        pt1 = torch.sqrt(px1**2 + py1**2 + self.eps)
-        pt2 = torch.sqrt(px2**2 + py2**2 + self.eps)
-        eta1 = self.safe_eta_from_pt_pz(pt1, pz1)
-        eta2 = self.safe_eta_from_pt_pz(pt2, pz2)
-        pz_sum = pz1 + pz2
-        pz_diff = pz1 - pz2
-        energy = energy1 + energy2
-        yll = 0.5 * torch.log(
-            torch.clamp(energy + pz_sum, min=self.eps)
-            / torch.clamp(energy - pz_sum, min=self.eps)
-        )
-        return torch.stack([pz1, pz2, pz_sum, pz_diff, eta1, eta2, yll], dim=1)
-
-    def standardize_mass(self, mass):
-        return (mass - self.to_like(self.m_z_mean, mass)) / (self.to_like(self.m_z_std, mass) + self.eps)
-
-    def standardize_features(self, features, mean, std):
-        return (features - self.to_like(mean, features)) / (self.to_like(std, features) + self.eps)
-
-    def z_channel_marginal_loss(self, z, z_tilde):
-        channel_weights = [6.0, 6.0, 3.0, 0.5, 6.0, 6.0, 3.0, 0.5]
-        return self.weighted_marginal_wd(
-            self.standardize_z_raw(z),
-            self.standardize_z_raw(z_tilde),
-            channel_weights,
-        )
-
-    def z_transverse_loss(self, z, z_tilde):
-        f_z = self.standardize_features(self.z_transverse_features(z), self.trans_mean, self.trans_std)
-        f_zt = self.standardize_features(self.z_transverse_features(z_tilde), self.trans_mean, self.trans_std)
-        weights = [5.0, 5.0, 5.0, 5.0, 2.0, 2.0, 3.0, 3.0, 2.0, 3.0, 3.0, 1.0, 1.0]
-        loss_marginal = self.weighted_marginal_wd(f_z, f_zt, weights)
-        loss_joint = sliced_wd(f_z, f_zt, self.num_slices, self.p)
-        z_s = self.standardize_z_raw(z)
-        zt_s = self.standardize_z_raw(z_tilde)
-        loss_tail = (
-            self.tail_wasserstein_abs(z_s[:, 0], zt_s[:, 0])
-            + self.tail_wasserstein_abs(z_s[:, 1], zt_s[:, 1])
-            + self.tail_wasserstein_abs(z_s[:, 4], zt_s[:, 4])
-            + self.tail_wasserstein_abs(z_s[:, 5], zt_s[:, 5])
-        ) / 4.0
-        return loss_marginal + 0.5 * loss_joint + 0.5 * loss_tail
-
-    def z_longitudinal_loss(self, z, z_tilde):
-        f_z = self.standardize_features(self.z_longitudinal_features(z), self.long_mean, self.long_std)
-        f_zt = self.standardize_features(self.z_longitudinal_features(z_tilde), self.long_mean, self.long_std)
-        weights = [4.0, 4.0, 3.0, 2.0, 2.0, 2.0, 2.0]
-        loss_marginal = self.weighted_marginal_wd(f_z, f_zt, weights)
-        loss_joint = sliced_wd(f_z, f_zt, self.num_slices, self.p)
-        z_s = self.standardize_z_raw(z)
-        zt_s = self.standardize_z_raw(z_tilde)
-        loss_tail = (
-            self.tail_wasserstein_abs(z_s[:, 2], zt_s[:, 2])
-            + self.tail_wasserstein_abs(z_s[:, 6], zt_s[:, 6])
-        ) / 2.0
-        return loss_marginal + 0.5 * loss_joint + 0.5 * loss_tail
-
-    def __call__(self, z, z_tilde):
-        z_std = self.standardize_z_raw(z)
-        zt_std = self.standardize_z_raw(z_tilde)
-        loss_z_8d = sliced_wd(z_std, zt_std, self.num_slices, self.p)
-        loss_marginal = self.z_channel_marginal_loss(z, z_tilde)
-        loss_mass = self.wasserstein_1d_sorted(
-            self.standardize_mass(self.dilepton_mass_torch(z)),
-            self.standardize_mass(self.dilepton_mass_torch(z_tilde)),
-        )
-        loss_phys = sliced_wd(
-            self.standardize_features(self.z_physics_features(z), self.fz_mean, self.fz_std),
-            self.standardize_features(self.z_physics_features(z_tilde), self.fz_mean, self.fz_std),
-            self.num_slices,
-            self.p,
-        )
-        loss_transverse = self.z_transverse_loss(z, z_tilde)
-        loss_longitudinal = self.z_longitudinal_loss(z, z_tilde)
-        loss_tail = z_std.new_tensor(0.0)
-        for j in range(8):
-            loss_tail = loss_tail + self.tail_wasserstein_abs(z_std[:, j], zt_std[:, j])
-        loss_tail = loss_tail / 8.0
-        return (
-            self.weights["lambda_z8"] * loss_z_8d
-            + self.weights["lambda_marginal"] * loss_marginal
-            + self.weights["lambda_mass"] * loss_mass
-            + self.weights["lambda_phys"] * loss_phys
-            + self.weights["lambda_transverse"] * loss_transverse
-            + self.weights["lambda_longitudinal"] * loss_longitudinal
-            + self.weights["lambda_tail"] * loss_tail
-        )
-
-    def z_prior_loss(self, z_true, z_encoded):
-        return self(z_true, z_encoded)
-
-    def x_sim_loss(self, x_true, x_from_z):
-        return sliced_wd(
-            self.standardize_x_raw(x_true),
-            self.standardize_x_raw(x_from_z),
-            self.num_slices,
-            P,
-        )
-
-    def x_reco_loss(self, x_true, x_reco):
-        return data_loss(x_true, x_reco, P)
-
-    def encoder_anchor_loss(self, z_encoded, x_true):
-        return anchor_loss(z_encoded, x_true)
-
-    def decoder_anchor_loss(self, z_true, x_from_z):
-        return anchor_loss(z_true, x_from_z)
-
-    def validation_score(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
-        return losses["z_loss"] + losses["alt_x_loss"]
-
-
 def build_loss_factory(
     x_train: np.ndarray,
     z_train: np.ndarray,
@@ -606,16 +355,12 @@ def build_loss_factory(
         return CmsJpsiDoubleMuonLossFactory(x_train, z_train, loss_config, daughter_masses)
     if kind in {None, CANONICAL_LOSS_KIND, "original_feature_ot_v1"}:
         return CmsDoubleElectronLossFactory(x_train, z_train, loss_config, daughter_masses)
-    return ZLossFactory(x_train, z_train, loss_config)
+    raise ValueError(f"Unknown loss kind {kind!r}; expected {CANONICAL_LOSS_KIND!r} or {JPSI_DIMUON_LOSS_KIND!r}.")
 
 
-def make_stage_config(config: dict[str, Any], stage: dict[str, Any]) -> dict[str, Any]:
-    model_config = config["model"]
+def make_stage_loss_config(stage: dict[str, Any]) -> dict[str, Any]:
+    """Return only the per-stage loss coefficients used by a training epoch."""
     return {
-        "num_hidden_layers": model_config["num_hidden_layers"],
-        "dim_per_hidden_layer": model_config["dim_per_hidden_layer"],
-        "epochs": stage["epochs"],
-        "lr": stage["lr"],
         "beta": stage["beta"],
         "lamb": stage["lamb"],
         "tau": stage["tau"],
@@ -899,92 +644,6 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
     return {key: value / max(1, nbatches) for key, value in sums.items()}
 
 
-def z_cycle_losses_for_batch(model, x_batch, z_batch, stage, loss_factory):
-    z_from_x = first_tensor(model.encode(x_batch))
-    x_reco = first_tensor(model.decode(z_from_x))
-    loss_x_reco = loss_factory.paired_mse_standardized(
-        x_reco,
-        x_batch,
-        loss_factory.standardize_x_raw,
-    )
-    loss_z_prior = loss_factory(z_batch, z_from_x)
-    x_from_z = first_tensor(model.decode(z_batch))
-    z_cycle = first_tensor(model.encode(x_from_z))
-    loss_z_cycle = loss_factory.paired_mse_standardized(
-        z_cycle,
-        z_batch,
-        loss_factory.standardize_z_raw,
-    )
-    loss_transverse = loss_factory.z_transverse_loss(z_batch, z_from_x)
-    loss_total = (
-        stage.get("beta", 1.0) * loss_x_reco
-        + stage.get("lamb", 1.0) * loss_z_prior
-        + stage.get("z_cycle_weight", 0.0) * loss_z_cycle
-        + stage.get("transverse_weight", 0.0) * loss_transverse
-    )
-    return {
-        "loss": loss_total,
-        "x_loss": loss_x_reco,
-        "z_loss": loss_z_prior + loss_z_cycle + loss_transverse,
-        "z_prior": loss_z_prior,
-        "z_cycle": loss_z_cycle,
-        "transverse": loss_transverse,
-    }
-
-
-def train_z_cycle_epoch(
-    model,
-    optimizer,
-    trainable_params,
-    x_loader,
-    z_loader,
-    stage,
-    loss_factory,
-    device,
-    step_callback=None,
-):
-    model.train()
-    sums = {"loss": 0.0, "x_loss": 0.0, "z_loss": 0.0}
-    nbatches = 0
-    steps_in_epoch = min(len(x_loader), len(z_loader))
-    for x, z in zip(x_loader, z_loader):
-        x = x.to(device)
-        z = z.to(device)
-        optimizer.zero_grad()
-        losses = z_cycle_losses_for_batch(model, x, z, stage, loss_factory)
-        losses["loss"].backward()
-        torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=10.0)
-        optimizer.step()
-        for key in sums:
-            sums[key] += as_float(losses[key])
-        nbatches += 1
-        if step_callback is not None:
-            step_callback(
-                {
-                    key: value / max(1, nbatches)
-                    for key, value in sums.items()
-                },
-                nbatches,
-                steps_in_epoch,
-            )
-    return {key: value / max(1, nbatches) for key, value in sums.items()}
-
-
-def eval_z_cycle_epoch(model, x_loader, z_loader, stage, loss_factory, device):
-    model.eval()
-    sums = {"loss": 0.0, "x_loss": 0.0, "z_loss": 0.0}
-    nbatches = 0
-    with torch.no_grad():
-        for x, z in zip(x_loader, z_loader):
-            x = x.to(device)
-            z = z.to(device)
-            losses = z_cycle_losses_for_batch(model, x, z, stage, loss_factory)
-            for key in sums:
-                sums[key] += as_float(losses[key])
-            nbatches += 1
-    return {key: value / max(1, nbatches) for key, value in sums.items()}
-
-
 def train_all_stages(
     model,
     config,
@@ -1036,6 +695,9 @@ def train_all_stages(
                 lr_lambda=lambda epoch: 1 / (1 + 0.1 * epoch),
             )
 
+        if stage.get("mode", "standard") != "standard":
+            raise ValueError("Unsupported stage mode " + repr(stage.get("mode")) + "; only 'standard' is supported.")
+
         for local_epoch in range(1, stage_epochs + 1):
             def report_train_step(train_losses, step, steps_in_epoch):
                 nonlocal history_step
@@ -1062,31 +724,17 @@ def train_all_stages(
                     }
                 )
 
-            if stage.get("mode", "standard") == "z_cycle":
-                train_losses = train_z_cycle_epoch(
-                    model,
-                    optimizer,
-                    trainable_params,
-                    train_loaders[0],
-                    train_loaders[1],
-                    stage,
-                    loss_factory,
-                    device,
-                    report_train_step,
-                )
-                eval_fn = eval_z_cycle_epoch
-            else:
-                train_losses = train_standard_epoch(
-                    model,
-                    optimizer,
-                    train_loaders[0],
-                    train_loaders[1],
-                    make_stage_config(config, stage),
-                    loss_factory,
-                    device,
-                    report_train_step,
-                )
-                eval_fn = eval_standard_epoch
+            train_losses = train_standard_epoch(
+                model,
+                optimizer,
+                train_loaders[0],
+                train_loaders[1],
+                make_stage_loss_config(stage),
+                loss_factory,
+                device,
+                report_train_step,
+            )
+            eval_fn = eval_standard_epoch
             if scheduler is not None:
                 scheduler.step()
 
@@ -1108,25 +756,14 @@ def train_all_stages(
             eval_loss = None
             selection_score = None
             if should_log:
-                if stage.get("mode", "standard") == "z_cycle":
-                    eval_losses = eval_fn(
-                        model,
-                        eval_loaders[0],
-                        eval_loaders[1],
-                        stage,
-                        loss_factory,
-                        device,
-                    )
-                    eval_alt_x_loss = ""
-                else:
-                    eval_losses = eval_fn(
-                        model,
-                        eval_loaders[0],
-                        eval_loaders[1],
-                        loss_factory,
-                        device,
-                    )
-                    eval_alt_x_loss = eval_losses["alt_x_loss"]
+                eval_losses = eval_fn(
+                    model,
+                    eval_loaders[0],
+                    eval_loaders[1],
+                    loss_factory,
+                    device,
+                )
+                eval_alt_x_loss = eval_losses["alt_x_loss"]
 
                 selection_score = float(eval_losses.get("selection_score", eval_losses["loss"]))
                 eval_loss = selection_score

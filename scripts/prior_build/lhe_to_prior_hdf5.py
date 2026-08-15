@@ -14,7 +14,7 @@ that E-based and p-based pair masses agree). Metadata attributes mirror the
 original cms_jpsi_mumu_mg5_8tev_1M.hdf5 conventions.
 
 Usage:
-  python scripts/lhe_to_prior_hdf5.py --lhe events.lhe --out out.hdf5 \
+  python scripts/prior_build/lhe_to_prior_hdf5.py --lhe events.lhe --out out.hdf5 \
       [--pt-min 3.0] [--eta-max 2.4] [--mass-min 3.0369] [--mass-max 3.1569] \
       [--label "p p > jpsiv j"] [--attr key=value ...]
 """
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.physics import invariant_mass_np  # noqa: E402
 

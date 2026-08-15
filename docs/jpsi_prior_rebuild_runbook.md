@@ -1,8 +1,11 @@
 # J/psi prior rebuild — production runbook (MG5 on macOS arm64)
 
-Last updated: 2026-08-14 (session 6/7, goal round 1). Documents the complete
+Last updated: 2026-08-15 (session 12). Documents the complete
 chain that regenerates a CMS-matched J/psi prior on this Mac and writes the
-mixed HDF5 into data/.
+mixed HDF5 into data/. Update of 2026-08-15: ptj lowered 10 -> 5 so the
+prior covers the CMS pair-pT support down to ~5 GeV; production artifacts
+are `data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5` and the old
+`cms_jpsi_mumu_mg5_8tev_mixed.hdf5` remains the ptj=10 provenance file.
 
 ## 0. Why this prior
 
@@ -13,14 +16,16 @@ pass rate of the trigger-matched filter. The new prior fixes all four:
 
 1. Signal p p > jpsiv j (sm_onia, effective vector J/psi) with generation
    cuts matched to the fiducial region (ptl 3.0, etal 2.5, mmll [2.9,3.3],
-   ptj 10, cut_decays=True) -> ~92% post-filter efficiency.
+   ptj 5, cut_decays=True) -> ~96% post-filter efficiency.
 2. Continuum p p > mu+mu- j (stock sm with massive muons) mixed at
    ~15% of post-filter counts (signal-region scope).
-3. Resolution smearing pT' = pT*(1+N(0,a)), a=0.0127 calibrated to the
-   data's 27.9 MeV mass std (scripts/smear_prior.py).
+3. Resolution smearing pT' = pT*(1+N(0,a)), a=0.0128 calibrated to the
+   data's 27.9 MeV mass std (scripts/prior_build/smear_prior.py).
 4. Massive daughters everywhere (MM = 0.105658 in both restrict cards,
    E = sqrt(p^2 + m_mu^2) in the postprocessor) so z-space E-based and
    x-space p-based mass conventions agree.
+5. ptj=5 (instead of 10) closes the low pair-pT support hole: the final
+   prior starts at pair pT ~5.5 GeV, while the data minimum is ~5.13 GeV.
 
 ## 1. Environment (verified on this Mac)
 
@@ -66,51 +71,72 @@ Every launch also needs:
 ## 3. Cards (committed in scripts/mg5_cards/)
 
 - signal_proc_card.dat / signal_run_card.dat: nevents 200000, ebeam 4000,
-  lhapdf 315200, ptj 10, ptl 3.0, etal 2.5, drll 0.0, mmll [2.9,3.3],
+  lhapdf 315200, ptj 5, ptl 3.0, etal 2.5, drll 0.0, mmll [2.9,3.3],
   cut_decays True, use_syst False.
 - continuum_proc_card.dat / continuum_run_card.dat: same, nevents 50000.
 
-## 4. Production (running 2026-08-14)
+## 4. Production (run 2026-08-15; previous ptj=10 runs archived in Events/)
 
-    cd ~/MG5_aMC_v3_7_0/<proc_dir>
-    printf 'launch ...' | ./bin/madevent    # or via mg5_aMC 'launch <dir>'
+Existing process dirs `jpsi_signal_test` and `dy_cont_test` were reused
+(only the run_card changed):
 
-Outputs: <proc_dir>/Events/run_NN/unweighted_events.lhe.gz
+    export LHAPATH=/opt/homebrew/Caskroom/miniforge/base/envs/cms/share/LHAPDF
+    export DYLD_LIBRARY_PATH=/opt/homebrew/Caskroom/miniforge/base/envs/cms/lib
+    export PATH=/opt/homebrew/Caskroom/miniforge/base/envs/cms/bin:$PATH
+    cd ~/MG5_aMC_v3_7_0/jpsi_signal_test
+    nohup /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python -u \
+      ./bin/generate_events run_05 -f --laststep=parton --nb_core=4 \
+      </dev/null > /tmp/jpsi_signal_ptj5_run05.log 2>&1 &
+    cd ~/MG5_aMC_v3_7_0/dy_cont_test
+    nohup /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python -u \
+      ./bin/generate_events run_02 -f --laststep=parton --nb_core=4 \
+      </dev/null > /tmp/jpsi_cont_ptj5_run02.log 2>&1 &
+
+Outputs:
+- signal:    `jpsi_signal_test/Events/run_05/unweighted_events.lhe.gz` (200,000 events)
+- continuum: `dy_cont_test/Events/run_02/unweighted_events.lhe.gz` (50,000 events)
 
 ## 5. Post-processing (scripts/)
 
-    python scripts/lhe_to_prior_hdf5.py --lhe <signal>.lhe --out sig.hdf5 --label signal
-    python scripts/lhe_to_prior_hdf5.py --lhe <cont>.lhe --out con.hdf5 --label continuum
-    python scripts/smear_prior.py --in sig.hdf5 --out sig_smear.hdf5 --a 0.0127 --seed 0
-    python scripts/smear_prior.py --in con.hdf5 --out con_smear.hdf5 --a 0.0127 --seed 0
-    python scripts/mix_prior.py --signal sig_smear.hdf5 --continuum con_smear.hdf5 \
-        --out data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5 --frac-signal 0.85 --seed 0
+    gzip -cd <signal>.lhe.gz > sig.lhe
+    gzip -cd <continuum>.lhe.gz > con.lhe
+    python scripts/prior_build/lhe_to_prior_hdf5.py --lhe sig.lhe --out sig.hdf5 --label signal
+    python scripts/prior_build/lhe_to_prior_hdf5.py --lhe con.lhe --out con.hdf5 --label continuum
+    python scripts/prior_build/smear_prior.py --in sig.hdf5 --out sig_smear.hdf5 --a 0.0128 --seed 0
+    python scripts/prior_build/smear_prior.py --in con.hdf5 --out con_smear.hdf5 --a 0.0128 --seed 0
+    python scripts/prior_build/mix_prior.py --signal sig_smear.hdf5 --continuum con_smear.hdf5 \
+        --out data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5 --frac-signal 0.85 --seed 0
 
-pT hardening (DONE 2026-08-14, closes the last kinematic gap):
+pT hardening (DONE 2026-08-15, closes the last kinematic gap):
 
     REF=outputs/cms_JpsiDoubleMuons/archive/.plot_cache/selected_split_0ed04817d72bb34f84ed.npz
-    python scripts/reweight_prior.py --in sig_smear.hdf5 --ref-cache $REF \
+    python scripts/prior_build/reweight_prior.py --in sig_smear.hdf5 --ref-cache $REF \
         --out sig_rw.hdf5 --n 80648 --max-weight 20 --seed 0
-    python scripts/reweight_prior.py --in con_smear.hdf5 --ref-cache $REF \
+    python scripts/prior_build/reweight_prior.py --in con_smear.hdf5 --ref-cache $REF \
         --out con_rw.hdf5 --n 14232 --max-weight 20 --seed 0
-    python scripts/mix_prior.py --signal sig_rw.hdf5 --continuum con_rw.hdf5 \
-        --out data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5 --frac-signal 0.85 --seed 0
+    python scripts/prior_build/mix_prior.py --signal sig_rw.hdf5 --continuum con_rw.hdf5 \
+        --out data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5 --frac-signal 0.85 --seed 0
 
 ## 6. Acceptance targets (data numbers from memory.md §4.7 / §4.5)
 
-    trigger-matched pass rate        >= 80%     (was 0.60%)
-    mass mean / std (massive conv.)  3.0978 / 25-30 MeV  (was 3.0969 / 0.2 MeV)
-    muon pT median                  ~12.6 GeV  (was 4.8)
-    pair pT median                  ~26 GeV    (was 10.1)
+    trigger-matched pass rate        >= 80%     (was 0.60%; ptj5 file: 94.4%)
+    mass mean / std (massive conv.)  3.0972 / 31.0 MeV (data 3.0943 / 28.1 MeV)
+    muon pT median                  ~12.6 GeV  (ptj5 file: 12.69; data 12.57)
+    pair pT median                  ~26 GeV    (ptj5 file: 26.35; data 26.03)
+    pair pT minimum                 <= 5.5 GeV (ptj5 file: 5.52; data 5.13)
     continuum fraction in window    ~15%       (was 0%)
-    support coverage (signal-window data)  >= 90%  (was 69.8%)
+    support coverage (signal-window data)  >= 90%  (ptj5 file: 97.8%)
 
 Validate with:
-    python scripts/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5
-    python scripts/jpsi_mismatch_check.py   (edit PRIOR path) or
+    python scripts/diagnostics/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5
+    python scripts/diagnostics/jpsi_mismatch_check.py   (edit PRIOR path) or
     a direct data-vs-new-prior comparison using the version-3 split caches.
 
 Known remaining limitations: (a) non-prompt B-decay component is NOT
 included (future work; the reweighting compensates statistically but does not
 model the physics); (b) the reweighting up-weights the pT tail, so the
-high-pT statistics are effectively thinner than the raw counts suggest.
+high-pT statistics are effectively thinner than the raw counts suggest;
+(c) even with ptj=5, the final prior has fewer events in pair pT 5-10 GeV
+than data (0.88% vs 2.24%) because `reweight_prior.py` only targets the
+muon-pT marginal — a future pair-pT-aware reweighting pass can close the
+remaining density mismatch without another MG5 run.

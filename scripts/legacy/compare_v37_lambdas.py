@@ -2,7 +2,7 @@
 """Post-training comparison of the five v3.7 lambda runs.
 
 Reads the per-checkpoint `v37_eval_summary.json` files produced by
-scripts/eval_v37.py and emits:
+scripts/legacy/eval_v37.py and emits:
 
   * v37_lambda_comparison.json   (machine-readable rows)
   * v37_lambda_comparison.md     (human-readable Markdown table)
@@ -116,7 +116,7 @@ def main() -> int:
     lines = [
         f"# v3.7 lambda comparison (`{args.checkpoint}` checkpoints)",
         "",
-        "Metrics are computed by `scripts/eval_v37.py` on the fixed held-out",
+        "Metrics are computed by `scripts/legacy/eval_v37.py` on the fixed held-out",
         "test sample with shared seeds and SW projections. Do not rank solely",
         "by generated mass: the useful tradeoff is latent alignment vs cycle",
         "quality vs generator quality together.",

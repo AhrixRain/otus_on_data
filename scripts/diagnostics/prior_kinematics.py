@@ -13,8 +13,8 @@ for a given YAML config (theory_prior_selection key) to report the pass rate
 and the filtered prior's composition.
 
 Usage:
-  python scripts/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_1M.hdf5
-  python scripts/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_1M.hdf5 \
+  python scripts/diagnostics/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_1M.hdf5
+  python scripts/diagnostics/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_1M.hdf5 \
       --config configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
 """
 
@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.cms_data import filter_theory_prior, load_theory_prior_z  # noqa: E402
 from scripts.physics import invariant_mass_np  # noqa: E402
@@ -85,7 +85,6 @@ def analyze(z: np.ndarray, label: str) -> None:
     frac_pt3 = float(((pt1 > 3.0) & (pt2 > 3.0)).mean())
     frac_pt2 = float(((pt1 > 2.0) & (pt2 > 2.0)).mean())
     frac_win = float(((mass_p > 3.0369) & (mass_p < 3.1569)).mean())
-    frac_all = float(frac_pt3 and (np.abs(eta1) < 2.4).mean() and 0)
     print(
         f"  pass rates: both-muons pT>2: {frac_pt2:.3%} | pT>3: {frac_pt3:.3%} "
         f"| |eta|<2.4: {frac_eta24:.3%} | mass in [3.0369,3.1569]: {frac_win:.3%}"

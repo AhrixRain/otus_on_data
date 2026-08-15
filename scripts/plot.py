@@ -63,9 +63,6 @@ import torch
 from physics import daughter_masses_from_config, invariant_mass_np
 
 from cms_data import (
-    data_cache_key,
-    data_cache_metadata,
-    file_fingerprint,
     load_and_split_cached,
     load_config,
     resolve_config,

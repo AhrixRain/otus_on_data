@@ -174,12 +174,12 @@ success.
 Verify gradients and reload:
 
 ```bash
-.venv/bin/python scripts/verify_v38_gradients.py \
+.venv/bin/python scripts/legacy/verify_v38_gradients.py \
   --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto --num-samples 2000 \
   --checkpoint outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.8_vanilla_paper_smoke_seed0/best_combined.pt
 
-.venv/bin/python scripts/eval_v37.py \
+.venv/bin/python scripts/legacy/eval_v37.py \
   --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --checkpoint outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.8_vanilla_paper_smoke_seed0 \
   --device auto --num-samples 5000
@@ -247,7 +247,7 @@ The selection score is exactly `beta * L_reco,val + lambda * L_SW,val`
 (`= L_reco,val + L_SW,val` here), implemented by
 `loss.selection_score: {z_prior: 1.0, x_reco: 1.0, x_sim: 0.0, cycle: 0.0}`.
 The direct `z -> x` generator path is computed offline as a diagnostic
-(`scripts/eval_v37.py`) and never contributes a training gradient.
+(`scripts/legacy/eval_v37.py`) and never contributes a training gradient.
 
 ## Known deviations from the original OTUS paper
 

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.physics import invariant_mass_np
 from scripts.cms_data import load_theory_prior_z
 

@@ -81,7 +81,6 @@ class TestFilterTheoryPrior(unittest.TestCase):
         # Reference computation (massless daughters, stored-E mass).
         px1, py1, pz1, e1 = z[:, 0], z[:, 1], z[:, 2], z[:, 3]
         px2, py2, pz2, e2 = z[:, 4], z[:, 5], z[:, 6], z[:, 7]
-        pt = np.hypot(np.concatenate([px1, px2]), np.concatenate([py1, py2]))
         pabs = np.sqrt(px1**2 + py1**2 + pz1**2)
         keep = (np.hypot(px1, py1) > 0.5) & (np.hypot(px2, py2) > 0.5)
         eta = np.arctanh(np.clip(np.concatenate([pz1, pz2]) / np.concatenate([pabs, np.sqrt(px2**2 + py2**2 + pz2**2)]), -0.999999, 0.999999))

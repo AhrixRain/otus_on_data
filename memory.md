@@ -92,11 +92,11 @@
   loss helpers, actively imported). v3.8 added: sampler policies
   (loaders.train_sampler: shuffled_without_replacement,
   loaders.eval_sampler: deterministic_sequential), loss.vanilla_swae,
-  scripts/preflight.py, scripts/verify_v38_gradients.py,
+  scripts/preflight.py, scripts/legacy/verify_v38_gradients.py,
   tests/test_v38_vanilla.py. v3.9 (2026-08-15) added:
   cms_data.filter_theory_prior + theory_prior_selection cache metadata +
-  optional muon_pt_max in the muon loader; scripts/prior_kinematics.py,
-  scripts/data_kinematics.py (E1 dumps); tests/test_v39_f1.py (10 tests).
+  optional muon_pt_max in the muon loader; scripts/diagnostics/prior_kinematics.py,
+  scripts/diagnostics/data_kinematics.py (E1 dumps); tests/test_v39_f1.py (10 tests).
 
 ## 3. Established findings (from the read-only failure investigation)
 
@@ -138,6 +138,34 @@
    so when the latent SWD fails (non-injectivity), D(z~prior) is never
    exercised and the generator degrades catastrophically while the cycle loss
    stays small (§4.4 trajectory).
+5. **The paper-vanilla objective is mass/correlation-blind even with the
+   matched new prior (2026-08-15, source-verified + artifact-measured).**
+   `Jpsi_newprior_paper_20pct` (new mixed MG5 prior) converges on the raw
+   latent SWD (`mean_z_ks` ~0.017, every z component KS <=0.014, max KS over
+   1000 random linear projections ~0.03) while E(x) puts only **3.1%** of
+   events in the [3.0369,3.1569] mass window (z mass KS 0.760, mean
+   4.65 vs 3.097 GeV). The lost quantity is the two-particle angular
+   correlation: z prior std(Delta_eta,Delta_phi) = (0.207,0.217),
+   E(x) = (0.372,0.336). Both training terms are coordinate-level — raw MSE
+   and random linear-projection SWD — and the J/psi mass is a narrow nonlinear
+   shell (30 MeV) inside GeV-scale coordinate distributions. The x->z->x
+   cycle consequently keeps only 13.8% of events in the mass window
+   (mass mean 2.903, std 0.511 vs data 0.028), despite good per-component
+   residual closure (0.3-0.7 GeV). D(z_prior) is even worse (5.6% in window;
+   mass std 1.369) because `tau=rho=nu_d=0` after epoch 80 means the decoder
+   is never trained directly on real prior z. The low-pT collapse in
+   `paperstyle_xspace_pt_density_ratio.png` is a prior support hole, not a
+   cycle failure: the MG5 cards use `ptj>=10`, so z_prior has pair pT
+   min 9.70 GeV and 0.06% below 10 GeV vs data 2.2% below 10 GeV (min 5.18);
+   D(z_prior) cannot populate data's low-pT bins. Full report:
+   `outputs/cms_Jpsi_new/Jpsi_newprior_paper_20pct/density_failure_analysis.md`;
+   reproducible metrics: `scripts/diagnostics/diagnose_jpsi_new_density.py`.
+   Causal verification: 300 encoder-only Adam steps with
+   `raw_SWD + 10*W1(mass)` improved latent mass KS 0.759 -> 0.425 and
+   mass-window fraction 3.0% -> 16.0% (component KS stayed <=0.033), while
+   the frozen decoder's cycle mass worsened (0.569 -> 0.748) because D was
+   only ever trained on the old mass-broken E(x) support
+   (`diagnostic_mass_probe_encoder.pt`, `mass_probe_metrics.json`).
 
 ### 3.3 What works
 - **v3.5 generator (z->x simulation) is a genuine success** at the mass level:
@@ -214,7 +242,7 @@ and (b) out-of-scope behavior (feeding full-window data to the v3.9 model) as
 a diagnostic.
 
 ### 4.5 E1 kinematics dump (2026-08-15; artifact-measured via
-scripts/prior_kinematics.py + scripts/data_kinematics.py)
+scripts/diagnostics/prior_kinematics.py + scripts/diagnostics/data_kinematics.py)
 
 Prior files (1M events each, FDL/zData, daughters exactly massless: E = |p|):
 - signal cms_jpsi_mumu_mg5_8tev_1M.hdf5: pair mass E-based mean 3.0969,
@@ -254,7 +282,7 @@ CMS data (Run2012BC_DoubleMuParked_Muons.root):
   fidelity.
 
 ### 4.7 CMS-vs-MG5 mismatch re-check, J/psi ~3.09 GeV focus (artifact-measured
-2026-08-14 via scripts/jpsi_mismatch_check.py + scripts/jpsi_f32_check.py,
+2026-08-14 via scripts/diagnostics/jpsi_mismatch_check.py + scripts/diagnostics/jpsi_f32_check.py,
 version-3 split caches 0ed04817d72bb34f84ed / 410ce075cc7cc2e067c8; the user's
 question: is the training failure a CMS-data/MG5-prior mismatch?)
 
@@ -312,7 +340,7 @@ question: is the training failure a CMS-data/MG5-prior mismatch?)
   harder (incl. non-prompt) pT spectrum.
 
 ### 4.8 Z->ee health check (artifact-measured 2026-08-14 via
-scripts/zee_health_check.py, cache 9bb63a1e38cf0cd9b9c2 version 1;
+scripts/diagnostics/zee_health_check.py, cache 9bb63a1e38cf0cd9b9c2 version 1;
 the user asked to verify the Z data/prior pair is "normal")
 
 **Verdict: Z is normal/healthy — the contrast case that validates the J/psi
@@ -447,7 +475,7 @@ checkpoint_final.pt.
 
 Paper-grounded, one-factor-at-a-time:
 - **E1 (precondition) — DONE 2026-08-15.** Prior + data kinematics dumped
-  (§4.5; scripts/prior_kinematics.py, scripts/data_kinematics.py).
+  (§4.5; scripts/diagnostics/prior_kinematics.py, scripts/diagnostics/data_kinematics.py).
 - **F1 (primary) — composition-matched prior.** REVISED by E1: the inclusive
   file is pure 2->1 (pair pT = 0) and unusable; the implemented variant is the
   committed v3.9 pilot: restricted-decoder signal-region scope
@@ -578,27 +606,27 @@ Paper-grounded, one-factor-at-a-time:
   eval data selection — source-verified in cms_model.load_model_from_checkpoint).
 - **Runbook for the deferred runs: docs/Jpsi_F1_fix_runbook.md** (exact
   commands for v3.10/v3.9 training, evaluation, baselines, guardrails).
-- E1 kinematics dumps: scripts/prior_kinematics.py, scripts/data_kinematics.py
+- E1 kinematics dumps: scripts/diagnostics/prior_kinematics.py, scripts/diagnostics/data_kinematics.py
   (see §4.5 for the measured numbers).
 - Verdict tables: scripts/eval_verdict.py --eval-dir <run>/eval (W1/KS +
   shape stats per path; baselines in §4.3b).
 - Generator-quality check: scripts/sample_generator.py (decodes the full
   filtered prior K times with fresh noise; needed for v3.9 whose z_test is
   only 600 events vs 100k for v3.5/v3.8).
-- CMS-vs-MG5 mismatch diagnostics (2026-08-14): scripts/jpsi_mismatch_check.py
-  (composition/support/pass-rate asymmetry; §4.7) and scripts/jpsi_f32_check.py
+- CMS-vs-MG5 mismatch diagnostics (2026-08-14): scripts/diagnostics/jpsi_mismatch_check.py
+  (composition/support/pass-rate asymmetry; §4.7) and scripts/diagnostics/jpsi_f32_check.py
   (float32 z-mass noise; §4.7). Both read the version-3 .plot_cache, no ROOT
-  rescan. Z->ee counterpart: scripts/zee_health_check.py (mass/kinematics/
+  rescan. Z->ee counterpart: scripts/diagnostics/zee_health_check.py (mass/kinematics/
   support/barrel-endcap scale split; §4.8).
-- Data vs priors comparison figure (2026-08-14): scripts/jpsi_new_prior_comparison.py
+- Data vs priors comparison figure (2026-08-14): scripts/diagnostics/jpsi_new_prior_comparison.py
   -> experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png (3x2 panels: mass /
   mass zoom / muon pT / pair pT / |eta| / summary table; CMS signal-window data
   vs old 1M delta prior vs new 94,880 mixed prior, training-exact x-space mass
   convention). Same-folder sibling of the old jpsi_prior_vs_cms_mumu.png.
 - Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
-- Stage comparisons: scripts/stage_diagnostic.py; v3.7/v3.8 three-path eval:
-  scripts/eval_v37.py; gradient audits: scripts/verify_v37_gradients.py,
-  scripts/verify_v38_gradients.py; data preflight: scripts/preflight.py.
+- Stage comparisons: scripts/legacy/stage_diagnostic.py; v3.7/v3.8 three-path eval:
+  scripts/legacy/eval_v37.py; gradient audits: scripts/legacy/verify_v37_gradients.py,
+  scripts/legacy/verify_v38_gradients.py; data preflight: scripts/preflight.py.
 - Loss curves: scripts/plot_loss.py --run-dir <dir> [--components].
 
 ## 11. Session log
@@ -649,7 +677,7 @@ Paper-grounded, one-factor-at-a-time:
   and the prior's 0.60% pass rate (5,995 events). Added the optional
   muon_pt_max guard to the muon loader (scripts/cms_data.py), set it to
   100 GeV in the v3.9 config, and rewrote the config header with the measured
-  E1 facts. Wrote scripts/prior_kinematics.py, scripts/data_kinematics.py,
+  E1 facts. Wrote scripts/diagnostics/prior_kinematics.py, scripts/diagnostics/data_kinematics.py,
   tests/test_v39_f1.py (10 tests, all green; full suite passes). First v3.9
   launch (pre-cut config) was killed during epoch 2 and left as
   Jpsi_v3.9_F1_restricted (provenance only); the production pilot is
@@ -670,15 +698,15 @@ Paper-grounded, one-factor-at-a-time:
   (z: stored-E direct; x: p-based + muon masses; data mean 3.09779 vs prior
   3.09690, +0.9 MeV). Verdict: the mismatch is the dominant root cause and
   explains every observed failure signature; the v3.9/v3.10 fix mitigates but
-  does not eliminate it. Wrote scripts/jpsi_mismatch_check.py and
-  scripts/jpsi_f32_check.py; findings in §4.7. Then, at the user's request,
+  does not eliminate it. Wrote scripts/diagnostics/jpsi_mismatch_check.py and
+  scripts/diagnostics/jpsi_f32_check.py; findings in §4.7. Then, at the user's request,
   ran the same methodology on the Z->ee pair: healthy on every dimension
   (prior is a real 4-GeV-wide lineshape at the pole, kinematics matched at
   the few-% level, 93.4% support coverage, 100% pass rate, converged v4/v5
   runs). One real caveat found: the skim's endcap electron energy scale is
   +1.9% high (endcap-only mode 92.94 vs pole 91.19; barrel-only 91.18) —
   a skim-level 2012 ECAL calibration artifact, absorbable, not an OTUS bug.
-  Wrote scripts/zee_health_check.py; findings in §4.8.
+  Wrote scripts/diagnostics/zee_health_check.py; findings in §4.8.
 - **2026-08-14 — Session 7 (MG5 on macOS + J/psi prior rebuild, goal round 1).**
   Verified MG5 3.7.0 runs on this Mac (conda python has six; system 3.9.6
   does not); installed brew gcc (gfortran 16.1.0) and conda-forge lhapdf
@@ -701,7 +729,7 @@ Paper-grounded, one-factor-at-a-time:
 - **2026-08-14 — Session 8 (new-prior comparison figure + discovery narrative).**
   At the user's request, produced a CMS-vs-new-prior comparison in the style of
   experiments/cms_Jpsi_ee/ (where the old jpsi_prior_vs_cms_mumu.png lives):
-  scripts/jpsi_new_prior_comparison.py renders a 3x2 panel figure to
+  scripts/diagnostics/jpsi_new_prior_comparison.py renders a 3x2 panel figure to
   experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png comparing CMS
   signal-window data (v3.9 cache 0ed04817d72bb34f84ed, n=3,624,454) against the
   OLD 1M delta prior (5,995 events pass the data selection = 0.60%) and the NEW
@@ -728,7 +756,7 @@ Paper-grounded, one-factor-at-a-time:
   plus 3 split-string references the blanket replace missed
   (plot_jpsi_all_runs.DEFAULT_RUNS_ROOT, notebook lines 34/64). Verified:
   zero stale refs in scripts/tests/docs, py_compile clean, unittest suite
-  98/98 OK, and scripts/jpsi_new_prior_comparison.py re-run end-to-end
+  98/98 OK, and scripts/diagnostics/jpsi_new_prior_comparison.py re-run end-to-end
   against the archived .plot_cache (same numbers as Session 8). Leftover:
   an untracked PLY-generated parser table py.py at repo root (left in
   place, not part of this task).
@@ -760,3 +788,101 @@ Paper-grounded, one-factor-at-a-time:
   best_z_prior.pt, best_reconstruction.pt, best_combined.pt,
   checkpoint_paper_anchor_warmup.pt, checkpoint_paper_core_swae.pt,
   checkpoint_final.pt, train_log.csv, history.json, status.json.
+- **2026-08-15 — Session 11 (diagnose Jpsi_new density failure; goal round 1).**
+  User: all `pos_*` plots from `outputs/cms_Jpsi_new/Jpsi_newprior_paper_20pct`
+  look good, but the mass_density and pT_density plots are catastrophic; find
+  why encoder-decoder and decoder-cycle closures fail even though the
+  encoder/decoder training itself converged. Diagnosis (artifact-measured from
+  `plots/paperstyle_loaded_model_outputs.npz` + source-verified in the loss and
+  training code): (1) the vanilla objective is coordinate-level — raw
+  per-component MSE + random linear-projection SWD — and has no term for the
+  pair mass or Delta_eta/Delta_phi correlation; E(x) matches all eight z
+  component distributions (KS <=0.014) and 1000 random linear projections
+  (max KS ~0.03) while only 3.1% of E(x) is in the mass window (mass KS 0.760,
+  mean 4.65 vs 3.097). The missing two-muon angular correlation (std
+  Delta_eta 0.372 vs 0.207, Delta_phi 0.336 vs 0.217) is exactly what makes
+  the J/psi mass; d(m)/d(Delta) ~ 13 GeV/rad at pT ~14 GeV. (2) The cycle
+  x->z->x therefore has 13.8% in-window mass fraction and std 0.511 GeV while
+  per-coordinate residuals are only 0.30-0.68 GeV and pair pT is good
+  (KS 0.011). (3) D(z_prior) is never trained directly after epoch 80
+  (`tau=rho=nu_d=0`; vanilla eval sets alt_x_loss=0), and the warmup anchor is
+  only a cosine direction of muon-1 3-momentum; since only 3% of E(x) is on
+  the mass shell, D(z_prior) extrapolates (5.6% in-window, mass std 1.369).
+  (4) The low-pT collapse of the xspace pT density ratio is a prior support
+  hole: MG5 cards use ptj>=10, so z_prior pair pT min is 9.70 GeV and 0.06%
+  below 10 GeV vs data 2.2% below 10 GeV (min 5.18). (5) Checkpoint selection
+  is also mass-blind: raw z-SWD ~6.8 dwarfs raw x-MSE ~0.3 in the vanilla
+  score, and epoch-300 has slightly better mass closure than chosen epoch-290.
+  Wrote `outputs/cms_Jpsi_new/Jpsi_newprior_paper_20pct/density_failure_analysis.md`
+  and reproducible `scripts/diagnostics/diagnose_jpsi_new_density.py`; added root cause 5
+  to §3.2. Causal probe (round 2): fine-tuned the frozen-decoder model's
+  encoder for only 300 Adam steps (lr 1e-4, batch 8192, L=400) with
+  `raw_SWD + 10*W1(mass)`; latent mass KS 0.759 -> 0.425, mean 4.64 -> 3.04,
+  window fraction 3.0% -> 16.0%, while max component KS only rises 0.018 ->
+  0.033. The frozen decoder's cycle mass worsens (KS 0.569 -> 0.748),
+  confirming the second half: D is only trained against the old mass-broken
+  E(x) distribution. Artifacts:
+  `diagnostic_mass_probe_encoder.pt`, `mass_probe_metrics.json`.
+  Decoder-only mirror probe (round 3, from untouched best_model, encoder
+  frozen, 300 Adam steps): `raw_SWD(x,D(z)) + 10*W1(mass(x),mass(D(z)))`
+  improves generator mass KS 0.688 -> 0.391, mean 2.814 -> 3.027, window
+  fraction 5.7% -> 27.9%, component KS 0.044 -> 0.023, while cycle mass
+  worsens 0.569 -> 0.708 (encoder still mass-broken). Artifacts:
+  `diagnostic_mass_probe_decoder.pt`, `decoder_probe_metrics.json`.
+  Joint probe (round 3): encoder+decoder trained together for 300 steps with
+  `raw_SWD(z,E(x)) + raw_SWD(x,D(z)) + 10*[W1(mass z)+W1(mass x_from_z)]
+  + MSE(x,D(E(x)))`. All three mass paths improve simultaneously: z mass KS
+  0.759 -> 0.427, cycle mass KS 0.564 -> 0.479, generator mass KS
+  0.692 -> 0.398; component and pair-pT closures stay intact. Artifact:
+  `diagnostic_mass_probe_joint.pt`, `joint_probe_metrics.json`.
+  Together the two probes prove both halves must be trained jointly:
+  mass-aware E(x) matching + direct mass-aware D(z_prior) matching. Fix
+  directions in the report: enable the existing mass/mass-kin/
+  transverse/longitudinal OT terms, add direct D(z_prior) training (`tau>0`),
+  close the prior low-pT support hole, and re-scale checkpoint selection.
+
+- **2026-08-15 — Session 12 (prior low-pT hole fixed: ptj 10 -> 5 MG5 rebuild).**
+  User: fix the prior first. Reran MG5 3.7.0 with the existing process dirs
+  `jpsi_signal_test` / `dy_cont_test` after lowering `ptj` from 10.0 to 5.0
+  (signal `run_05`, continuum `run_02`; committed cards
+  `scripts/mg5_cards/*_run_card.dat` updated to ptj 5.0). Both runs completed
+  normally: signal cross-section 107.2 +- 0.13 pb / 200,000 events;
+  continuum 69.49 +- 0.15 pb / 50,000 events. Post-processing: LHE filter
+  kept 191,979 signal (96.0%) and 14,445 continuum (28.9%); smeared with
+  a=0.0128 (recalibrated on the ptj5 sample, old a=0.0127); muon-pT
+  reweighted to the archived v3.9 reference cache and mixed 85/15 ->
+  `data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5` (94,880 events; the old
+  ptj=10 file is preserved unchanged). Measured (artifact-measured): pass
+  rate 94.4%, mass mean/std 3.0972/31.0 MeV (E-based) vs data 3.0943/28.1;
+  muon pT median 12.69 vs data 12.57; pair pT median 26.35 vs 26.03;
+  **pair pT min 5.52 GeV vs data 5.13 (old prior 9.70)**; fraction 5-10 GeV
+  0.88% vs data 2.24% (old 0.06%); joint [p0.5,p99.5] box coverage 97.8%.
+  Support hole closed; remaining low-pair-pT density mismatch is a
+  reweighting-target limitation (muon-pT marginal only), not an MG5 support
+  hole. Runbook updated: docs/jpsi_prior_rebuild_runbook.md. Next step:
+  implement the three-term annealed loss + mass guard on top of this prior.
+
+- **2026-08-15 — Session 13 (project cleanup, no training-code changes).**
+  Per user request: no mass terms will be added to the next loss; before that,
+  the repository was simplified and reorganized. Changes (source-verified):
+  * Moved prior tooling to `scripts/prior_build/` and current diagnostics to
+    `scripts/diagnostics/`; moved the frozen v3.x diagnostics/report scripts
+    and the DoubleElectron plot notebook to `scripts/legacy/`.
+  * Deleted dead code: root `py.py` (generated parser table),
+    `scripts/feature_ot_loss.py` (one-line re-export),
+    `utilityFunctions/split_hdf5data.py` (no references).
+  * Removed the legacy `ZLossFactory` and the `z_cycle` training mode from
+    `scripts/cms_training.py` (now ~878 lines); unknown loss kinds now raise
+    instead of silently falling back. Standard mode is the only supported
+    training mode.
+  * Removed the unused `OriginalOtusFeatureLossFactory` alias from `scripts/loss.py`.
+  * Added `scripts/README.md`, `scripts/legacy/README.md`, `configs/README.md`;
+    rewrote `README_MPS.md` to match the current layout; updated all script
+    paths in docs/memory/config comments.
+  * Ran pyflakes over scripts/tests and fixed all reported unused imports,
+    unused locals, and malformed f-strings.
+  * Full test suite: 98/98 OK; py_compile clean for all scripts/tests and
+    moved tools; moved prior-build/diagnostic CLIs smoke-tested from their new
+    locations.
+  Next step (not done, per user): implement the three-term annealed loss for
+  the next training round without adding mass-related terms.
