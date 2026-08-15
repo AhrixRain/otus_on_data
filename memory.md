@@ -750,3 +750,13 @@ Paper-grounded, one-factor-at-a-time:
   (epoch 14/80, global step ~393/8700; train_loss 590@ep1 -> ~6.4@ep14;
   eval_loss 194.8@ep1 -> 11.4@ep10; checkpoints written). Left running, not
   monitored, per user request. Log: /tmp/jpsi_new_train.log.
+  COMPLETED 2026-08-15 (exit 0, ~3h wall): 300/300 epochs, 8700/8700 steps.
+  Best eval loss 7.167 @ epoch 290 (checkpoint best_model.pt); final epoch
+  300 eval 7.380, train 3.255 (x-MSE 0.685, z_raw_swd 2.571). Anchor-warmup
+  handoff clean: eval 8.04 @ep80 -> 7.17 best in core phase. encoder_diag at
+  epoch 300: mean_z_ks = 0.017 (latent matches the new prior almost
+  exactly — the raw-SWD objective converged, unlike the archived v3.8),
+  z_mass_ks = 0.752, cycle_mass_ks = 0.527. Run dir keeps best_model.pt,
+  best_z_prior.pt, best_reconstruction.pt, best_combined.pt,
+  checkpoint_paper_anchor_warmup.pt, checkpoint_paper_core_swae.pt,
+  checkpoint_final.pt, train_log.csv, history.json, status.json.
