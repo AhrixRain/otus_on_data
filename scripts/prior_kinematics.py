@@ -15,7 +15,7 @@ and the filtered prior's composition.
 Usage:
   python scripts/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_1M.hdf5
   python scripts/prior_kinematics.py --file data/cms_jpsi_mumu_mg5_8tev_1M.hdf5 \
-      --config configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
+      --config configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
 """
 
 from __future__ import annotations

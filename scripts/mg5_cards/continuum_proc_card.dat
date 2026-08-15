@@ -1,0 +1,8 @@
+# J/psi prior rebuild - CONTINUUM component (non-resonant DY + jet)
+# Model: sm_mumass-c_mass (stock sm with MASSIVE muons MM = 0.105658).
+# Stock sm is used (NOT sm_onia) so the J/psi s-channel does NOT pollute
+# the continuum. 8 TeV, LO.
+import model sm_mumass-c_mass --modelname
+define j = g u c d s u~ c~ d~ s~
+generate p p > mu+ mu- j
+output dy_cont_test

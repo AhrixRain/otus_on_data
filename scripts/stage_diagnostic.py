@@ -4,10 +4,10 @@
 The standard use case is the OTUS-on-CMS J/psi pipeline:
 
     python scripts/stage_diagnostic.py \
-        --config configs/cms_JpsiDoubleMuons_mps.yaml \
-        --checkpoint stage2_end=outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/checkpoint_stage2_joint_transport.pt \
-        --checkpoint best_stage3=outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/best_model.pt \
-        --output-dir outputs/cms_JpsiDoubleMuons/Jpsi_v3.5/stage_diagnostic
+        --config configs/archive/cms_JpsiDoubleMuons_mps.yaml \
+        --checkpoint stage2_end=outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.5/checkpoint_stage2_joint_transport.pt \
+        --checkpoint best_stage3=outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.5/best_model.pt \
+        --output-dir outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.5/stage_diagnostic
 
 For every checkpoint the script runs the *same* eval + plot pipeline (scripts/
 eval.py and scripts/plot.py) with identical data/plotting arguments, then

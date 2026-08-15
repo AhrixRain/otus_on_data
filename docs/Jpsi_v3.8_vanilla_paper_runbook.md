@@ -1,6 +1,6 @@
 # J/psi v3.8 vanilla-paper runbook
 
-Config: `configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml`
+Config: `configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml`
 
 ## Scientific definition of v3.8
 
@@ -124,7 +124,7 @@ CUDA / Linux:
 
 ```bash
 python -m pip install -r requirements-cms.txt
-python scripts/train.py --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml --device auto ...
+python scripts/train.py --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml --device auto ...
 ```
 
 `--device cuda` forces CUDA and fails fast if it is unavailable.
@@ -133,14 +133,14 @@ python scripts/train.py --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.
 
 ```bash
 .venv/bin/python scripts/preflight.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml --device auto
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml --device auto
 ```
 
 Reports both files' existence, size, SHA-256 fingerprint, ROOT tree names,
 total event count, required branches, total selected CMS candidate count,
 HDF5 key/shape/dtype/finite checks, split counts, cap status, batches per
 epoch, repeated-event counts, selected device, and memory estimates. It may
-write a new keyed entry under `outputs/cms_JpsiDoubleMuons/.plot_cache/` but
+write a new keyed entry under `outputs/cms_JpsiDoubleMuons/archive/.plot_cache/` but
 never creates or overwrites a run directory. Optional:
 `--json-output preflight.json`.
 
@@ -148,7 +148,7 @@ never creates or overwrites a run directory. Optional:
 
 ```bash
 .venv/bin/python scripts/train.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto --dry-run
 ```
 
@@ -158,7 +158,7 @@ Reuses the cache written by preflight and exits without writing files.
 
 ```bash
 .venv/bin/python scripts/train.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto \
   --run-name Jpsi_v3.8_vanilla_paper_smoke_seed0 \
   --num-samples 5000 \
@@ -175,13 +175,13 @@ Verify gradients and reload:
 
 ```bash
 .venv/bin/python scripts/verify_v38_gradients.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto --num-samples 2000 \
-  --checkpoint outputs/cms_JpsiDoubleMuons/Jpsi_v3.8_vanilla_paper_smoke_seed0/best_combined.pt
+  --checkpoint outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.8_vanilla_paper_smoke_seed0/best_combined.pt
 
 .venv/bin/python scripts/eval_v37.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
-  --checkpoint outputs/cms_JpsiDoubleMuons/Jpsi_v3.8_vanilla_paper_smoke_seed0 \
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
+  --checkpoint outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.8_vanilla_paper_smoke_seed0 \
   --device auto --num-samples 5000
 ```
 
@@ -189,7 +189,7 @@ Verify gradients and reload:
 
 ```bash
 .venv/bin/python scripts/train.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto \
   --run-name Jpsi_v3.8_vanilla_paper_all_data_seed0 \
   --progress auto
@@ -199,10 +199,10 @@ Durable detached logging variant:
 
 ```bash
 RUN_NAME=Jpsi_v3.8_vanilla_paper_all_data_seed0
-RUN_DIR=outputs/cms_JpsiDoubleMuons/$RUN_NAME
+RUN_DIR=outputs/cms_JpsiDoubleMuons/archive/$RUN_NAME
 mkdir -p "$RUN_DIR"
 nohup caffeinate -dims env PYTHONUNBUFFERED=1 .venv/bin/python scripts/train.py \
-  --config configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
+  --config configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml \
   --device auto \
   --run-name "$RUN_NAME" \
   --progress auto \
@@ -216,7 +216,7 @@ loss settings are used verbatim.
 ## Expected output files
 
 ```text
-outputs/cms_JpsiDoubleMuons/<run_name>/
+outputs/cms_JpsiDoubleMuons/archive/<run_name>/
   config.resolved.json          resolved semantics (raw SWD, loader policy)
   run_metadata.json             fingerprints, counts, git commit, device, ...
   train_log.csv                 per-log-epoch losses/components/gradients

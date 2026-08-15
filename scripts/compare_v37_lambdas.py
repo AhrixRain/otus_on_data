@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         type=Path,
         required=True,
-        help="v3.7 run directories (e.g. outputs/cms_JpsiDoubleMuons/v3.7_lambda0p1 ...).",
+        help="v3.7 run directories (e.g. outputs/cms_JpsiDoubleMuons/archive/v3.7_lambda0p1 ...).",
     )
     parser.add_argument(
         "--checkpoint",

@@ -213,7 +213,7 @@ class CmsLossSmokeTest(unittest.TestCase):
 
     def test_new_config_loads_with_three_stages(self) -> None:
         config = resolve_config(
-            load_config(REPO_ROOT / "configs/cms_doubleelectron_mps.yaml")
+            load_config(REPO_ROOT / "configs/archive/cms_doubleelectron_mps.yaml")
         )
         self.assertEqual(config["loss"]["kind"], CANONICAL_LOSS_KIND)
         self.assertEqual(
@@ -227,7 +227,7 @@ class CmsLossSmokeTest(unittest.TestCase):
 
     def test_jpsi_muon_config_reuses_v5_network_and_data_directory(self) -> None:
         config = resolve_config(
-            load_config(REPO_ROOT / "configs/cms_JpsiDoubleMuons_mps.yaml")
+            load_config(REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_mps.yaml")
         )
         self.assertEqual(config["data"]["channel"], "muon")
         self.assertEqual(config["loss"]["kind"], JPSI_DIMUON_LOSS_KIND)
@@ -238,10 +238,10 @@ class CmsLossSmokeTest(unittest.TestCase):
         self.assertEqual(config["evaluation"]["mass_range"], [2.6, 3.5])
 
     def test_jpsi_v36a_config_removes_only_explicit_mass_supervision(self) -> None:
-        base = resolve_config(load_config(REPO_ROOT / "configs/cms_JpsiDoubleMuons_mps.yaml"))
+        base = resolve_config(load_config(REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_mps.yaml"))
         v36a = resolve_config(
             load_config(
-                REPO_ROOT / "configs/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml"
+                REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml"
             )
         )
         base_loss = base["loss"]

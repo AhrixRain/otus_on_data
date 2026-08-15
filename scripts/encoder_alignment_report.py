@@ -3,10 +3,10 @@
 
 Example:
     .venv/bin/python scripts/encoder_alignment_report.py \
-        --runs control=outputs/cms_JpsiDoubleMuons/encoder_diag_control \
-        --runs candidateA=outputs/cms_JpsiDoubleMuons/encoder_diag_candidateA \
-        --runs candidateB=outputs/cms_JpsiDoubleMuons/encoder_diag_candidateB \
-        --output-dir outputs/cms_JpsiDoubleMuons/encoder_alignment_diagnostic
+        --runs control=outputs/cms_JpsiDoubleMuons/archive/encoder_diag_control \
+        --runs candidateA=outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateA \
+        --runs candidateB=outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateB \
+        --output-dir outputs/cms_JpsiDoubleMuons/archive/encoder_alignment_diagnostic
 """
 
 from __future__ import annotations
@@ -332,7 +332,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", action="append", required=True, help="label=run_dir")
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--config", type=Path, default=Path("configs/cms_JpsiDoubleMuons_encoder_control.yaml"))
+    parser.add_argument("--config", type=Path, default=Path("configs/archive/cms_JpsiDoubleMuons_encoder_control.yaml"))
     parser.add_argument("--split", default="test")
     parser.add_argument("--num-samples", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)

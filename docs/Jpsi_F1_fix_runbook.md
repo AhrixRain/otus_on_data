@@ -17,12 +17,12 @@ than the parked-B data, with a junk tail in the skim). The implemented fix:
   trigger-equivalent selection (pT>3, |eta|<2.4, mass window) — 5,995 of 1M events
   survive (scripts/cms_data.filter_theory_prior; cache-keyed; unit-tested).
 - **Two ready configs:**
-  - configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml — **recommended fix**:
+  - configs/archive/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml — **recommended fix**:
     v3.5's staged physics loss (the only objective that ever produced a good
     generator, because its x_sim terms constrain D(z~prior) directly) + the new
     scope + a re-weighted checkpoint-selection score so the cycle is no longer
     masked (memory.md §6.3).
-  - configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml — the single-factor
+  - configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml — the single-factor
     diagnostic: vanilla two-term objective + the new scope (extends the v3.8
     paper config verbatim). Run this only if you want the controlled comparison.
 
@@ -39,7 +39,7 @@ Verify:
 
 ## 2. Pre-flight (optional but recommended, ~2 min)
 
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/preflight.py         --config configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml --device mps
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/preflight.py         --config configs/archive/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml --device mps
 
 Unit tests (10 v3.9 data-path tests + full suite, all green as of 2026-08-15):
 
@@ -47,12 +47,12 @@ Unit tests (10 v3.9 data-path tests + full suite, all green as of 2026-08-15):
 
 ## 3. Run the fix (v3.10)
 
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/train.py         --config configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml --device mps
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/train.py         --config configs/archive/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml --device mps
 
 - ~200 epochs (50 anchor warmup / 50 joint / 100 decoder-response), ~605 steps/epoch
   at batch 4796 (auto-capped to the 4,796-event filtered prior), ~0.25 s/step on MPS:
   **expect ~12-15 h** including per-epoch validation.
-- Run dir: outputs/cms_JpsiDoubleMuons/Jpsi_v3.10_staged_restricted (train.py refuses
+- Run dir: outputs/cms_JpsiDoubleMuons/archive/Jpsi_v3.10_staged_restricted (train.py refuses
   to overwrite an existing dir — pick a new --run-name for reruns).
 - Monitor: tail -f <run_dir>/train_log.csv (rows every 10 epochs) or status.json.
   Watch the stage-3 phase: the cycle term is now weighted in checkpoint selection.
@@ -61,7 +61,7 @@ Unit tests (10 v3.9 data-path tests + full suite, all green as of 2026-08-15):
 
 If you also want the vanilla diagnostic (v3.9, ~13-15 h):
 
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/train.py         --config configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml         --run-name Jpsi_v3.9_F1_restricted_ptmax100_run2 --device mps
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/train.py         --config configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml         --run-name Jpsi_v3.9_F1_restricted_ptmax100_run2 --device mps
 
 (NOTE: Jpsi_v3.9_F1_restricted_ptmax100 already exists with ~20 epochs of a run the
 user terminated — use the --run-name above, or delete that directory first if you
@@ -70,20 +70,20 @@ prefer the original name. Nothing is deleted by these scripts automatically.)
 ## 4. Evaluate after training
 
     # Full three-path evaluation (simulation / reconstruction / unfolding)
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval.py         --config <the same config used for training>         --checkpoint outputs/cms_JpsiDoubleMuons/<run_dir>/best_model.pt         --device mps
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval.py         --config <the same config used for training>         --checkpoint outputs/cms_JpsiDoubleMuons/archive/<run_dir>/best_model.pt         --device mps
 
     # Also evaluate the final checkpoint (checkpoint selection can be noisy with
     # the 600-event z_val; memory.md §4.6)
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval.py         --config <config> --checkpoint outputs/cms_JpsiDoubleMuons/<run_dir>/checkpoint_final.pt         --device mps --output-dir outputs/cms_JpsiDoubleMuons/<run_dir>/eval_final
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval.py         --config <config> --checkpoint outputs/cms_JpsiDoubleMuons/archive/<run_dir>/checkpoint_final.pt         --device mps --output-dir outputs/cms_JpsiDoubleMuons/archive/<run_dir>/eval_final
 
     # Verdict table (W1/KS + shape stats)
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval_verdict.py         --eval-dir outputs/cms_JpsiDoubleMuons/<run_dir>/eval
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval_verdict.py         --eval-dir outputs/cms_JpsiDoubleMuons/archive/<run_dir>/eval
 
     # Generator-quality check with well-populated sampling (20 draws x full prior)
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/sample_generator.py         --config <config> --checkpoint outputs/cms_JpsiDoubleMuons/<run_dir>/best_model.pt         --device mps --draws 20
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/sample_generator.py         --config <config> --checkpoint outputs/cms_JpsiDoubleMuons/archive/<run_dir>/best_model.pt         --device mps --draws 20
 
     # Out-of-scope diagnostic (full-window data fed to the signal-region model)
-    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval.py         --config configs/cms_JpsiDoubleMuons_v3.9_out_of_scope_eval.yaml         --checkpoint outputs/cms_JpsiDoubleMuons/<run_dir>/best_model.pt         --device mps --output-dir outputs/cms_JpsiDoubleMuons/<run_dir>/eval_out_of_scope
+    /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python scripts/eval.py         --config configs/archive/cms_JpsiDoubleMuons_v3.9_out_of_scope_eval.yaml         --checkpoint outputs/cms_JpsiDoubleMuons/archive/<run_dir>/best_model.pt         --device mps --output-dir outputs/cms_JpsiDoubleMuons/archive/<run_dir>/eval_out_of_scope
 
 ## 5. Baselines for comparison (memory.md §4.3b, same harness)
 

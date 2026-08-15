@@ -10,7 +10,7 @@ metrics as eval.py (W1/KS/shape stats).
 
 Usage:
   python scripts/sample_generator.py \
-      --config configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml \
+      --config configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml \
       --checkpoint outputs/.../best_model.pt --device mps --draws 20 \
       --out /tmp/gen_check
 """

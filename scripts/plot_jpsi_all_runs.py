@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Compare loss curves across every J/psi run that has a train_log.csv.
 
-Reads all ``outputs/cms_JpsiDoubleMuons/<run>/train_log.csv`` files and draws
+Reads all ``outputs/cms_JpsiDoubleMuons/archive/<run>/train_log.csv`` files and draws
 two log-scale panels: training loss and evaluation loss versus global epoch.
 Runs with at most two logged epochs are drawn as points (smoke/partial runs);
 longer runs are drawn as lines. A run log that only contains a header is
@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_RUNS_ROOT = REPO_ROOT / "outputs" / "cms_JpsiDoubleMuons"
+DEFAULT_RUNS_ROOT = REPO_ROOT / "outputs" / "cms_JpsiDoubleMuons" / "archive"
 
 
 def parse_args() -> argparse.Namespace:
@@ -168,7 +168,7 @@ def main() -> int:
         if not args.linear:
             ax.set_yscale("log")
     axes[1].set_xlabel("Global epoch")
-    axes[0].set_title("J/psi runs: loss comparison (all runs under outputs/cms_JpsiDoubleMuons)")
+    axes[0].set_title("J/psi runs: loss comparison (all runs under outputs/cms_JpsiDoubleMuons/archive)")
     fig.legend(
         handles=axes[0].lines,
         loc="lower center",

@@ -7,10 +7,10 @@ selected/split rows, so the comparison is apples-to-apples.
 
 Example:
     .venv/bin/python scripts/test_plot.py \
-        --config-a configs/cms_JpsiDoubleMuons_ab_A_mass.yaml \
-        --checkpoint-a outputs/cms_JpsiDoubleMuons/jpsi_ab_A/best_model.pt \
-        --config-b configs/cms_JpsiDoubleMuons_ab_B_no_mass.yaml \
-        --checkpoint-b outputs/cms_JpsiDoubleMuons/jpsi_ab_B/best_model.pt \
+        --config-a configs/archive/cms_JpsiDoubleMuons_ab_A_mass.yaml \
+        --checkpoint-a outputs/cms_JpsiDoubleMuons/archive/jpsi_ab_A/best_model.pt \
+        --config-b configs/archive/cms_JpsiDoubleMuons_ab_B_no_mass.yaml \
+        --checkpoint-b outputs/cms_JpsiDoubleMuons/archive/jpsi_ab_B/best_model.pt \
         --num-samples 50000 --split test --device auto
 """
 

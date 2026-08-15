@@ -6,7 +6,7 @@ Run after `scripts/stage3_candidateB_validation.py` and
 outputs and trajectory CSVs:
 
     .venv/bin/python scripts/stage3_candidateB_report.py \
-        --package outputs/cms_JpsiDoubleMuons/stage3_candidateB_validation
+        --package outputs/cms_JpsiDoubleMuons/archive/stage3_candidateB_validation
 
 The package must contain:
   * metric_trajectory.csv / loss_trajectory.csv / gradient_trajectory.csv
@@ -485,7 +485,7 @@ def main() -> None:
     lines.append("# Stage-3 Candidate B validation report (J/psi -> mu mu)")
     lines.append("")
     lines.append(
-        f"- Config: `{settings.get('config', 'configs/cms_JpsiDoubleMuons_encoder_candidateB.yaml')}`"
+        f"- Config: `{settings.get('config', 'configs/archive/cms_JpsiDoubleMuons_encoder_candidateB.yaml')}`"
     )
     lines.append(
         f"- Fixed diagnostic: split `{settings.get('split', 'test')}`, "
@@ -506,7 +506,7 @@ def main() -> None:
     lines.append("")
     lines.append(
         "One continuous Stage-3 run resumed from "
-        "`outputs/cms_JpsiDoubleMuons/encoder_diag_candidateB/checkpoint_stage2_joint_transport.pt` "
+        "`outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateB/checkpoint_stage2_joint_transport.pt` "
         "with the same 50,000-event selection, seed 0, preprocessing, plotting code, and "
         "metrics as the encoder-alignment diagnostic. The Stage-3 schedule and loss are the "
         "existing config values; no architecture, stage structure, or loss terms were changed. "
@@ -711,7 +711,7 @@ def main() -> None:
     lines.append("```bash")
     lines.append(
         ".venv/bin/python scripts/train.py "
-        "--config configs/cms_JpsiDoubleMuons_encoder_candidateB.yaml "
+        "--config configs/archive/cms_JpsiDoubleMuons_encoder_candidateB.yaml "
         "--run-name Jpsi_candidateB_full --device auto"
     )
     lines.append("```")

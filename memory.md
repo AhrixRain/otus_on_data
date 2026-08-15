@@ -65,6 +65,13 @@
   Preliminary metrics at that point: train loss ~4.4, eval 15.1, generator
   mass W1 ~1.48/KS 0.56 — early-training immaturity, not a verdict. The user
   will run the final fix later; see docs/Jpsi_F1_fix_runbook.md).
+- **ARCHIVED 2026-08-14 (Session 9):** everything listed above was moved
+  to outputs/cms_JpsiDoubleMuons/archive/ (incl. .plot_cache), and ALL
+  configs/*.yaml (18 J/psi + the Z config cms_doubleelectron_mps.yaml) were
+  moved to configs/archive/ (git-staged as renames). outputs/cms_Jpsi_new/
+  was created for the upcoming new-prior training. All code references
+  (scripts/, tests/, docs/) were updated to the archive paths; suite 98/98
+  green; jpsi_new_prior_comparison.py re-verified against the archived cache.
 - **Provenance gap (old machine only):** for all runs *except* v3.8, the
   checkpoints (.pt), train_log.csv, status.json, history.json,
   config.resolved.json, metrics.json, per-run summary.{json,md}, and the
@@ -246,6 +253,102 @@ CMS data (Run2012BC_DoubleMuParked_Muons.root):
   distortion the SWD can in principle absorb, at the cost of unfolding
   fidelity.
 
+### 4.7 CMS-vs-MG5 mismatch re-check, J/psi ~3.09 GeV focus (artifact-measured
+2026-08-14 via scripts/jpsi_mismatch_check.py + scripts/jpsi_f32_check.py,
+version-3 split caches 0ed04817d72bb34f84ed / 410ce075cc7cc2e067c8; the user's
+question: is the training failure a CMS-data/MG5-prior mismatch?)
+
+**Verdict: yes — quantified on four stacked axes (all numbers below).**
+
+- **Composition (mass axis).** Full window [2.6,3.5]: data = 42.2% J/psi +
+  57.8% continuum (linear sideband est.; 7,177,600 OS pairs). Prior = 100%
+  on-shell J/psi. Even the narrow signal region [3.0369,3.1569] keeps ~15%
+  continuum under the window; the prior has 0%. The prior is a delta: filtered
+  prior mass std 0.22 MeV (E-based) / 0.20 MeV (p-based) vs data in-window
+  std 27.9 MeV — a ~140x width gap, i.e. the generator must learn ~28 MeV of
+  resolution smearing from a delta, and the encoder must crush continuum onto
+  the delta (non-injectivity).
+- **Mass conventions (training-exact).** x-space uses p-based stable mass with
+  daughter_masses [0.105658,0.105658] (loss.py:1000, mass_from_energy=False);
+  z-space uses stored-E direct formula (loss.py:1007, mass_from_energy=True).
+  In these conventions the in-window data mean is 3.09779 vs prior 3.09690 —
+  only +0.9 MeV offset, so the mismatch is WIDTH + CONTINUUM, not a mass-scale
+  shift. (The massless-daughter convention would fake a -7.3 MeV offset; the
+  daughter-mass correction is +8.25 MeV.)
+- **Process/physics content.** Prior HDF5 attrs (source-verified):
+  process = "p p > jpsiv j, jpsiv > mu+ mu-" (prompt direct production only,
+  effective coupling gJpsi=0.01; file carries its own scientific_warning that
+  absolute normalization is untrustworthy). No B-decay (non-prompt) component,
+  no feed-down — while real CMS 8 TeV J/psi is prompt+non-prompt+feed-down.
+- **Kinematic support.** Same filter (both-muons pT>3, |eta|<2.4, mass window)
+  keeps 49.7% of full-window data but only 0.60% of the 1M prior. Unfiltered
+  prior (v3.5/v3.8 setup): muon pT median 1.49 vs data 11.43 GeV; prior p99 =
+  7.10 GeV yet 77.6% of data muons are harder; only 5.7% of full-window data
+  lies inside the prior's joint [p0.5,p99.5] box (px/py coverage ~40%). Even
+  the trigger-matched filtered prior stays 2.6x softer: muon pT median 4.8 vs
+  12.6, pair pT median 10.1 vs 26.0, pair pT p99 39.5 vs 65.7; 69.8% of
+  signal-window data inside the filtered prior's box. Unproducible tails:
+  0.24% of data pair pT above prior absolute max (110 GeV); data junk muons
+  reach 16.8 TeV.
+- **Float32 z-mass noise (new, important).** The prior's daughters are
+  effectively massless (stored E - |p| per muon: mean ~0, std 0.01 MeV), so
+  the E-based z-space mass is an opening-angle mass with float32 cancellation
+  at boost: full-prior z mass std = 5.65 MeV in float64 but 10.47 MeV in
+  float32 (what training actually sees); p-based stays 0.20 MeV. The filtered
+  prior (energies <=76 GeV) has E-based std 0.22 MeV — the 10.5 MeV "width"
+  of the unfiltered prior is numerical noise, not physics. The data x-mass
+  authority (p-based) is immune (stable formula), but the stored-E column of
+  the data differs from p-based mass by mean 8.25 MeV in-window (daughter-mass
+  convention + float32 junk-tail rounding; max 539 MeV on junk events).
+- **Causal fit to the observed failures:** v3.5's good direction is z->x
+  (decoder only smears the delta — unaffected by mismatch) and its broken
+  direction is x->z (cycle KS 0.52-0.54, encoder mass sigma stuck at 24 MeV) —
+  exactly where the mismatch bites. v3.8's vanilla objective diverges because
+  raw SWD against a delta prior is ill-conditioned and D(z~prior) is never
+  trained. The v3.9/v3.10 restricted scope removes the 58%->15% continuum
+  crush and the trigger-floor asymmetry but keeps the 2.6x pT gap and the
+  140x width gap — mitigating, not eliminating, the mismatch. Root fix would
+  need a prior with resolution smearing (~28 MeV), continuum admixture, and a
+  harder (incl. non-prompt) pT spectrum.
+
+### 4.8 Z->ee health check (artifact-measured 2026-08-14 via
+scripts/zee_health_check.py, cache 9bb63a1e38cf0cd9b9c2 version 1;
+the user asked to verify the Z data/prior pair is "normal")
+
+**Verdict: Z is normal/healthy — the contrast case that validates the J/psi
+verdict. Every dimension where J/psi failed is healthy for Z.**
+
+- Prior (cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5, n=623,944): a real
+  Z lineshape, NOT a delta — mass mean 91.089, std 4.03 GeV, median 91.187
+  (= pole 91.1876, fine mode 91.188); daughters massless (stored E-|p| per
+  electron ~4e-6 GeV) but no float32 problem at these energies (E-based ==
+  p-based to machine precision); 100% in [70,110].
+- Data (1,344,681 OS pairs, full electron selection): mean 90.638 (low-mass
+  tail), median 91.148, half-width 3.60 GeV vs prior 1.86 GeV (~1.9x wider —
+  resolution + endcap scale mixing, see below). Composition: [70,80) 5.5% /
+  [80,100] 90.0% / (100,110] 4.5% vs prior 2.1%/95.3%/2.5%; data off-peak
+  continuum density ~4-5x the prior's — a modest, smooth mismatch in the same
+  lineshape family (vs J/psi's 58% continuum with 0% in the prior).
+- **One real caveat found (skim-level, not OTUS):** the skim's electron energy
+  scale is detector-region dependent. Both-barrel pairs: fine mode 91.182
+  (spot-on). Both-endcap pairs: fine mode 92.942 (+1.9% high). The mixed
+  barrel-endcap pairs create the 91.6 plateau; overall data fine mode 91.617
+  (+430 MeV vs pole). This is the classic un-recalibrated 2012 endcap ECAL
+  scale effect; the truth prior sits at the pole. It contributes to the 1.9x
+  width gap but is absorbable — see the converged runs below.
+- Kinematics: essentially matched. electron pT mean 42.09 vs 41.22 (median
+  41.2 vs 40.6); pair pT median 12.4 vs 11.9, p99 123 vs 109; |eta| mean 1.03
+  vs 1.08. Only 1.3% of data electrons are harder than the prior's p99
+  (J/psi: 77.6%).
+- Support: 93.4% of data events fully inside the prior's [p0.5,p99.5] box
+  (per-coordinate 98.7-99.0%; J/psi: 5.7%). The prior passes the data-side
+  kinematic selection (pT>20, |eta|<2.5, mass window) at 100% (J/psi: 0.60%).
+- Training-side confirmation: v5_mps (best ep160) eval loss 0.128, mass
+  residual mean 0.078 / rms 0.133, chi2_like 4.2e-5, all 80 bins valid;
+  v4_mps residual 0.119/0.190. Converged, high-quality fits.
+- Alt prior (no-dy1j fiducial file): n=640,449, mean 91.007, std 4.070,
+  median 91.166 — same family as the dy1j file; both healthy.
+
 ### 4.6 v3.9 F1-restricted pilot — early trajectory (artifact-measured,
 2026-08-15, train_log.csv; run ongoing)
 
@@ -356,6 +459,27 @@ Paper-grounded, one-factor-at-a-time:
   Config: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
   (run_name Jpsi_v3.9_F1_restricted_ptmax100, launched 2026-08-15).
   Residual known mismatch: prior pair-pT median ~10 GeV vs data ~26 GeV.
+- **New J/psi prior REBUILT with MadGraph (2026-08-14, goal round 1).**
+  data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5 (FDL/zData, 94,880 events = 80,648
+  signal + 14,232 continuum, frac-signal 0.85) generated end-to-end ON THIS MAC
+  with MG5_aMC 3.7.0 + rebuilt sm_onia(-c_mass) model (recipe:
+  docs/sm_onia_rebuild.md; massive muons MM=0.105658; gJpsi=0.01; MASS 443 =
+  3.0969; DECAY 443 = 9.29e-05). Components: p p > jpsiv j (200k events,
+  55.92 pb) + p p > mu+mu- j with stock sm_mumass (50k events, 36.24 pb),
+  cuts ptl 3.0 / etal 2.5 / mmll [2.9,3.3] / ptj 10 / cut_decays=True,
+  NNPDF31_lo_as_0130 (lhaid 315200). Post-chain (scripts/): lhe_to_prior_hdf5
+  (96.1% signal pass rate), smear_prior (a=0.0127), reweight_prior
+  (binned-density muon-pT reweight, max-weight 20), mix_prior (85/15). FINAL
+  METRICS vs signal-window data (3,624,454 ev): mass mean 3.09697 vs 3.09428,
+  std 30.8 vs 28.1 MeV; muon pT median 13.30 vs 12.57; pair pT median 26.60 vs
+  26.03; pass rate 94.3% (was 0.60%); joint support coverage 97.4% (was
+  69.8%); continuum 15% (was 0%). Production runbook:
+  docs/jpsi_prior_rebuild_runbook.md; cards in scripts/mg5_cards/; unit tests
+  tests/test_prior_build.py (7 tests). macOS fixes discovered: brew gcc
+  gfortran 16.1.0, conda lhapdf 6.5.6 + PDF grid, DYLD_LIBRARY_PATH /
+  -Wl,-rpath for libLHAPDF.dylib (the 'Reason:' survey crash), use_syst=False
+  (NNPDF23 errorset missing). Config switch for training: point
+  theory_prior_file at the new file (cache auto-invalidates).
 - **v3.10 (IMPLEMENTED 2026-08-15, not launched — the user runs it later)** —
   staged + restricted: configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml
   extends the v3.5 staged config with the v3.9 data scope (signal region +
@@ -430,6 +554,10 @@ Paper-grounded, one-factor-at-a-time:
   theory_prior_file: cms_jpsi_mumu_mg5_8tev_1M.hdf5.
 - Cache lives at <output_root>/.plot_cache and is keyed by selection,
   config, seed, sample cap, file fingerprints, and the pipeline source hash.
+- As of 2026-08-14 the historical J/psi split caches live at
+  outputs/cms_JpsiDoubleMuons/archive/.plot_cache (scripts
+  jpsi_mismatch_check/jpsi_f32_check/jpsi_new_prior_comparison point there);
+  the new training's caches will be created under outputs/cms_Jpsi_new/.plot_cache.
 - Citation style for findings: file:line (code), notebook cell (ipynb),
   document+section (PDFs), full artifact path (plots/NPZ).
 
@@ -457,6 +585,16 @@ Paper-grounded, one-factor-at-a-time:
 - Generator-quality check: scripts/sample_generator.py (decodes the full
   filtered prior K times with fresh noise; needed for v3.9 whose z_test is
   only 600 events vs 100k for v3.5/v3.8).
+- CMS-vs-MG5 mismatch diagnostics (2026-08-14): scripts/jpsi_mismatch_check.py
+  (composition/support/pass-rate asymmetry; §4.7) and scripts/jpsi_f32_check.py
+  (float32 z-mass noise; §4.7). Both read the version-3 .plot_cache, no ROOT
+  rescan. Z->ee counterpart: scripts/zee_health_check.py (mass/kinematics/
+  support/barrel-endcap scale split; §4.8).
+- Data vs priors comparison figure (2026-08-14): scripts/jpsi_new_prior_comparison.py
+  -> experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png (3x2 panels: mass /
+  mass zoom / muon pT / pair pT / |eta| / summary table; CMS signal-window data
+  vs old 1M delta prior vs new 94,880 mixed prior, training-exact x-space mass
+  convention). Same-folder sibling of the old jpsi_prior_vs_cms_mumu.png.
 - Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
 - Stage comparisons: scripts/stage_diagnostic.py; v3.7/v3.8 three-path eval:
   scripts/eval_v37.py; gradient audits: scripts/verify_v37_gradients.py,
@@ -518,3 +656,97 @@ Paper-grounded, one-factor-at-a-time:
   Jpsi_v3.9_F1_restricted_ptmax100 (300 epochs, ~181.5k steps, ~13h MPS,
   launched this session). Early signal: epoch-1 train loss ~233 vs v3.8's
   ~3,245 (bounded support confirms the hypothesis direction).
+- **2026-08-14 — Session 6 (CMS-vs-MG5 mismatch re-check).** The user asked
+  whether the J/psi training failure is a CMS-data/MG5-prior mismatch (with
+  the ~3.09 GeV region as the reference point; not restricted to it). Ran a
+  fresh quantitative check from the version-3 split caches: composition
+  (42.2% signal / 57.8% continuum full window; ~15% continuum even inside
+  the signal region; prior 100% signal delta), width (27.9 MeV data vs
+  0.2 MeV prior, 140x), kinematic support (same filter keeps 49.7% of data
+  vs 0.60% of prior; 77.6% of data muons harder than prior p99; filtered
+  prior still 2.6x softer), and a new float32 finding (unfiltered prior's
+  10.5 MeV E-based z-mass "width" is cancellation noise; filtered prior is a
+  true 0.2 MeV delta). Verified the training-exact mass conventions
+  (z: stored-E direct; x: p-based + muon masses; data mean 3.09779 vs prior
+  3.09690, +0.9 MeV). Verdict: the mismatch is the dominant root cause and
+  explains every observed failure signature; the v3.9/v3.10 fix mitigates but
+  does not eliminate it. Wrote scripts/jpsi_mismatch_check.py and
+  scripts/jpsi_f32_check.py; findings in §4.7. Then, at the user's request,
+  ran the same methodology on the Z->ee pair: healthy on every dimension
+  (prior is a real 4-GeV-wide lineshape at the pole, kinematics matched at
+  the few-% level, 93.4% support coverage, 100% pass rate, converged v4/v5
+  runs). One real caveat found: the skim's endcap electron energy scale is
+  +1.9% high (endcap-only mode 92.94 vs pole 91.19; barrel-only 91.18) —
+  a skim-level 2012 ECAL calibration artifact, absorbable, not an OTUS bug.
+  Wrote scripts/zee_health_check.py; findings in §4.8.
+- **2026-08-14 — Session 7 (MG5 on macOS + J/psi prior rebuild, goal round 1).**
+  Verified MG5 3.7.0 runs on this Mac (conda python has six; system 3.9.6
+  does not); installed brew gcc (gfortran 16.1.0) and conda-forge lhapdf
+  6.5.6 + NNPDF31_lo_as_0130 grid (lhaid 315200). Rebuilt sm_onia-c_mass and
+  sm_mumass-c_mass from Virat's recipe with massive muons (MM=0.105658; the
+  recipe's ymm confusion avoided, 92.9 keV width kept). Fixed two macOS MG5
+  blockers: the dyld @rpath/libLHAPDF.dylib 'Reason:' survey crash
+  (-Wl,-rpath in Source/make_opts + Template/LO/Source/make_opts[.make_opts]
+  + DYLD_LIBRARY_PATH) and the NNPDF23_lo_as_0130_qed systematics errorset
+  crash (use_syst=False); also cut_decays=True so generation cuts apply to
+  decay muons (92-96% post-filter efficiency vs 0.6% for the old file).
+  Generated 200k signal + 50k continuum events; postprocessed, smeared
+  (a=0.0127, mass std 27.8 MeV vs data 28.1), reweighted to the data muon-pT
+  spectrum (median 6.95 -> 13.30 vs data 12.57), and mixed 85/15 into
+  data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5 (94,880 events). All acceptance
+  targets met (§7 update; full metrics there). New scripts:
+  lhe_to_prior_hdf5.py, smear_prior.py, reweight_prior.py, mix_prior.py;
+  cards scripts/mg5_cards/; runbook docs/jpsi_prior_rebuild_runbook.md;
+  tests/test_prior_build.py (7/7).
+- **2026-08-14 — Session 8 (new-prior comparison figure + discovery narrative).**
+  At the user's request, produced a CMS-vs-new-prior comparison in the style of
+  experiments/cms_Jpsi_ee/ (where the old jpsi_prior_vs_cms_mumu.png lives):
+  scripts/jpsi_new_prior_comparison.py renders a 3x2 panel figure to
+  experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png comparing CMS
+  signal-window data (v3.9 cache 0ed04817d72bb34f84ed, n=3,624,454) against the
+  OLD 1M delta prior (5,995 events pass the data selection = 0.60%) and the NEW
+  mixed prior (89,435/94,880 = 94.26% pass, the ~5.7% loss is smearing-induced
+  mass-window spill-out). Panels: mass (2 MeV bins) / mass zoom (1 MeV bins) /
+  muon pT / pair pT (both log-y) / muon |eta| / summary table. Freshly measured
+  (training-exact x-space convention, m_mu=0.105658): data mass 3.09428 +- 28.1
+  MeV, muon pT med 12.57, pair pT med 26.03; old prior 3.10506 +- 1.6 MeV
+  (massless-born kinematics through the massive-daughter formula), pT med 4.77,
+  pair pT med 10.09, joint-box coverage 69.8%; new prior 3.09697 +- 30.8 MeV,
+  pT med 13.30, pair pT med 26.60, coverage 97.4%; sideband continuum under the
+  signal window 14.7%. Figure pixel-verified (all three curve colors present);
+  the model has no image input so visual QA was programmatic only.
+- **2026-08-14 — Session 9 (archive old J/psi work, prep new training).**
+  Per user request: created configs/archive/ and
+  outputs/cms_JpsiDoubleMuons/archive/; moved ALL previous files into them
+  (18 J/psi configs + cms_doubleelectron_mps.yaml -> configs/archive/; all 36
+  entries incl. .plot_cache -> outputs/cms_JpsiDoubleMuons/archive/), and
+  created outputs/cms_Jpsi_new/ for the new training. Staged exact git
+  renames for the 903 previously-tracked files (19 configs + 884 outputs
+  files) so history is preserved as renames, not delete+add. Updated 74
+  path references across scripts/ (12 files incl. the cms_doubleelectron
+  plot notebook's repo-root finder), tests/ (3 files), docs/ (3 runbooks)
+  plus 3 split-string references the blanket replace missed
+  (plot_jpsi_all_runs.DEFAULT_RUNS_ROOT, notebook lines 34/64). Verified:
+  zero stale refs in scripts/tests/docs, py_compile clean, unittest suite
+  98/98 OK, and scripts/jpsi_new_prior_comparison.py re-run end-to-end
+  against the archived .plot_cache (same numbers as Session 8). Leftover:
+  an untracked PLY-generated parser table py.py at repo root (left in
+  place, not part of this task).
+- **2026-08-14 — Session 10 (paper-faithful training with the NEW prior, 20% data).**
+  User: train J/psi->mumu with the new prior, 20% data, preliminary simple
+  run, method/loss as close to the paper as possible, and explicitly NOT to
+  reference the archived past trainings. Wrote a fresh self-contained config
+  configs/cms_Jpsi_newprior_paper_20pct.yaml (no extends): new prior
+  cms_jpsi_mumu_mg5_8tev_mixed.hdf5 (94,880 ev), data window = the prior's
+  fiducial window (pT>3, |eta|<2.4, mass [3.0369,3.1569], muon_pt_max 100
+  junk guard), 20% cap via data_split caps 580000/72500/72500 (=725,000 of
+  3,624,454), vanilla_swae loss (raw-coordinate SWD p=2, 1000 slices,
+  standardize_raw_matching false), batch 20000, Adam 1e-3, seed 0, and the
+  paper anchor warmup (nu_e=nu_d=50, epochs 1-80; then 0, epochs 81-300).
+  Preflight PASSED (cache key 47c9d9573426ad4de16c in
+  outputs/cms_Jpsi_new/.plot_cache; x 725,000 / z 94,880; MPS). Training
+  launched in background (job bash-21) into
+  outputs/cms_Jpsi_new/Jpsi_newprior_paper_20pct/; verified running normally
+  (epoch 14/80, global step ~393/8700; train_loss 590@ep1 -> ~6.4@ep14;
+  eval_loss 194.8@ep1 -> 11.4@ep10; checkpoints written). Left running, not
+  monitored, per user request. Log: /tmp/jpsi_new_train.log.

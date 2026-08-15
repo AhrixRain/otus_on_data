@@ -1,0 +1,9 @@
+# J/psi prior rebuild - SIGNAL component (prompt J/psi production)
+# Model: sm_onia-c_mass (stock sm + effective vector J/psi, PDG 443,
+#   gJpsi = 0.01, MJPSI = 3.0969, WJPSI = 92.9 keV, MASSIVE muons MM = 0.105658)
+# See docs/sm_onia_rebuild.md for the model recipe.
+# 8 TeV, LO, cuts applied to decay products (cut_decays = True).
+import model sm_onia-c_mass --modelname
+define j = g u c d s u~ c~ d~ s~
+generate p p > jpsiv j, jpsiv > mu+ mu-
+output jpsi_signal_test

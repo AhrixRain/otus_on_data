@@ -44,14 +44,14 @@ from cms_model import build_model, checkpoint_payload, load_model_from_checkpoin
 from loss import DEFAULT_SPACE_WEIGHTS, sliced_wasserstein  # noqa: E402
 
 
-V38_CONFIG_PATH = REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml"
+V38_CONFIG_PATH = REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml"
 V37_CONFIG_PATHS = [
-    REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.7_vanilla.yaml",
-    REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.7_lambda0p1.yaml",
-    REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.7_lambda0p3.yaml",
-    REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.7_lambda1.yaml",
-    REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.7_lambda3.yaml",
-    REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.7_lambda10.yaml",
+    REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.7_vanilla.yaml",
+    REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.7_lambda0p1.yaml",
+    REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.7_lambda0p3.yaml",
+    REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.7_lambda1.yaml",
+    REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.7_lambda3.yaml",
+    REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.7_lambda10.yaml",
 ]
 
 

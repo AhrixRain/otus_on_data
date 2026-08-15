@@ -168,7 +168,7 @@ class TestMuonPtMax(unittest.TestCase):
 class TestV39Config(unittest.TestCase):
     def test_config_resolves_with_prior_selection_and_pt_max(self) -> None:
         cfg = resolve_config(
-            load_config(REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml")
+            load_config(REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml")
         )
         self.assertEqual(cfg["muon_selection"]["muon_pt_max"], 100.0)
         self.assertEqual(
@@ -195,7 +195,7 @@ class TestV39Config(unittest.TestCase):
 
     def test_cache_metadata_records_prior_selection(self) -> None:
         cfg = resolve_config(
-            load_config(REPO_ROOT / "configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml")
+            load_config(REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml")
         )
         meta = cms_data.data_cache_metadata(cfg, None)
         self.assertIn("theory_prior_selection", meta)

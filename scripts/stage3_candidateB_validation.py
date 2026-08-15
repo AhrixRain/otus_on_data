@@ -4,9 +4,9 @@
 This is a thin validation wrapper for the OTUS-on-CMS J/psi Candidate B run:
 
     .venv/bin/python scripts/stage3_candidateB_validation.py \
-        --config configs/cms_JpsiDoubleMuons_encoder_candidateB.yaml \
-        --checkpoint outputs/cms_JpsiDoubleMuons/encoder_diag_candidateB/checkpoint_stage2_joint_transport.pt \
-        --output-dir outputs/cms_JpsiDoubleMuons/stage3_candidateB_validation/training \
+        --config configs/archive/cms_JpsiDoubleMuons_encoder_candidateB.yaml \
+        --checkpoint outputs/cms_JpsiDoubleMuons/archive/encoder_diag_candidateB/checkpoint_stage2_joint_transport.pt \
+        --output-dir outputs/cms_JpsiDoubleMuons/archive/stage3_candidateB_validation/training \
         --num-samples 50000
 
 It does not change the Stage-3 schedule or the loss. It only starts the model

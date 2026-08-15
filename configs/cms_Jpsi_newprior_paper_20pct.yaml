@@ -1,0 +1,142 @@
+# J/psi -> mu+mu- preliminary training with the NEW mixed MG5 prior.
+#
+# Written fresh (2026-08-14) from the OTUS paper core objective
+# (arXiv:2101.08944v2); deliberately independent of any earlier archived
+# run configuration.
+#
+# Paper objective (Eq. 2 / 11), exactly as implemented here:
+#   L = beta * MSE(x, D(E(x)))   +   lambda * SWD_{p=2}(z, E(x))
+# on RAW physical 8D coordinates (no standardization inside the SWD),
+# L = 1000 projection slices, minibatch 20000, Adam lr = 1e-3, 300 epochs.
+# Paper anchor warmup: nu_e = nu_d = 50 for the first 80 epochs, then 0
+# (c_A = 1 - p_hat . p_hat' on the mu- 3-momentum, per the paper).
+#
+# Data pairing: the new prior cms_jpsi_mumu_mg5_8tev_mixed.hdf5 is defined
+# inside the fiducial window muon pT > 3, |eta| < 2.4, mass in
+# [3.0369, 3.1569] GeV with ~15% continuum, so the CMS data selection uses
+# exactly that window (composition-matched, paper-style). The skim's hard
+# 3 GeV trigger floor makes muon_pt_min 3.0 identical to 2.0 on the data.
+# muon_pt_max 100 removes the skim's misreconstructed junk tail (0.4% of
+# muons above 100 GeV, up to 16.8 TeV) which no 8 TeV prior can produce.
+#
+# Preliminary scope: ~20% of the selected CMS events (725,000 = 80/10/10
+# of 580,000 / 72,500 / 72,500). The MG5 prior (94,880 events) is used in
+# full; unequal domain sizes are handled by the loader's deterministic
+# cycle-and-reshuffle policy.
+
+paths:
+  repo_root: .
+  data_root: data
+  cms_root_file: Run2012BC_DoubleMuParked_Muons.root
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_mixed.hdf5
+  output_root: outputs/cms_Jpsi_new
+
+run_name: Jpsi_newprior_paper_20pct
+
+data:
+  channel: muon
+  root_step_size: 100 MB
+
+device: auto
+seed: 0
+float_type: float32
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+  train_max: 580000
+  val_max: 72500
+  test_max: 72500
+
+muon_selection:
+  muon_pt_min: 3.0
+  muon_pt_max: 100.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 3.0369
+  jpsi_mass_max: 3.1569
+
+model:
+  class: CondNoiseAutoencoder
+  num_hidden_layers: 4
+  dim_per_hidden_layer: 512
+  activation: ReLU
+  sigma_fun: softplus
+  sigma_floor: 0.001
+  stoch_enc: true
+  stoch_dec: true
+  raw_io: true
+  daughter_masses: [0.105658, 0.105658]
+
+loss:
+  kind: cms_jpsi_doublemuon_loss
+  vanilla_swae: true
+  vanilla_v3_7: false
+  standardize_raw_matching: false
+  p: 2
+  num_slices: 1000
+  selection_score:
+    x_sim: 0.0
+    z_prior: 1.0
+    x_reco: 1.0
+    cycle: 0.0
+  decoder_num_noise_samples: 1
+
+loaders:
+  train_batch_size: 20000
+  eval_batch_size: 20000
+  preload_data_to_accelerator: false
+  train_sampler: shuffled_without_replacement
+  eval_sampler: deterministic_sequential
+
+evaluation:
+  min_truth_count: 20
+  mass_range: [3.0369, 3.1569]
+  mass_bin_width: 0.01
+  mass_label: "m(mumu) [GeV]"
+  channel_title: "CMS DoubleMuParked: J/psi -> mumu"
+  reference_mass: 3.0969
+  reference_label: "m_J/psi"
+  diagnostic_freq: 10
+  independent_diagnostic_rng: true
+  sw_batch_size: 20000
+  sw_eval_seed: 12345
+
+stages:
+  - name: paper_anchor_warmup
+    mode: standard
+    enabled: true
+    epochs: 80
+    lr: 0.001
+    beta: 1.0
+    lamb: 1.0
+    tau: 0.0
+    rho: 0.0
+    nu_e: 50.0
+    nu_d: 50.0
+    num_slices: 1000
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false
+    early_stopping:
+      enabled: false
+      patience: 100
+  - name: paper_core_swae
+    mode: standard
+    enabled: true
+    epochs: 220
+    lr: 0.001
+    beta: 1.0
+    lamb: 1.0
+    tau: 0.0
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1000
+    log_freq: 10
+    lr_decay: false
+    freeze_encoder: false
+    freeze_decoder: false
+    early_stopping:
+      enabled: false
+      patience: 100
