@@ -1,0 +1,208 @@
+%-------------------------------------------------------------------------------
+% OTUS Run E / Tier A working paper
+% Compile with: pdflatex main && bibtex main && pdflatex main && pdflatex main
+%
+% This is a deliberately structured skeleton.  Tables marked [RUN D] contain
+% measured repository results; all [TODO] markers are for the Run E numbers.
+%-------------------------------------------------------------------------------
+\documentclass[11pt,twocolumn]{article}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+
+
+\newcommand{\pt}{\ensuremath{p_{\mathrm{T}}}}
+\newcommand{\ptvec}{\ensuremath{\vec{p}_{\mathrm{T}}}}
+\newcommand{\zspace}{\ensuremath{\mathcal{Z}}}
+\newcommand{\xspace}{\ensuremath{\mathcal{X}}}
+\newcommand{\E}{\ensuremath{\mathcal{E}}}
+\newcommand{\D}{\ensuremath{\mathcal{D}}}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
+\title{A Physics-Cost Neural-OT Upgrade of the Sliced-Wasserstein Autoencoder
+for Detector-Level $J/\psi\to\mu^+\mu^-$ Simulation}
+
+\author{[Author list -- TODO]}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The OTUS sliced-Wasserstein autoencoder learns a stochastic detector response
+between truth-level dimuon four-vectors and CMS detector-level four-vectors
+without per-event paired simulation.  The literal 2021 objective matches broad
+coordinate distributions but misses the $\sim30~\mathrm{MeV}$ $J/\psi$ mass shell.
+This paper reports two incremental upgrades: (i) a Run-D baseline adding
+pair-level sliced Wasserstein and a relative-mass cycle constraint, which
+reduces the simulation mass Wasserstein-1 from $0.95~\mathrm{GeV}$ to
+$0.026~\mathrm{GeV}$; and (ii) a Run-E ``Tier A'' upgrade that replaces blind random
+slicing with a physics-cost Sinkhorn divergence and adversarially learned
+slicing directions, parameterizes the transport in cylindrical coordinates as a
+short stochastic residual flow, and selects checkpoints with hard mass-shape
+gates.  Modern classifier two-sample, coverage, and per-event stochasticity
+diagnostics are introduced in place of marginal histogram checks alone.
+\todo{Abstract final numbers after Run E.}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Fast surrogate simulation of detector effects is a central application of
+generative models in high-energy physics~\cite{otus_paper,calogan}.  OTUS
+reformulates the problem as an unpaired transport between a physically
+interpretable latent space of generator-level particles, $\zspace$, and
+detector-level observations, $\xspace$~\cite{otus_paper}.  Its core loss is
+\begin{equation}
+\label{eq:otus}
+\mathcal{L}_{\mathrm{OTUS}}
+= \mathbb{E}_{x\sim p(x)}\mathbb{E}_{z\sim p_E(z|x)}
+\mathbb{E}_{\tilde x\sim p_D(x|z)}\|x-\tilde x\|^2
++ \lambda\, d_{\mathrm{SW}}\!\left(p_E(z),p(z)\right),
+\end{equation}
+optionally augmented by directional anchor terms.  The sliced-Wasserstein term
+projects high-dimensional particle vectors onto random one-dimensional axes;
+our measured failure mode is that a narrow resonance shell is nearly invisible
+to most of those axes.
+
+This paper makes two contributions:
+\begin{enumerate}
+  \item a systematic comparison of the literal OTUS objective, the Run-D
+        pair-level extension, and the Virat-style stochastic residual baseline;
+  \item the Run-E ``Tier A'' method: physics-aware neural-OT costs,
+        learned max-sliced-Wasserstein directions, a cylindrical residual-flow
+        parameterization, mass-gated model selection, and modern generative
+        diagnostics.
+\end{enumerate}
+
+\section{Related Work}
+\label{sec:related}
+
+OTUS builds on the sliced-Wasserstein autoencoder~\cite{swae,wae}.  Neural
+optimal transport, notably entropic regularization~\cite{cuturi_sinkhorn},
+Sinkhorn divergences~\cite{genevay_sinkhorn}, and Monge-gap regularizers,
+replaces random projection distances in modern unpaired-transport models.
+Flow matching and stochastic interpolants provide continuous-time conditional
+generative models~\cite{lipman_flow, albergo_stochastic}; our cylindrical
+residual flow is a discrete, physics-constrained step in that direction.
+Fast detector simulation has moved from GANs~\cite{calogan} toward
+normalizing flows, diffusion models, and equivariant particle-cloud
+models~\cite{calochallenge}.  For unfolding, OmniFold is the current
+reference~\cite{omnifold}; our encoder remains a single-pass stochastic
+unfolding map and is not claimed to replace OmniFold.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Baseline and Run D}
+The detector-level data are CMS 2012 DoubleMuParked opposite-sign dimuons in
+the $J/\psi$ window.  The Run-D objective extends \ref{eq:otus} with a direct
+generator term and a pair-level SWD,
+\begin{equation}
+\label{eq:rund}
+\mathcal{L}_{\mathrm{RunD}}
+= \alpha(t)\left[d_{\mathrm{SW}}(z,E(x))
++d_{\mathrm{SW}}(x,D(z))\right]
++ \lambda_{\mathrm{cyc}}\,
+\mathbb{E}\|x-D(E(x))\|^2
++ \gamma\,\mathbb{E}\,\mathrm{Huber}\!\left(\frac{m_{\tilde x}-m_x}{m_x}\right).
+\end{equation}
+
+\subsection{Run E Tier A components}
+\label{sec:rune}
+
+\textbf{Physics-cost Sinkhorn and Monge gap.}
+We define a 14-dimensional standardized ground feature vector,
+\begin{equation}
+u(p)=\bigl[\log\pt^-,\eta^-,\sin\phi^-,\cos\phi^-,
+\log\pt^+,\eta^+,\sin\phi^+,\cos\phi^+,
+\log m,\log \pt^{\mu\mu},y,\cos\Delta\phi,\sin\Delta\phi,\Delta\eta\bigr],
+\end{equation}
+and use a weighted squared cost $c(a,b)=\sum_i w_i(u_i(a)-u_i(b))^2$.  The
+distribution distance is the debiased Sinkhorn divergence; a Monge-gap proxy
+with barycentric projection is available as a regularizer.
+
+\textbf{Max-SW.}  Instead of random slicing directions, a small direction set
+is updated adversarially to maximize the sliced distance on each minibatch,
+with an orthogonality penalty, and the generative model minimizes the same
+distance.
+
+\textbf{Cylindrical residual flow.}  Encoder and decoder are short flows in
+cylindrical coordinates.  At each of $K$ steps a physics-conditioned network
+predicts a bounded mean residual, a Gaussian core scale, and a Student-$t$ tail
+scale; azimuthal coordinates are transported on $S^1$ and energies are
+reconstructed on the muon mass shell.
+
+\textbf{Mass-gated selection.}  A checkpoint is eligible only if the generated
+mass satisfies hard gates on $W_1$, KS, window fraction, and mean shift.  The
+selected-score is set to infinity for ineligible checkpoints.
+
+\textbf{Modern diagnostics.}  We report classifier two-sample test AUC,
+fixed-$z$ repeated-decoding stochasticity, and rank-based coverage for cycle
+and nearest-neighbor pseudo-pairs.
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+Training uses $\approx 580{,}000$ CMS dimuon events and $75{,}904$ MG5 truth
+events from the rebuilt ptj$=5$ prior (80/10/10 splits, 20\% CMS cap).  Models
+are trained on Apple-silicon MPS.  Evaluation is performed on the untouched
+test split.  \todo{Add exact software versions and commit hashes.}
+
+\begin{table}[t]
+\centering
+\caption{Run D measured test-split mass metrics.}
+\label{tab:rund}
+\begin{tabular}{lcc}
+\toprule
+Checkpoint & $W_1$ [GeV] & KS \\
+\midrule
+three-term baseline & 0.946 & 0.764 \\
+Run D best (epoch 270) & 0.026 & 0.221 \\
+Run D final (epoch 300) & 0.061 & 0.296 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Distribution-level results}
+\label{sec:results-dist}
+\todo{Insert Run E mass ratio/residual figures from \texttt{plots\_best}.}
+Expected reporting table: $W_1$, KS, peak position, width ratio, window
+fraction, C2ST AUC, and central coverage for $D(z)$, $E(x)$, and $D(E(x))$.
+
+\subsection{Stochasticity and coverage}
+\label{sec:results-stochasticity}
+\todo{Insert fixed-$z$ per-event width table and rank-uniformity plots.}
+
+\subsection{Ablations}
+\label{sec:ablations}
+Planned single-variable ablations: Sinkhorn on/off, max-SW on/off, flow steps
+$K=1,2,4$, mass gates on/off.
+
+\section{Discussion}
+\label{sec:discussion}
+
+Limitations: no per-event paired CMS truth is available, so conditional
+coverage is evaluated only through cycle and nearest-neighbor proxies; the
+skim exposes no isolation, impact-parameter, or pileup variables; and the
+method is demonstrated for a fixed two-particle final state.  The
+generalization to variable particle multiplicity, full event objects, and
+Lorentz-equivariant representations remains future work.
+
+\section{Conclusion}
+\label{sec:conclusion}
+\todo{Final conclusion after Run E.}
+
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}

@@ -541,7 +541,7 @@ class CmsLossSmokeTest(unittest.TestCase):
             "train_z_physics_swd",
         ):
             self.assertIn(expected, fields)
-        self.assertEqual(len(fields), 32)
+        self.assertEqual(len(fields), 34)
 
     def test_data_cache_roundtrip_and_keying(self) -> None:
         with tempfile.TemporaryDirectory() as td:

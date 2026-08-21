@@ -32,11 +32,15 @@ data/Run2012B_DoubleElectron.root                   # Z->ee CMS data
 data/cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5
 ```
 
-The current active J/psi config
-(`configs/cms_Jpsi_newprior_paper_20pct.yaml`) still points at the ptj=10
-provenance file because it documents the already-completed run. The next
-training config will switch to the ptj=5 file after the loss changes are
-implemented.
+Config status:
+
+- `configs/cms_Jpsi_newprior_paper_20pct.yaml` documents the already-completed
+  ptj=10 paper-objective run.
+- `configs/cms_Jpsi_newprior_ptj5_3term_cosine_20pct.yaml` is the completed
+  three-term cosine baseline (ptj=5 prior).
+- `configs/cms_Jpsi_newprior_ptj5_rund_pairswd_cyclemass_20pct.yaml` is the
+  Run D candidate: three-term cosine plus pair-level SWD and a cycle
+  relative-mass Huber term.
 
 Raw data, HDF5 files, checkpoints, caches, and generated outputs are not
 committed by this workflow.
@@ -44,10 +48,10 @@ committed by this workflow.
 ## Smoke tests
 
 ```bash
-# J/psi pipeline (uses the active config's selection/cache machinery)
+# J/psi pipeline smoke test (next-round three-term objective + ptj=5 prior)
 python scripts/train.py \
-  --config configs/cms_Jpsi_newprior_paper_20pct.yaml \
-  --device auto --num-samples 10000 --epochs 1 --run-name smoke_jpsi
+  --config configs/cms_Jpsi_newprior_ptj5_3term_cosine_20pct.yaml \
+  --device auto --num-samples 10000 --epochs 1 --run-name smoke_jpsi_3term
 
 # Archived DoubleElectron pipeline
 python scripts/train.py \

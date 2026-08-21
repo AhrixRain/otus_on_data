@@ -1,0 +1,9 @@
+# Ablation 2: max-SW off, Sinkhorn on, flow_steps=2.
+extends: ../cms_Jpsi_ptj5_runE_tierA.yaml
+paths:
+  output_root: outputs/cms_Jpsi_sota/ablations
+run_name: runE_smoke_maxswd_off
+loss:
+  sota:
+    max_swd:
+      enabled: false

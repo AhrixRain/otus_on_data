@@ -358,16 +358,100 @@ def build_loss_factory(
     raise ValueError(f"Unknown loss kind {kind!r}; expected {CANONICAL_LOSS_KIND!r} or {JPSI_DIMUON_LOSS_KIND!r}.")
 
 
-def make_stage_loss_config(stage: dict[str, Any]) -> dict[str, Any]:
-    """Return only the per-stage loss coefficients used by a training epoch."""
+def _schedule_fraction(local_epoch: int, stage_epochs: int) -> float:
+    """Map epoch 1..N to schedule coordinate [0, 1]."""
+    if stage_epochs <= 1:
+        return 0.0
+    return float(local_epoch - 1) / float(stage_epochs - 1)
+
+
+def _resolve_scheduled_value(spec: Any, t: float, name: str) -> float:
+    """Evaluate a scalar coefficient or a {start, end, schedule} spec.
+
+    Supported schedules:
+      - linear:    start + (end - start) * t
+      - cosine:    end + (start - end) * (1 + cos(pi * t)) / 2
+      - constant:  start
+    The coordinate ``t`` is 0.0 at the first epoch and 1.0 at the last epoch
+    of the stage. Scalar coefficients are kept for full backward compatibility.
+    """
+    if isinstance(spec, dict):
+        try:
+            start = float(spec["start"])
+            end = float(spec.get("end", start))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Stage coefficient {name} schedule needs numeric start/end: {spec}") from exc
+        kind = str(spec.get("schedule", "linear"))
+        if not all(math.isfinite(value) and value >= 0.0 for value in (start, end)):
+            raise ValueError(f"Stage coefficient {name} schedule values must be finite and non-negative.")
+        if kind == "linear":
+            value = start + (end - start) * t
+        elif kind == "cosine":
+            value = end + (start - end) * (1.0 + math.cos(math.pi * t)) / 2.0
+        elif kind == "constant":
+            value = start
+        else:
+            raise ValueError(
+                f"Unknown schedule {kind} for stage coefficient {name}; "
+                "expected linear, cosine, or constant."
+            )
+        return float(value)
+    return float(spec)
+
+
+def make_stage_loss_config(
+    stage: dict[str, Any],
+    local_epoch: int | None = None,
+    stage_epochs: int | None = None,
+) -> dict[str, Any]:
+    """Resolve the per-stage loss coefficients for one training epoch.
+
+    The next-round simplified objective is configured with explicit keys::
+
+        alpha        -> coefficient shared by L(z, E(x)) and L(x, D(z))
+        lambda_cycle -> coefficient for L(x, D(E(x)))
+
+    Legacy configs keep using ``lamb`` / ``tau`` / ``beta``; the two naming
+    schemes are mutually exclusive inside one stage.
+    """
+    if local_epoch is None:
+        t = 0.0
+    else:
+        epochs = int(stage.get("epochs", stage_epochs or 1))
+        t = _schedule_fraction(int(local_epoch), max(1, epochs))
+
+    if "alpha" in stage:
+        if "lamb" in stage or "tau" in stage:
+            raise ValueError(
+                f"Stage {stage.get('name', '?')}: use either 'alpha' or legacy "
+                "'lamb'/'tau' coefficients, not both."
+            )
+        alpha = _resolve_scheduled_value(stage["alpha"], t, "alpha")
+        lamb = tau = alpha
+    else:
+        alpha = None
+        lamb = _resolve_scheduled_value(stage.get("lamb", 0.0), t, "lamb")
+        tau = _resolve_scheduled_value(stage.get("tau", 0.0), t, "tau")
+
+    if "lambda_cycle" in stage and "beta" in stage:
+        raise ValueError(
+            f"Stage {stage.get('name', '?')}: use either 'lambda_cycle' or legacy "
+            "'beta', not both."
+        )
+    lambda_cycle_spec = stage.get("lambda_cycle", stage.get("beta", 0.0))
+    lambda_cycle = _resolve_scheduled_value(lambda_cycle_spec, t, "lambda_cycle")
+
     return {
-        "beta": stage["beta"],
-        "lamb": stage["lamb"],
-        "tau": stage["tau"],
-        "rho": stage["rho"],
-        "nu_e": stage["nu_e"],
-        "nu_d": stage["nu_d"],
-        "num_slices": stage["num_slices"],
+        "alpha": alpha,
+        "lambda_cycle": lambda_cycle,
+        # Effective legacy field names consumed by train_standard_epoch.
+        "beta": lambda_cycle,
+        "lamb": lamb,
+        "tau": tau,
+        "rho": _resolve_scheduled_value(stage.get("rho", 0.0), t, "rho"),
+        "nu_e": _resolve_scheduled_value(stage.get("nu_e", 0.0), t, "nu_e"),
+        "nu_d": _resolve_scheduled_value(stage.get("nu_d", 0.0), t, "nu_d"),
+        "num_slices": int(stage.get("num_slices", 1000)),
     }
 
 
@@ -377,6 +461,7 @@ class HistoryLogger:
         for space in ("x", "z")
         for component in (
             "raw_swd",
+            "pair_swd",
             "marginal_w1",
             "mass_w1",
             "resonance_mass_w1",
@@ -410,12 +495,17 @@ class HistoryLogger:
         "epoch",
         "stage",
         "train_loss",
+        "train_reference_loss",
         "train_x_loss",
         "train_z_loss",
         "train_z_loss_weighted",
         "train_alt_x_loss",
+        "train_alt_x_loss_weighted",
         "train_x_constraint_loss",
+        "train_x_reco_mass_huber_raw",
+        "train_x_reco_mass_huber_weighted",
         "eval_loss",
+        "eval_reference_loss",
         "eval_x_loss",
         "eval_z_loss",
         "eval_alt_x_loss",
@@ -431,6 +521,8 @@ class HistoryLogger:
         "grad_cosine_latent_reco",
         "v37_lambda",
         "v38_lambda",
+        "effective_alpha",
+        "effective_lambda_cycle",
         "learning_rate",
         "batch_size",
         "num_slices",
@@ -473,10 +565,12 @@ def train_standard_epoch(
     model.train()
     sums = {
         "loss": 0.0,
+        "reference_loss": 0.0,
         "x_loss": 0.0,
         "z_loss": 0.0,
         "z_loss_weighted": 0.0,
         "alt_x_loss": 0.0,
+        "alt_x_loss_weighted": 0.0,
         "x_constraint_loss": 0.0,
         "grad_norm_encoder_latent": 0.0,
         "grad_norm_encoder_reco": 0.0,
@@ -490,19 +584,22 @@ def train_standard_epoch(
     }
     nbatches = 0
     steps_in_epoch = min(len(x_loader), len(z_loader))
+    vanilla = bool(getattr(loss_factory, "vanilla_swae", False))
     for x, z in zip(x_loader, z_loader):
         x = x.to(device)
         z = z.to(device)
         if hasattr(loss_factory, "reset_components"):
             loss_factory.reset_components()
         optimizer.zero_grad()
+
+        # All three raw losses are always evaluated. The scheduled weights
+        # only affect the gradient (``loss``); the raw terms are logged so a
+        # fixed-weight reference remains comparable across the cosine schedule.
         z_tilde = first_tensor(model.encode(x))
-        z_loss = loss_factory.z_prior_loss(z, z_tilde) if stage["lamb"] > 0 else x.new_tensor(0.0)
-        if stage["beta"] > 0:
-            x_tilde = first_tensor(model.decode(z_tilde))
-            x_loss = loss_factory.x_reco_loss(x, x_tilde)
-        else:
-            x_loss = x.new_tensor(0.0)
+        z_loss = loss_factory.z_prior_loss(z, z_tilde)
+        x_tilde = first_tensor(model.decode(z_tilde))
+        x_loss = loss_factory.x_reco_loss(x, x_tilde)
+
         encoder_anchor = (
             loss_factory.encoder_anchor_loss(z_tilde, x)
             if stage["nu_e"] > 0
@@ -511,7 +608,14 @@ def train_standard_epoch(
         decoder_anchor = x.new_tensor(0.0)
         alt_x_loss = x.new_tensor(0.0)
         x_constraint_loss = x.new_tensor(0.0)
-        if stage["tau"] > 0 or stage["rho"] > 0 or stage["nu_d"] > 0:
+
+        needs_direct_decoder = (
+            vanilla
+            or stage["tau"] > 0
+            or stage["rho"] > 0
+            or stage["nu_d"] > 0
+        )
+        if needs_direct_decoder:
             decoder_samples = max(1, int(getattr(loss_factory, "decoder_num_noise_samples", 1)))
             if decoder_samples > 1 and stage["tau"] > 0:
                 model_x = torch.cat(
@@ -522,16 +626,14 @@ def train_standard_epoch(
             else:
                 model_x = first_tensor(model.decode(z))
                 x_for_distribution = x
-            alt_x_loss = (
-                loss_factory.x_sim_loss(x_for_distribution, model_x)
-                if stage["tau"] > 0
-                else x.new_tensor(0.0)
-            )
+            alt_x_loss = loss_factory.x_sim_loss(x_for_distribution, model_x)
             decoder_anchor = (
                 loss_factory.decoder_anchor_loss(z, model_x[: len(z)])
                 if stage["nu_d"] > 0
                 else x.new_tensor(0.0)
             )
+
+        reference_loss = x_loss + z_loss + alt_x_loss
         loss = (
             stage["beta"] * x_loss
             + stage["lamb"] * z_loss
@@ -540,6 +642,7 @@ def train_standard_epoch(
             + stage["nu_e"] * encoder_anchor
             + stage["nu_d"] * decoder_anchor
         )
+
         encoder_params = [param for param in model.encoder.parameters() if param.requires_grad]
         grad_latent = None
         grad_reco = None
@@ -562,32 +665,28 @@ def train_standard_epoch(
             [param.grad for param in decoder_params if param.grad is not None]
         )
         optimizer.step()
+
         sums["loss"] += as_float(loss)
+        sums["reference_loss"] += as_float(reference_loss)
         sums["x_loss"] += as_float(x_loss)
         sums["z_loss"] += as_float(z_loss)
         sums["z_loss_weighted"] += stage["lamb"] * as_float(z_loss)
         sums["alt_x_loss"] += as_float(alt_x_loss)
+        sums["alt_x_loss_weighted"] += stage["tau"] * as_float(alt_x_loss)
         sums["x_constraint_loss"] += as_float(x_constraint_loss)
         sums["grad_norm_encoder_latent"] += grad_norm(grad_latent)
         sums["grad_norm_encoder_reco"] += grad_norm(grad_reco)
         sums["grad_norm_encoder_anchor"] += grad_norm(grad_anchor)
-        sums["grad_norm_encoder_latent_weighted"] += (
-            stage["lamb"] * grad_norm(grad_latent)
-        )
-        sums["grad_norm_encoder_reco_weighted"] += (
-            stage["beta"] * grad_norm(grad_reco)
-        )
-        sums["grad_norm_encoder_anchor_weighted"] += (
-            stage["nu_e"] * grad_norm(grad_anchor)
-        )
+        sums["grad_norm_encoder_latent_weighted"] += stage["lamb"] * grad_norm(grad_latent)
+        sums["grad_norm_encoder_reco_weighted"] += stage["beta"] * grad_norm(grad_reco)
+        sums["grad_norm_encoder_anchor_weighted"] += stage["nu_e"] * grad_norm(grad_anchor)
         sums["grad_norm_encoder_total"] += total_grad_norm
         sums["grad_norm_decoder_total"] += decoder_total_norm
         cosine = grad_cosine(grad_latent, grad_reco)
         sums["grad_cosine_latent_reco"] += 0.0 if cosine is None else cosine
         for key, value in getattr(loss_factory, "latest_components", {}).items():
-            log_key = f"{key}"
-            sums.setdefault(log_key, 0.0)
-            sums[log_key] += as_float(value)
+            sums.setdefault(key, 0.0)
+            sums[key] += as_float(value)
         nbatches += 1
         if step_callback is not None:
             step_callback(
@@ -598,14 +697,22 @@ def train_standard_epoch(
                 nbatches,
                 steps_in_epoch,
             )
-    averaged = {key: value / max(1, nbatches) for key, value in sums.items()}
-    return averaged
+    return {key: value / max(1, nbatches) for key, value in sums.items()}
 
 
 def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
+    """Evaluate all three raw losses and a fixed-weight selection score.
+
+    The training schedule is deliberately not used here. Checkpoint selection
+    compares ``selection_score`` with fixed ``loss.selection_score`` weights,
+    and ``reference_loss`` is the schedule-independent alpha=lambda=1 target
+    (raw x_sim + z_prior + x_reco). Both can therefore be compared across
+    epochs and across runs with different cosine schedules.
+    """
     model.eval()
     sums = {
         "loss": 0.0,
+        "reference_loss": 0.0,
         "x_loss": 0.0,
         "z_loss": 0.0,
         "alt_x_loss": 0.0,
@@ -620,13 +727,8 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
             x_tilde = first_tensor(model.decode(z_tilde))
             x_loss = loss_factory.x_reco_loss(x, x_tilde)
             z_loss = loss_factory.z_prior_loss(z, z_tilde)
-            if getattr(loss_factory, "vanilla_swae", False):
-                # Vanilla SWAE (v3.7/v3.8) training-time validation only needs
-                # the two training terms; the direct z -> x generator path is
-                # evaluated offline per checkpoint and never backpropagated.
-                alt_x_loss = x.new_tensor(0.0)
-            else:
-                alt_x_loss = loss_factory.x_sim_loss(x, first_tensor(model.decode(z)))
+            alt_x_loss = loss_factory.x_sim_loss(x, first_tensor(model.decode(z)))
+            reference_loss = x_loss + z_loss + alt_x_loss
             loss = loss_factory.validation_score(
                 {
                     "x_loss": x_loss,
@@ -636,6 +738,7 @@ def eval_standard_epoch(model, x_loader, z_loader, loss_factory, device):
                 }
             )
             sums["loss"] += as_float(loss)
+            sums["reference_loss"] += as_float(reference_loss)
             sums["x_loss"] += as_float(x_loss)
             sums["z_loss"] += as_float(z_loss)
             sums["alt_x_loss"] += as_float(alt_x_loss)
@@ -718,18 +821,20 @@ def train_all_stages(
                         "total_steps": total_steps,
                         "percent": (100.0 * history_step / total_steps) if total_steps else 100.0,
                         "train_loss": float(train_losses["loss"]),
+                        "train_reference_loss": float(train_losses.get("reference_loss", 0.0)),
                         "eval_loss": None,
                         "best_eval_loss": best_eval_loss,
                         "evaluated": False,
                     }
                 )
 
+            stage_loss_config = make_stage_loss_config(stage, local_epoch, stage_epochs)
             train_losses = train_standard_epoch(
                 model,
                 optimizer,
                 train_loaders[0],
                 train_loaders[1],
-                make_stage_loss_config(stage),
+                stage_loss_config,
                 loss_factory,
                 device,
                 report_train_step,
@@ -771,15 +876,20 @@ def train_all_stages(
                     "epoch": history_epoch,
                     "stage": stage["name"],
                     "train_loss": train_losses["loss"],
+                    "train_reference_loss": train_losses.get("reference_loss", ""),
                     "train_x_loss": train_losses["x_loss"],
                     "train_z_loss": train_losses["z_loss"],
                     "train_z_loss_weighted": train_losses.get(
                         "z_loss_weighted",
-                        train_losses.get("z_loss", 0.0) * stage["lamb"],
+                        train_losses.get("z_loss", 0.0) * stage_loss_config["lamb"],
                     ),
                     "train_alt_x_loss": train_losses.get("alt_x_loss", ""),
+                    "train_alt_x_loss_weighted": train_losses.get("alt_x_loss_weighted", ""),
                     "train_x_constraint_loss": train_losses.get("x_constraint_loss", ""),
+                    "train_x_reco_mass_huber_raw": train_losses.get("x_reco_mass_huber_raw", ""),
+                    "train_x_reco_mass_huber_weighted": train_losses.get("x_reco_mass_huber_weighted", ""),
                     "eval_loss": eval_loss,
+                    "eval_reference_loss": eval_losses.get("reference_loss", ""),
                     "eval_x_loss": eval_losses["x_loss"],
                     "eval_z_loss": eval_losses["z_loss"],
                     "eval_alt_x_loss": eval_alt_x_loss,
@@ -808,8 +918,10 @@ def train_all_stages(
                     + HistoryLogger.latent_component_weighted_fields
                 ):
                     row[latent_field] = train_losses.get(latent_field, "")
-                row["v37_lambda"] = stage["lamb"] if vanilla_v3_7 else ""
-                row["v38_lambda"] = stage["lamb"] if vanilla_swae_flag else ""
+                row["v37_lambda"] = stage_loss_config["lamb"] if vanilla_v3_7 else ""
+                row["v38_lambda"] = stage_loss_config["lamb"] if vanilla_swae_flag else ""
+                row["effective_alpha"] = stage_loss_config.get("alpha", "")
+                row["effective_lambda_cycle"] = stage_loss_config["lambda_cycle"]
                 row["learning_rate"] = stage["lr"]
                 row["batch_size"] = config.get("loader_info", {}).get(
                     "train_batch_size", ""
@@ -854,6 +966,7 @@ def train_all_stages(
                         "total_steps": total_steps,
                         "percent": (100.0 * history_epoch / total_epochs) if total_epochs else 100.0,
                         "train_loss": float(train_losses["loss"]),
+                        "train_reference_loss": float(train_losses.get("reference_loss", 0.0)),
                         "eval_loss": eval_loss,
                         "best_eval_loss": best_eval_loss,
                         "evaluated": should_log,

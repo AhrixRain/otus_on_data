@@ -1,0 +1,209 @@
+# Run E (Tier A) candidate: cylindrical residual-flow model + physics-cost
+# neural OT losses + mass-gated checkpoint selection.
+#
+# This config is intentionally additive on top of the completed Run D
+# objective (pair SWD + cycle relative-mass Huber).  It adds:
+#
+#   1. loss.sota.sinkhorn   -- debiased Sinkhorn divergence in the 14D
+#      cylindrical/pair physics ground metric (mass-sensitive by design).
+#   2. loss.sota.max_swd    -- learned/adversarially maximized slicing
+#      directions for the sliced-Wasserstein terms.
+#   3. loss.sota.monge_gap  -- entropic Monge-gap proxy (disabled by default:
+#      enable only for a focused ablation after the Sinkhorn/max-SW smoke).
+#   4. model.class cylindrical-flow residual map: flow_steps conditional
+#      stochastic transforms in (logpT, eta, phi) with Student-t tails.
+#   5. sota_selection_gates -- hard mass-shape gates before a checkpoint can
+#      become best_model.pt; validation score = inf when any gate fails.
+#
+# Data scope is identical to Run D: ptj=5 mixed prior, 20% CMS cap.
+# Do not launch a full run without explicit authorization; use --smoke or
+# --dry-run first.
+
+paths:
+  repo_root: .
+  data_root: data
+  cms_root_file: Run2012BC_DoubleMuParked_Muons.root
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5
+  output_root: outputs/cms_Jpsi_sota
+
+run_name: run_e_tierA
+
+data:
+  channel: muon
+  root_step_size: 100 MB
+
+device: auto
+seed: 0
+float_type: float32
+muon_mass_gev: 0.1056583755
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+  train_max: 580000
+  val_max: 72500
+  test_max: 72500
+
+muon_selection:
+  muon_pt_min: 3.0
+  muon_pt_max: 100.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 3.0369
+  jpsi_mass_max: 3.1569
+
+model:
+  class: cylindrical_flow
+  hidden_dims: [512, 512, 512, 512]
+  activation: SiLU
+  flow_steps: 2
+  # Residual coordinates: [dlogpt-, deta-, dphi-, dlogpt+, deta+, dphi+].
+  mean_residual_limits: [0.25, 0.30, 0.30, 0.25, 0.30, 0.30]
+  core_sigma_floors: [0.0010, 0.0005, 0.0005, 0.0010, 0.0005, 0.0005]
+  core_sigma_scales: [0.050, 0.025, 0.025, 0.050, 0.025, 0.025]
+  tail_sigma_scales: [0.150, 0.080, 0.080, 0.150, 0.080, 0.080]
+  core_log_sigma_bias: -3.0
+  tail_log_sigma_bias: -5.0
+  student_t_degrees_of_freedom: 4.0
+  maximum_heavy_noise: 12.0
+  daughter_masses: [0.105658, 0.105658]
+
+loss:
+  kind: cms_jpsi_doublemuon_loss
+  vanilla_swae: true
+  vanilla_v3_7: false
+  standardize_raw_matching: false
+  p: 2
+  num_slices: 1000
+  pair_swd_weight: 0.5
+  pair_log_m_std_floor: 0.01
+  pair_log_pt_std_floor: 0.05
+  pair_y_std_floor: 0.20
+  cycle_mass_huber_weight: 50.0
+  cycle_mass_huber_delta: 0.02
+  decoder_num_noise_samples: 1
+  selection_score:
+    x_sim: 1.0
+    z_prior: 1.0
+    x_reco: 1.0
+    cycle: 0.0
+  sota:
+    # Physics ground metric is standardized on the training split inside
+    # SotaLossFactory; weights [8] (log m) is boosted 4x by default.
+    sinkhorn:
+      enabled: true
+      weight: 0.10
+      regularization: 0.10
+      max_iter: 50
+      tolerance: 1.0e-5
+      max_batch: 512
+      debias: true
+      log_scale: true
+    max_swd:
+      enabled: true
+      weight: 0.25
+      num_directions: 32
+      p: 1
+      lr: 0.0001
+      diversity_weight: 0.05
+      direction_grad_clip: 1.0
+      update_every: 5
+      distance_clamp: 25.0
+    monge_gap:
+      enabled: false
+      weight: 0.1
+      regularization: 0.05
+      max_iter: 100
+
+require_stage_gate_pass: true
+
+sota_selection_gates:
+  enabled: true
+  max_sim_mass_w1_gev: 0.015
+  max_sim_mass_ks: 0.12
+  min_sim_window_fraction: 0.90
+  max_latent_mass_ks: 0.15
+  max_reco_mass_ks: 0.25
+  max_abs_sim_mass_mean_shift_gev: 0.005
+  mass_window: [3.0369, 3.1569]
+  max_validation_events: 8192
+  seed: 20260816
+
+loaders:
+  train_batch_size: 16384
+  eval_batch_size: 16384
+  validation_draws: 1
+  preload_data_to_accelerator: false
+  train_sampler: shuffled_without_replacement
+  eval_sampler: deterministic_sequential
+
+evaluation:
+  min_truth_count: 20
+  mass_range: [3.0369, 3.1569]
+  mass_bin_width: 0.01
+  mass_label: "m(mumu) [GeV]"
+  channel_title: "CMS DoubleMuParked: J/psi -> mumu"
+  reference_mass: 3.0969
+  reference_label: "m_J/psi"
+  diagnostic_freq: 10
+  independent_diagnostic_rng: true
+  sw_batch_size: 20000
+  sw_eval_seed: 12345
+
+stages:
+  - name: rune_stage1_deterministic_warmup
+    mode: standard
+    enabled: true
+    epochs: 60
+    lr: 1.0e-3
+    lr_schedule: cosine
+    gradient_clip_norm: 5.0
+    beta: 1.0
+    lamb: 2.0
+    tau: 0.0
+    rho: 0.0
+    nu_e: 25.0
+    nu_d: 25.0
+    num_slices: 500
+    eval_every: 5
+    freeze_encoder: false
+    freeze_decoder: false
+    core_noise_multiplier: 0.0
+    tail_noise_multiplier: 0.0
+  - name: rune_stage2_core_flow
+    mode: standard
+    enabled: true
+    epochs: 100
+    lr: 3.0e-4
+    lr_schedule: cosine
+    gradient_clip_norm: 5.0
+    beta: 1.0
+    lamb: 1.0
+    tau: 0.5
+    rho: 0.0
+    nu_e: 0.25
+    nu_d: 0.25
+    num_slices: 700
+    eval_every: 5
+    freeze_encoder: false
+    freeze_decoder: false
+    core_noise_multiplier: 0.25
+    tail_noise_multiplier: 0.0
+  - name: rune_stage3_tail_flow_polish
+    mode: standard
+    enabled: true
+    epochs: 140
+    lr: 1.0e-4
+    lr_schedule: cosine
+    gradient_clip_norm: 5.0
+    beta: 1.0
+    lamb: 0.75
+    tau: 1.5
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1000
+    eval_every: 5
+    freeze_encoder: false
+    freeze_decoder: false
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 1.0

@@ -35,6 +35,7 @@ from cms_training import (  # noqa: E402
     build_loaders,
     build_loss_factory,
     first_tensor,
+    make_stage_loss_config,
     train_standard_epoch,
 )
 from cms_model import build_model, checkpoint_payload, load_model_from_checkpoint  # noqa: E402
@@ -289,7 +290,7 @@ class TestV38Objective(unittest.TestCase):
         self.assertGreater(lat_enc, 0.0)
         self.assertEqual(lat_dec, 0.0)
 
-    def test_standard_epoch_only_uses_two_loss_families(self) -> None:
+    def test_standard_epoch_logs_three_raw_losses_and_fixed_reference(self) -> None:
         x, z = make_arrays(64)
         model_config = tiny_model_config()
         model = build_model(
@@ -324,18 +325,152 @@ class TestV38Objective(unittest.TestCase):
             factory,
             torch.device("cpu"),
         )
-        self.assertEqual(sums["alt_x_loss"], 0.0)
+        # The direct z -> x path is evaluated for the fixed reference even
+        # though tau=0 means it does not contribute a training gradient.
+        self.assertGreater(sums["alt_x_loss"], 0.0)
         self.assertEqual(sums["x_constraint_loss"], 0.0)
         self.assertEqual(sums["grad_norm_encoder_anchor"], 0.0)
-        # Only the two allowed families are recorded as components.
+        self.assertAlmostEqual(
+            sums["reference_loss"],
+            sums["x_loss"] + sums["z_loss"] + sums["alt_x_loss"],
+            places=4,
+        )
+        # Vanilla mode records only the raw SWD terms plus the raw cycle MSE.
         self.assertTrue(
             set(factory.latest_components).issubset(
-                {"z_raw_swd", "z_raw_swd_raw", "z_raw_swd_weighted", "x_reco_mse_raw"}
+                {
+                    "z_raw_swd", "z_raw_swd_raw", "z_raw_swd_weighted",
+                    "x_raw_swd", "x_raw_swd_raw", "x_raw_swd_weighted",
+                    "x_reco_mse_raw",
+                }
             )
         )
         self.assertTrue(np.isfinite(sums["loss"]))
         self.assertTrue(np.isfinite(sums["grad_norm_encoder_total"]))
         self.assertTrue(np.isfinite(sums["grad_norm_decoder_total"]))
+
+    def test_vanilla_x_sim_loss_is_raw_swd_only(self) -> None:
+        x, z = make_arrays(64)
+        factory = build_loss_factory(x, z, v38_loss_config(num_slices=8))
+        factory.set_num_slices(8)
+        truth = torch.as_tensor(x)
+        pred = torch.as_tensor(z)
+        torch.manual_seed(123)
+        expected = sliced_wasserstein(truth, pred, 8, 2)
+        torch.manual_seed(123)
+        loss = factory.x_sim_loss(truth, pred)
+        self.assertAlmostEqual(float(loss), float(expected), places=6)
+        self.assertEqual(
+            set(factory.latest_components),
+            {"x_raw_swd", "x_raw_swd_raw", "x_raw_swd_weighted"},
+        )
+
+    def test_pair_swd_and_cycle_mass_huber_are_opt_in_and_finite(self) -> None:
+        x, z = make_arrays(64)
+        config = v38_loss_config(num_slices=8)
+        config.update({
+            "pair_swd_weight": 0.5,
+            "cycle_mass_huber_weight": 50.0,
+            "cycle_mass_huber_delta": 0.02,
+        })
+        factory = build_loss_factory(x, z, config)
+        factory.set_num_slices(8)
+        x_true = torch.as_tensor(x)
+        z_true = torch.as_tensor(z)
+
+        z_encoded = torch.as_tensor(z) + 0.05
+        z_loss = factory.z_prior_loss(z_true, z_encoded)
+        self.assertIn("z_pair_swd", factory.latest_components)
+        self.assertGreater(float(z_loss), float(factory.latest_components["z_raw_swd"]))
+        self.assertTrue(torch.isfinite(z_loss))
+
+        x_from_z = torch.as_tensor(x) + 0.05
+        x_sim_loss = factory.x_sim_loss(x_true, x_from_z)
+        self.assertIn("x_pair_swd", factory.latest_components)
+        self.assertGreater(float(x_sim_loss), float(factory.latest_components["x_raw_swd"]))
+        self.assertTrue(torch.isfinite(x_sim_loss))
+
+        x_reco = torch.as_tensor(x) + 0.05
+        reco_loss = factory.x_reco_loss(x_true, x_reco)
+        self.assertIn("x_reco_mass_huber_raw", factory.latest_components)
+        self.assertGreater(float(reco_loss), float(factory.latest_components["x_reco_mse_raw"]))
+        self.assertTrue(torch.isfinite(reco_loss))
+
+    def test_pair_swd_default_weight_preserves_vanilla_components(self) -> None:
+        x, z = make_arrays(64)
+        factory = build_loss_factory(x, z, v38_loss_config(num_slices=8))
+        x_true = torch.as_tensor(x)
+        _ = factory.x_sim_loss(x_true, x_true)
+        self.assertEqual(
+            set(factory.latest_components),
+            {"x_raw_swd", "x_raw_swd_raw", "x_raw_swd_weighted"},
+        )
+        factory.reset_components()
+        _ = factory.x_reco_loss(x_true, x_true)
+        self.assertEqual(set(factory.latest_components), {"x_reco_mse_raw"})
+
+    def test_cycle_mass_huber_uses_relative_residual(self) -> None:
+        x, z = make_arrays(64)
+        config = v38_loss_config(num_slices=8)
+        config.update({"cycle_mass_huber_weight": 1.0, "cycle_mass_huber_delta": 0.02})
+        factory = build_loss_factory(x, z, config)
+        x_true = torch.as_tensor(x)
+        scale = 1.5
+        x_reco = x_true * scale
+        loss = factory.x_reco_loss(x_true, x_reco)
+        # Relative residual is (1.5*m - m)/m = 0.5 everywhere; Huber at 0.5
+        # is linear, so this should be finite and substantially larger than MSE.
+        self.assertTrue(torch.isfinite(loss))
+        self.assertGreater(float(factory.latest_components["x_reco_mass_huber_raw"]), 0.0)
+
+    def test_alpha_stage_coefficient_sets_both_distribution_paths(self) -> None:
+        stage = {
+            "name": "core",
+            "epochs": 100,
+            "alpha": 1.0,
+            "lambda_cycle": 1.0,
+            "rho": 0.0,
+            "nu_e": 0.0,
+            "nu_d": 0.0,
+            "num_slices": 500,
+        }
+        cfg = make_stage_loss_config(stage, 1, 100)
+        self.assertEqual(cfg["alpha"], 1.0)
+        self.assertEqual(cfg["lamb"], cfg["tau"])
+        self.assertEqual(cfg["lamb"], 1.0)
+        self.assertEqual(cfg["lambda_cycle"], 1.0)
+        self.assertEqual(cfg["beta"], 1.0)
+
+    def test_cosine_schedule_reaches_endpoints_and_stays_nonzero(self) -> None:
+        stage = {
+            "name": "core",
+            "epochs": 220,
+            "alpha": {"start": 1.0, "end": 0.25, "schedule": "cosine"},
+            "lambda_cycle": 1.0,
+        }
+        first = make_stage_loss_config(stage, 1, 220)
+        middle = make_stage_loss_config(stage, 111, 220)
+        last = make_stage_loss_config(stage, 220, 220)
+        self.assertAlmostEqual(first["alpha"], 1.0, places=12)
+        self.assertAlmostEqual(last["alpha"], 0.25, places=12)
+        self.assertLess(middle["alpha"], 1.0)
+        self.assertGreater(middle["alpha"], 0.25)
+        self.assertGreater(last["alpha"], 0.0)
+
+    def test_alpha_conflicts_with_legacy_distribution_keys(self) -> None:
+        stage = {"alpha": 1.0, "lamb": 1.0, "lambda_cycle": 1.0}
+        with self.assertRaises(ValueError):
+            make_stage_loss_config(stage, 1, 10)
+
+    def test_legacy_scalar_stage_weights_are_unchanged(self) -> None:
+        stage = {"beta": 2.0, "lamb": 1.0, "tau": 0.5, "rho": 0.0,
+                 "nu_e": 0.0, "nu_d": 0.0, "num_slices": 100}
+        cfg = make_stage_loss_config(stage, 1, 10)
+        self.assertEqual(cfg["beta"], 2.0)
+        self.assertEqual(cfg["lamb"], 1.0)
+        self.assertEqual(cfg["tau"], 0.5)
+        self.assertEqual(cfg["lambda_cycle"], 2.0)
+        self.assertIsNone(cfg["alpha"])
 
 
 class TestV38BackwardCompat(unittest.TestCase):

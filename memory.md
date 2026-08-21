@@ -471,99 +471,35 @@ checkpoint_final.pt.
    the skim (zero stored muons below 3.0 GeV); no muons exist in (2,3] GeV,
    hence identical pT>2 and pT>3 pair counts (§4.5).
 
-## 7. Proposed fix roadmap (status: E1 done, F1 implemented as v3.9, running)
+## 7. Fix roadmap — current status (trimmed 2026-08-16)
 
-Paper-grounded, one-factor-at-a-time:
-- **E1 (precondition) — DONE 2026-08-15.** Prior + data kinematics dumped
-  (§4.5; scripts/diagnostics/prior_kinematics.py, scripts/diagnostics/data_kinematics.py).
-- **F1 (primary) — composition-matched prior.** REVISED by E1: the inclusive
-  file is pure 2->1 (pair pT = 0) and unusable; the implemented variant is the
-  committed v3.9 pilot: restricted-decoder signal-region scope
-  [3.0369, 3.1569] + the signal MG5 prior filtered through the
-  trigger-equivalent selection (theory_prior_selection: pT>3, |eta|<2.4, mass
-  window — implemented in scripts/cms_data.filter_theory_prior) + a
-  muon_pt_max 100 GeV junk-tail guard (optional key in the muon loader).
-  Prior survives at 0.60% (5,995 events) — a statistics limitation to watch.
-  Config: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
-  (run_name Jpsi_v3.9_F1_restricted_ptmax100, launched 2026-08-15).
-  Residual known mismatch: prior pair-pT median ~10 GeV vs data ~26 GeV.
-- **New J/psi prior REBUILT with MadGraph (2026-08-14, goal round 1).**
-  data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5 (FDL/zData, 94,880 events = 80,648
-  signal + 14,232 continuum, frac-signal 0.85) generated end-to-end ON THIS MAC
-  with MG5_aMC 3.7.0 + rebuilt sm_onia(-c_mass) model (recipe:
-  docs/sm_onia_rebuild.md; massive muons MM=0.105658; gJpsi=0.01; MASS 443 =
-  3.0969; DECAY 443 = 9.29e-05). Components: p p > jpsiv j (200k events,
-  55.92 pb) + p p > mu+mu- j with stock sm_mumass (50k events, 36.24 pb),
-  cuts ptl 3.0 / etal 2.5 / mmll [2.9,3.3] / ptj 10 / cut_decays=True,
-  NNPDF31_lo_as_0130 (lhaid 315200). Post-chain (scripts/): lhe_to_prior_hdf5
-  (96.1% signal pass rate), smear_prior (a=0.0127), reweight_prior
-  (binned-density muon-pT reweight, max-weight 20), mix_prior (85/15). FINAL
-  METRICS vs signal-window data (3,624,454 ev): mass mean 3.09697 vs 3.09428,
-  std 30.8 vs 28.1 MeV; muon pT median 13.30 vs 12.57; pair pT median 26.60 vs
-  26.03; pass rate 94.3% (was 0.60%); joint support coverage 97.4% (was
-  69.8%); continuum 15% (was 0%). Production runbook:
-  docs/jpsi_prior_rebuild_runbook.md; cards in scripts/mg5_cards/; unit tests
-  tests/test_prior_build.py (7 tests). macOS fixes discovered: brew gcc
-  gfortran 16.1.0, conda lhapdf 6.5.6 + PDF grid, DYLD_LIBRARY_PATH /
-  -Wl,-rpath for libLHAPDF.dylib (the 'Reason:' survey crash), use_syst=False
-  (NNPDF23 errorset missing). Config switch for training: point
-  theory_prior_file at the new file (cache auto-invalidates).
-- **v3.10 (IMPLEMENTED 2026-08-15, not launched — the user runs it later)** —
-  staged + restricted: configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml
-  extends the v3.5 staged config with the v3.9 data scope (signal region +
-  junk cut + trigger-matched prior) AND the re-weighted checkpoint-selection
-  score (x_sim 5.0 / z_prior 1.0 / x_reco 5.0) so the cycle is no longer
-  masked (§6.3 finding). Rationale: v3.5's loss is the only objective that
-  produced a good generator because its x_sim terms constrain D(z~prior)
-  directly (the vanilla hole, §3.2 cause #4). Dry-run validated. THIS IS THE
-  RECOMMENDED FIX RUN.
-- **F2 — paper anchor warmup:** beta_E=beta_D=50 -> 0 (first ~80 of 300 epochs)
-  on the mu- 3-momentum (prevents charge-inversion solutions). Not started.
-- **F3 — lambda treatment:** lambda scan {0.1, 1, 10} + upward annealing;
-  consider p=1 for the latent SWD (tail-robust); optional gradient clipping as
-  a guard. Not started.
-- **Fallback — paper's restricted decoder (§6.3.2):** subsumed into the v3.9
-  pilot (signal-region scope). The 1_S/P_D(S) reweighting itself is NOT
-  implemented — v3.9 uses the plain restricted scope instead.
-- Sequencing: v3.9 first as a single controlled change against the frozen v3.8
-  config; then F2, F3 separately; never bundle.
+The original F1-F3 roadmap is superseded by the executed new-prior and
+three-term runs; keep only the current chain:
 
-## 8. Environment & tooling constraints (from the last DSH sessions)
+- Prior: rebuilt with ptj=5 -> `data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5`
+  (old ptj=10 file retained as provenance).
+- Baseline objective: three-term cosine
+  `alpha(t)*[SWD(z,E(x)) + SWD(x,D(z))] + lambda_cycle*MSE(x,D(E(x)))`
+  (`configs/cms_Jpsi_newprior_ptj5_3term_cosine_20pct.yaml`; completed).
+- Run D extension: pair-level SWD over
+  `[log m, log pT, y, cos dphi, sin dphi]` plus cycle relative-mass Huber
+  (`configs/cms_Jpsi_newprior_ptj5_rund_pairswd_cyclemass_20pct.yaml`;
+  dry-run validated, not trained yet).
+- All historical v3.x configs live in `configs/archive/`; frozen diagnostics
+  in `scripts/legacy/`.
 
-- **Session 4 (2026-08-15) — conda → .venv.** The project environment was
-  converted to a project-local virtual environment `.venv/` (Python 3.12.13
-  arm64 via homebrew) holding the `cms` environment, installed from
-  `requirements-cms-mps.txt` (uproot/awkward/h5py/numpy/scipy/torch-MPS/
-  jupyter etc.). All runbook commands and script docstrings use
-  `.venv/bin/python`; `.venv/` is git-ignored. source-verified.
-- **Session 5 (2026-08-15) — machine moved; conda cms env available.** On the
-  current machine /Users/ahrimarin/Desktop/otus_on_data the `.venv` does not
-  exist, but miniforge provides the `cms` conda env:
-  /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python (Python 3.10.20,
-  numpy 2.2.5, h5py 3.16.0, scipy, torch 2.12.1 MPS available, uproot 5.7.4,
-  awkward 2.9.0). Use that interpreter for all runbook commands on this
-  machine. source-verified (imports + device report).
+## 8. Environment & tooling constraints (current)
 
-- The **cms conda environment was not present** on the DSH session PATH
-  (conda: command not found); no Python with numpy/uproot/h5py/torch was
-  found on the machine; **do not pip install** (network forbidden unless
-  authorized). The env may exist for the user's own shell; all runbook
-  commands assume it.
-- /usr/bin/python3 -m py_compile scripts/*.py utilityFunctions/*.py tests/*.py
-  works (stdlib only).
-- YAML validation possible with system ruby
-  (ruby -ryaml -e 'YAML.load_file(ARGV[0])' file.yaml) or Node.
-- NPZ (numpy .npz) files were parsed with custom Node scripts
-  (/tmp/otus_npz_read.js, /tmp/otus_npz_w1.js, /tmp/otus_npz_hist.js) —
-  **ephemeral**: recreate in /tmp if needed (ZIP + NPY header parsing; handles
-  f4/f8/i8).
-- PDF text extraction: gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -sOutputFile=out.txt in.pdf.
-- The current model has **no image input**; PNGs were pixel-profiled with a
-  Node PNG decoder (zlib + filters) for curve-shape evidence only.
-- ROOT/HDF5 binary parsing was attempted but not completed (no uproot/h5py;
-  the ROOT file has a byte-swapped header — parsing needs care).
-- In the agent's run_code TS context, require is unavailable — write
-  Node scripts with the file tools and execute via bash.
+- Current interpreter on this machine:
+  `/opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/python`
+  (Python 3.10.20, torch 2.12.1 MPS, numpy 2.2.5, h5py, scipy, uproot,
+  awkward, matplotlib, Pillow). `.venv` instructions in README_MPS.md are the
+  portable alternative; `.venv/` does not exist on this machine.
+- MG5_aMC 3.7.0 at `~/MG5_aMC_v3_7_0` with the macOS/LHAPDF fixes documented
+  in `docs/jpsi_prior_rebuild_runbook.md`.
+- Pyflakes is installed in the cms env (`python -m pyflakes ...`).
+- Tests: `python -m unittest discover -s tests`.
+- Full training runs must be explicitly authorized; prefer preflight/dry-run.
 
 ## 9. Conventions & guardrails
 
@@ -589,45 +525,28 @@ Paper-grounded, one-factor-at-a-time:
 - Citation style for findings: file:line (code), notebook cell (ipynb),
   document+section (PDFs), full artifact path (plots/NPZ).
 
-## 10. Quick reference
+## 10. Quick reference (current)
 
-- Main staged config: configs/cms_JpsiDoubleMuons_mps.yaml (run: Jpsi_v3.5).
-- Mass ablation: configs/cms_JpsiDoubleMuons_Jpsi_v3.6A_no_explicit_mass.yaml.
-- Vanilla-paper: configs/cms_JpsiDoubleMuons_v3.8_vanilla_paper.yaml
-  (runbook: docs/Jpsi_v3.8_vanilla_paper_runbook.md; production command NOT
-  to be re-run without authorization).
-- v3.9 F1-restricted pilot: configs/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml
-  (run_name Jpsi_v3.9_F1_restricted_ptmax100; extends v3.8; signal-region
-  scope + trigger-matched prior + muon_pt_max 100).
-- v3.10 staged+restricted draft: configs/cms_JpsiDoubleMuons_v3.10_staged_restricted.yaml
-  (extends v3.5; validated, not launched).
-- v3.9 out-of-scope diagnostic: configs/cms_JpsiDoubleMuons_v3.9_out_of_scope_eval.yaml
-  (full-window data fed to the v3.9 model; eval.py's CLI config drives the
-  eval data selection — source-verified in cms_model.load_model_from_checkpoint).
-- **Runbook for the deferred runs: docs/Jpsi_F1_fix_runbook.md** (exact
-  commands for v3.10/v3.9 training, evaluation, baselines, guardrails).
-- E1 kinematics dumps: scripts/diagnostics/prior_kinematics.py, scripts/diagnostics/data_kinematics.py
-  (see §4.5 for the measured numbers).
-- Verdict tables: scripts/eval_verdict.py --eval-dir <run>/eval (W1/KS +
-  shape stats per path; baselines in §4.3b).
-- Generator-quality check: scripts/sample_generator.py (decodes the full
-  filtered prior K times with fresh noise; needed for v3.9 whose z_test is
-  only 600 events vs 100k for v3.5/v3.8).
-- CMS-vs-MG5 mismatch diagnostics (2026-08-14): scripts/diagnostics/jpsi_mismatch_check.py
-  (composition/support/pass-rate asymmetry; §4.7) and scripts/diagnostics/jpsi_f32_check.py
-  (float32 z-mass noise; §4.7). Both read the version-3 .plot_cache, no ROOT
-  rescan. Z->ee counterpart: scripts/diagnostics/zee_health_check.py (mass/kinematics/
-  support/barrel-endcap scale split; §4.8).
-- Data vs priors comparison figure (2026-08-14): scripts/diagnostics/jpsi_new_prior_comparison.py
-  -> experiments/cms_Jpsi_ee/jpsi_new_prior_vs_cms_mumu.png (3x2 panels: mass /
-  mass zoom / muon pT / pair pT / |eta| / summary table; CMS signal-window data
-  vs old 1M delta prior vs new 94,880 mixed prior, training-exact x-space mass
-  convention). Same-folder sibling of the old jpsi_prior_vs_cms_mumu.png.
-- Evaluation: python scripts/eval.py --config <cfg> --checkpoint <ckpt> --device auto --num-samples <n>.
-- Stage comparisons: scripts/legacy/stage_diagnostic.py; v3.7/v3.8 three-path eval:
-  scripts/legacy/eval_v37.py; gradient audits: scripts/legacy/verify_v37_gradients.py,
-  scripts/legacy/verify_v38_gradients.py; data preflight: scripts/preflight.py.
-- Loss curves: scripts/plot_loss.py --run-dir <dir> [--components].
+- Configs:
+  - completed baseline: `configs/cms_Jpsi_newprior_paper_20pct.yaml`
+  - completed three-term cosine: `configs/cms_Jpsi_newprior_ptj5_3term_cosine_20pct.yaml`
+  - Run D candidate: `configs/cms_Jpsi_newprior_ptj5_rund_pairswd_cyclemass_20pct.yaml`
+  - all old v3.x configs: `configs/archive/`
+- Prior files:
+  - active: `data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5` (ptj=5)
+  - provenance: `data/cms_jpsi_mumu_mg5_8tev_mixed.hdf5` (ptj=10)
+  - original delta prior: `data/cms_jpsi_mumu_mg5_8tev_1M.hdf5`
+- Commands:
+  - `python scripts/preflight.py --config <cfg>`
+  - `python scripts/train.py --config <cfg> --dry-run`
+  - `python scripts/train.py --config <cfg> --device auto --run-name <name>`
+  - `python scripts/eval.py --config <cfg> --checkpoint <ckpt> --output-dir <dir>`
+  - `python scripts/plot.py --config <cfg> --checkpoint <ckpt> --output-dir <dir>`
+  - `python scripts/plot_loss.py --run-dir <run>`
+- Structure:
+  - `scripts/` active pipeline + CLI
+  - `scripts/prior_build/`, `scripts/diagnostics/`, `scripts/legacy/`
+  - see `scripts/README.md` and `configs/README.md`
 
 ## 11. Session log
 
@@ -886,3 +805,212 @@ Paper-grounded, one-factor-at-a-time:
     locations.
   Next step (not done, per user): implement the three-term annealed loss for
   the next training round without adding mass-related terms.
+
+- **2026-08-15 — Session 14 (three-term cosine loss, no mass terms).**
+  User's next-round loss accepted as:
+  `L_train = alpha(t)*(SWD(z,E(x)) + SWD(x,D(z))) + lambda_cycle*MSE(x,D(E(x)))`.
+  Implemented (source-verified):
+  * `scripts/loss.py`: `x_sim_loss` now has a vanilla branch symmetric to
+    `z_prior_loss` (raw/standardized 8-vector SWD only). This fixes the old
+    trap where enabling tau in vanilla mode silently used the full default
+    component loss (~289 instead of ~1).
+  * `scripts/cms_training.py`: stage coefficient schedules (`linear`,
+    `cosine`, `constant`) with explicit `alpha` and `lambda_cycle` keys;
+    `alpha` drives both `lamb` and `tau`. Legacy `lamb`/`tau`/`beta` keys
+    remain backward compatible; mixing old and new names in one stage raises.
+  * Training evaluates all three raw losses every batch; the scheduled
+    coefficients only affect gradients. Logged `train_reference_loss` /
+    `eval_reference_loss` = fixed alpha=lambda=1 sum
+    `L_z + L_alt_x + L_x`, so changing the cosine schedule does not destroy
+    comparability. `train_alt_x_loss_weighted`, `effective_alpha`, and
+    `effective_lambda_cycle` are also logged.
+  * Validation/checkpoint selection is schedule-independent: it uses fixed
+    `loss.selection_score` weights (new config uses 1:1:1).
+  * New config `configs/cms_Jpsi_newprior_ptj5_3term_cosine_20pct.yaml`:
+    stage 1 = 80 epochs alpha=1, lambda_cycle=1, anchors 50/50; stage 2 =
+    220 epochs alpha cosine 1.0 -> 0.25, lambda_cycle=1, anchors off.
+    Dry-run passed with `--num-samples 10000`.
+  * Tests: 103/103 OK (added schedule/alias/vanilla-x_sim tests). pyflakes
+    clean. `scripts/plot_loss.py` now also plots the reference-loss curves.
+  Not started: no training run launched.
+
+- **2026-08-16 — Session 15 (Run D implementation).**
+  Implemented the Run D loss extensions in `scripts/loss.py` without changing
+  the model/data interfaces:
+  * `pair_swd_weight` (default 0): optional pair-level sliced-Wasserstein in
+    vanilla mode over standardized dimensionless features
+    `[log m_ll, log pT_ll, y_ll, cos dphi, sin dphi]`, with configurable std
+    floors (`pair_log_m_std_floor` 0.01, `pair_log_pt_std_floor` 0.05,
+    `pair_y_std_floor` 0.20). Applied to both `z_prior_loss` and `x_sim_loss`.
+    No J/psi mass constant is used, so it can later run on J/psi/Z/Z′.
+  * `cycle_mass_huber_weight` / `cycle_mass_huber_delta` (default 0 / 0.02):
+    optional per-event cycle term `Huber((m_reco-m_true)/m_true, delta)` added
+    to vanilla `x_reco_loss`.
+  * New components logged: `z_pair_swd`, `x_pair_swd`,
+    `x_reco_mass_huber_raw/weighted`; HistoryLogger fields extended.
+  * Run D config created:
+    `configs/cms_Jpsi_newprior_ptj5_rund_pairswd_cyclemass_20pct.yaml`
+    (pair_swd_weight 0.5, cycle_mass_huber_weight 50.0, delta 0.02, same
+    three-term cosine stages). Dry-run passed with `--num-samples 10000`.
+  * Tests 106/106 OK; pyflakes clean.
+  * Memory file trimmed: superseded §7 F1-F3 roadmap, stale §8 environment
+    notes, and outdated §10 quick-reference entries were replaced with current
+    status (trim note dated 2026-08-16).
+  Not started: no Run D training run launched.
+
+
+- **2026-08-16 — Session 16 (Run D finished + SOTA exploration).**
+  Run D completed. Best epoch 270; test mass W1 0.0258 GeV / KS 0.221.
+  Plots written to `plots_best/`, loss curve to `loss_curve.png`, eval sets
+  `eval_best/`, `eval_final/`, `eval_reco_best/`, `eval_z_best/`.
+  See Session 16 notes in the previous edit for the detailed numbers.
+
+- **2026-08-16 — Session 17 (Tier A / Run E implementation).**
+  Created `scripts_sota/` without modifying the Run D pipeline:
+  * `ot.py`: 14D cylindrical physics ground cost, debiased Sinkhorn
+    divergence, entropic Monge-gap proxy with barycentric projection.
+  * `max_swd.py`: adversarially learned slicing directions (max-SW) with
+    orthogonality penalty and detached direction ascent.
+  * `cylindrical_flow.py`: `CylindricalResidualFlowMap` with `flow_steps`
+    stochastic transforms in `(logpT, eta, phi)`, Gaussian core +
+    Student-t tail, S^1 phi transport, mass-shell energy reconstruction.
+  * `evaluation.py`: C2ST logistic AUC, fixed-z stochasticity, cycle and
+    nearest-neighbour pseudo-pair coverage diagnostics.
+  * `selection.py`: mass-shape hard gates (W1/KS/window fraction/mean shift)
+    and `gated_score` (score=inf when gates fail).
+  * `sota_loss.py`: `SotaLossFactory` wraps current J/psi loss and adds
+    Sinkhorn + max-SW terms (Monge-gap optional); `sota` config block.
+  * `trainer.py`, `run_e.py`: Run E training loop with per-stage noise
+    multipliers, cosine LR, gradient clipping, mass-gated checkpointing,
+    stage-best restore, and SOTA evaluation outputs.
+  * Config: `configs_sota/cms_Jpsi_ptj5_runE_tierA.yaml` (Run D terms +
+    Tier A, 60+100+140 stages, full schedule not launched).
+  * Paper skeleton: `paper/main.tex` (compiles with local pdflatex),
+    `paper/references.bib`, `paper/README.md`.
+  * Tests: added `tests/test_sota.py`; full suite 118/118 OK. Run E
+    `--dry-run` and `--smoke` on CPU and MPS both complete; evaluation
+    report path exercised on a smoke model.
+  Not launched: full Run E training.
+
+- **2026-08-16 — Session 18 (Run E smoke ablations + full-config tuning).**
+  Six one-epoch/10k smoke ablations completed under
+  `outputs/cms_Jpsi_sota/ablations/`:
+  control, sinkhorn-off, maxswd-off, flow1, flow4, monge-on.
+  Findings (smoke only, not physics conclusions):
+  * Monge-gap proxy is currently unstable (train loss up to ~2700, pre-clip
+    gradient ~7e7). Keep disabled for the first full Run E; the component
+    needs a scale/regularization redesign before an ablation.
+  * Sinkhorn at weight 0.5 dominated gradients (pre-clip grad 6k-235k vs
+    ~0.3k-8k with Sinkhorn off). Full config reduced to weight 0.10,
+    regularization 0.10, max_iter 50, max_batch 512.
+  * max-SW on improved smoke mass/latent KS and C2ST; full config reduced to
+    weight 0.25, direction lr 5e-4 to avoid direction jitter.
+  * flow1 had the best smoke C2ST/cycle coverage, flow4 best eval score but
+    worse C2ST/reco KS; keep flow_steps=2 for the first full run as the
+    center of the ablation, revisit flow count with 10-epoch probes.
+  * Full config now uses eval_every=5 and gate validation subset 8192.
+  * Trainer now logs all `latest_components` (Sinkhorn/max-SW/Monge weighted
+    components) into `history.json`.
+  Full Run E command prepared; not launched.
+
+- **2026-08-16 — Session 19 (power outage + resume support).**
+  Full Run E (`runE_full_20260816_213140`) was interrupted by power loss.
+  Recoverable state: `last_model.pt` = global epoch 15, stage1 epoch 15/60;
+  `history.json` contains rows through epoch 17 but epochs 16-17 have no saved
+  weights. No `best_model.pt`/stage-best yet because the mass gates correctly
+  failed during early deterministic warmup (epoch15 gates: sim W1 0.0282,
+  KS 0.218, window 0.786, mean shift -0.028). Implemented `--resume`:
+  run_e.py loads `last_model.pt`, restores model + Adam state + SOTA max-SW
+  state when present, truncates history to checkpoint epoch, rebuilds loaders,
+  advances cosine scheduler to the correct local epoch, and continues inside
+  the same stage. Resume is statistically equivalent but not bitwise
+  identical (loaders/RNG streams rebuilt). Tested resume logic end-to-end on a
+  /tmp copy; full resume not launched.
+
+- **2026-08-17 — Session 20 (stage-2 instability fix + clean restart).**
+  Stage-2 explosion root cause confirmed as unbounded neural-OT scales once
+  core noise turns on. Fixes applied:
+  * max-SW: p=2 -> p=1, `distance_clamp=25`, direction gradient clip 1.0,
+    update_every=5, direction lr 1e-4.
+  * Sinkhorn: added `log_scale: true` (`log1p` before weighting), so raw
+    Sinkhorn ~1000 maps to ~7 instead of ~100; raw value still logged.
+  * stage2 `core_noise_multiplier` 1.0 -> 0.25.
+  * `require_stage_gate_pass: true` and trainer now raises if a stage ends
+    without ever passing the mass gates.
+  * `run_e.py --resume-checkpoint` added; resume now keeps the CLI config
+    (so repaired loss settings apply) and skips completed stages correctly.
+  * Failed `last_model.pt` preserved as
+    `last_model_stage2_exploded_epoch105.pt`.
+  Clean restart launched from `best_rune_stage1_deterministic_warmup.pt`
+  (epoch 60) into stage2. PID/log: `runE_full_20260816_213140_resume_v5.*`.
+  Early stage2 trajectory stable: epoch 1-6 train loss 6.2 -> 12.5,
+  max-SW weighted < 0.16, log-scaled Sinkhorn weighted < 0.38, pre-clip
+  gradients O(100-1100). No explosion so far.
+
+- **2026-08-17 — Session 21 (Run E final results).**
+  Run E completed 300/300 epochs. Best checkpoint global epoch 285
+  (`best_model.pt`, stage3 tail-flow polish). Final plots written:
+  `plots_paperstyle_final_narrow/`, `plots_paperstyle_final_wide/`,
+  `run_e_loss_curve_final.png`. Final narrow-window test metrics:
+  * D(z) mass W1 = 0.001047 GeV, KS = 0.01655, mean 3.09510 vs 3.09452,
+    std 29.02 vs 28.10 MeV, peak density ratio 0.994.
+  * D(E(x)) mass W1 = 0.00360, KS = 0.0502, std 24.36 MeV (slightly
+    underdispersed), peak density ratio 1.20.
+  * E(x) latent mass KS = 0.0645, std 40.4 vs prior 31.1 MeV; latent
+    component KS <= 0.018. Latent mass remains the weakest closed quantity.
+  * Pair pT KS x vs D(z) = 0.0834.
+  * C2ST AUC = 0.5169 +- 0.0085 (near indistinguishable).
+  * Fixed-z decoder stochasticity: median per-event mass width 9.2 MeV.
+  * Coverage proxies undercovered: cycle 95% coverage 0.754, pseudo-pair
+    0.490 (paired truth unavailable; interpret as diagnostic only).
+  * Wide [2.6,3.5] plot: D(z) mass W1 0.108 GeV / KS 0.312 because the
+    prior has no sidebands; this is expected support mismatch, not a
+    model-divergence signature.
+  Conclusion: generator z->x meets the Run E expectations; latent E(x) mass
+  width and conditional coverage remain the next targets.
+
+- **2026-08-19 — Session 22 (Run F implementation + launch).**
+  Implemented Tier B F1+F2 as a merged bidirectional minibatch-OT flow
+  matching / stochastic-interpolant model:
+  * `scripts_sota/flow_matching.py`: cylindrical velocity fields for
+    decoder z->x and encoder x->z; entropic-OT minibatch coupling (P for
+    decoder, P^T for encoder); Brownian-bridge-style noisy linear
+    interpolant on non-phi coordinates; S^1 phi transport; Euler inference
+    conditioned on per-event eps.
+  * `scripts_sota/trainer.py`: `flow_matching_loss` hook and stage
+    `flow_weight`; `train_flow_loss` logged in history.
+  * `scripts_sota/run_e.py` and plot scripts dispatch on
+    `model.class: flow_matching`.
+  * Config: `configs_sota/cms_Jpsi_ptj5_runF_flowmatch.yaml`
+    (same Tier A losses/gates as Run E; 60+100+140 stages).
+  * Tests: `tests/test_flow_matching.py`; full suite 122/122 OK; pyflakes
+    clean. Run F smoke (10k, MPS) and full dry-run passed.
+  Launched full Run F in background:
+  * run: `outputs/cms_Jpsi_sota/runF_full`
+  * log: `outputs/cms_Jpsi_sota/runF_full.log`
+  * pid: `outputs/cms_Jpsi_sota/runF_full.pid`
+  * epoch 1 started normally; train_flow_loss 0.334.
+  Not complete at end of session.
+
+- **2026-08-20 — Session 23 (Run F completed + plotted).**
+  Run F (bidirectional OT-flow matching) completed 300/300 epochs.
+  Best checkpoint global epoch 275 = stage3 ep115
+  (`best_model.pt`). Plots: `runF_full/runF_loss_curve.png`,
+  `plots_paperstyle_final_narrow/`, `plots_paperstyle_final_wide/`,
+  `plots_paperstyle_stage2_best/`.
+  Narrow test results:
+  * best_model D(z) mass W1 = 0.00537 GeV, KS = 0.0542, std 40.6 vs
+    CMS 28.1 MeV, peak density ratio 0.923.
+  * stage2-best D(z) mass W1 = 0.00449 GeV, KS = 0.0575, std 33.0 MeV,
+    but latent mass KS 0.132.
+  * cycle D(E(x)) is good: W1 0.00258, KS 0.0366, std 27.96 MeV.
+  * C2ST AUC = 0.5112 +- 0.0097; fixed-z mass stochasticity median
+    3.0 MeV (narrower than Run E's 9.2 MeV).
+  * Coverage proxies worsened (cycle 95% 0.461, pseudo 0.170),
+    consistent with underdispersed conditional draws.
+  Verdict: Run F does NOT beat Run E on the primary generator mass
+  closure (Run E W1 0.00105 / KS 0.0165). It is slightly better on C2ST
+  and cycle closure, but worse on D(z) mass width and conditional
+  coverage. Keep Run E as the main result; treat Run F as an ablation /
+  future-work direction, or retrain with more integration steps and a
+  larger sigma before making claims.

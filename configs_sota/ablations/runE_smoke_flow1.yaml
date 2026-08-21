@@ -1,0 +1,7 @@
+# Ablation 3: flow_steps=1, Sinkhorn + max-SW on.
+extends: ../cms_Jpsi_ptj5_runE_tierA.yaml
+paths:
+  output_root: outputs/cms_Jpsi_sota/ablations
+run_name: runE_smoke_flow1
+model:
+  flow_steps: 1

@@ -1,0 +1,12 @@
+# Ablation 5 (optional): Monge-gap regularizer on top of the control.
+# Only run after the first four are understood; it is the most expensive.
+extends: ../cms_Jpsi_ptj5_runE_tierA.yaml
+paths:
+  output_root: outputs/cms_Jpsi_sota/ablations
+run_name: runE_smoke_monge_on
+loss:
+  sota:
+    monge_gap:
+      enabled: true
+      weight: 0.1
+      max_iter: 50

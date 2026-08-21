@@ -1,0 +1,226 @@
+# Run G0: locked-contract reciprocal stochastic bridge prototype.
+#
+# Training remains strictly unpaired. The model uses one shared cylindrical
+# field for z->x and x->z, a common entropic-OT endpoint plan, score/flow
+# matching, and explicit time-reversal consistency. G0 also writes a
+# content-addressed split manifest and balanced bidirectional test report.
+#
+# Do not launch the full 50+150+100 run before --dry-run and --smoke pass.
+
+paths:
+  repo_root: .
+  data_root: data
+  cms_root_file: Run2012BC_DoubleMuParked_Muons.root
+  theory_prior_file: cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5
+  output_root: outputs/cms_Jpsi_sota
+
+run_name: runG0_reciprocal_bridge
+
+data:
+  channel: muon
+  root_step_size: 100 MB
+
+device: auto
+seed: 0
+float_type: float32
+muon_mass_gev: 0.1056583755
+
+data_split:
+  train_ratio: 0.8
+  val_ratio: 0.1
+  train_max: 580000
+  val_max: 72500
+  test_max: 72500
+
+muon_selection:
+  muon_pt_min: 3.0
+  muon_pt_max: 100.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 3.0369
+  jpsi_mass_max: 3.1569
+
+model:
+  class: reciprocal_bridge
+  hidden_dims: [512, 512, 512, 512]
+  activation: SiLU
+  integration_steps: 12
+  noise_dim: 4
+  sigma: 0.10
+  score_weight: 0.10
+  reciprocity_weight: 0.25
+  ot_regularization: 0.05
+  ot_max_iter: 50
+  # MPS shares the machine's 16 GB unified memory with the Minecraft server.
+  # Keep the quadratic endpoint coupling bounded to a 256x256 cost matrix.
+  ot_max_batch: 256
+  daughter_masses: [0.105658, 0.105658]
+
+loss:
+  kind: cms_jpsi_doublemuon_loss
+  vanilla_swae: true
+  vanilla_v3_7: false
+  standardize_raw_matching: false
+  p: 2
+  num_slices: 1000
+  pair_swd_weight: 0.5
+  pair_log_m_std_floor: 0.01
+  pair_log_pt_std_floor: 0.05
+  pair_y_std_floor: 0.20
+  cycle_mass_huber_weight: 50.0
+  cycle_mass_huber_delta: 0.02
+  decoder_num_noise_samples: 1
+  selection_score:
+    x_sim: 1.0
+    z_prior: 1.0
+    x_reco: 1.0
+    cycle: 0.0
+  sota:
+    sinkhorn:
+      enabled: true
+      weight: 0.10
+      regularization: 0.10
+      max_iter: 50
+      tolerance: 1.0e-5
+      max_batch: 256
+      debias: true
+      log_scale: true
+    max_swd:
+      enabled: true
+      weight: 0.25
+      num_directions: 32
+      p: 1
+      lr: 0.0001
+      diversity_weight: 0.05
+      direction_grad_clip: 1.0
+      update_every: 5
+      distance_clamp: 25.0
+    monge_gap:
+      enabled: false
+      weight: 0.1
+      regularization: 0.05
+      max_iter: 100
+
+require_stage_gate_pass: true
+
+# These are feasibility gates, not the SOTA target values. They prevent a
+# visibly broken direction from becoming a checkpoint.
+sota_selection_gates:
+  enabled: true
+  max_sim_mass_w1_gev: 0.015
+  max_sim_mass_ks: 0.12
+  min_sim_window_fraction: 0.90
+  max_latent_mass_w1_gev: 0.015
+  max_latent_mass_ks: 0.12
+  max_latent_mass_width_rel_error: 0.50
+  max_reco_mass_w1_gev: 0.015
+  max_reco_mass_ks: 0.15
+  max_sim_pair_pt_ks: 0.12
+  max_abs_sim_mass_mean_shift_gev: 0.005
+  mass_window: [3.0369, 3.1569]
+  max_validation_events: 4096
+  seed: 20260821
+
+# Checkpoints minimize the worst normalized directional metric. Excellent
+# z->x closure therefore cannot hide a degraded x->z direction.
+checkpoint_selection:
+  mode: worst_direction
+  base_loss_weight: 0.0
+
+sota_selection_targets:
+  sim_mass_w1_gev: 0.0010
+  sim_mass_ks: 0.015
+  sim_pair_pt_ks: 0.070
+  latent_mass_w1_gev: 0.0040
+  latent_mass_ks: 0.040
+  latent_mass_width_rel_error: 0.050
+  reco_mass_w1_gev: 0.0025
+  reco_mass_ks: 0.035
+
+loaders:
+  # Reduced from 16384 so training leaves headroom for the ~7 GB Java server.
+  train_batch_size: 4096
+  eval_batch_size: 4096
+  validation_draws: 1
+  preload_data_to_accelerator: false
+  train_sampler: shuffled_without_replacement
+  eval_sampler: deterministic_sequential
+
+evaluation:
+  min_truth_count: 20
+  mass_range: [3.0369, 3.1569]
+  mass_bin_width: 0.01
+  mass_label: "m(mumu) [GeV]"
+  channel_title: "CMS DoubleMuParked: J/psi -> mumu"
+  reference_mass: 3.0969
+  reference_label: "m_J/psi"
+  diagnostic_freq: 10
+  independent_diagnostic_rng: true
+  # Keep sliced-Wasserstein diagnostics bounded in unified memory as well.
+  sw_batch_size: 4096
+  sw_eval_seed: 12345
+
+g0_contract:
+  enabled: true
+  batch_size: 2048
+  max_events: null
+  bootstrap_replicates: 200
+  c2st_max_samples: 5000
+  c2st_folds: 5
+  c2st_mlp_iterations: 250
+  seed: 20260821
+
+stages:
+  - name: rung0_stage1_reciprocal_warmup
+    mode: standard
+    enabled: true
+    epochs: 50
+    lr: 1.0e-3
+    lr_schedule: cosine
+    gradient_clip_norm: 5.0
+    flow_weight: 1.0
+    beta: 1.0
+    lamb: 1.0
+    tau: 0.5
+    rho: 0.0
+    nu_e: 10.0
+    nu_d: 10.0
+    num_slices: 500
+    eval_every: 5
+    freeze_encoder: false
+    freeze_decoder: false
+  - name: rung0_stage2_stochastic_bridge
+    mode: standard
+    enabled: true
+    epochs: 150
+    lr: 3.0e-4
+    lr_schedule: cosine
+    gradient_clip_norm: 5.0
+    flow_weight: 1.0
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.0
+    rho: 0.0
+    nu_e: 0.25
+    nu_d: 0.25
+    num_slices: 700
+    eval_every: 5
+    freeze_encoder: false
+    freeze_decoder: false
+  - name: rung0_stage3_balanced_polish
+    mode: standard
+    enabled: true
+    epochs: 100
+    lr: 1.0e-4
+    lr_schedule: cosine
+    gradient_clip_norm: 5.0
+    flow_weight: 0.5
+    beta: 1.0
+    lamb: 1.0
+    tau: 1.5
+    rho: 0.0
+    nu_e: 0.0
+    nu_d: 0.0
+    num_slices: 1000
+    eval_every: 5
+    freeze_encoder: false
+    freeze_decoder: false

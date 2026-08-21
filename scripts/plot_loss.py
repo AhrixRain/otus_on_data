@@ -13,16 +13,19 @@ import matplotlib.pyplot as plt
 LOSS_COLUMNS = [
     "train_loss",
     "eval_loss",
+    "train_reference_loss",
+    "eval_reference_loss",
     "train_x_loss",
     "eval_x_loss",
     "train_z_loss",
     "eval_z_loss",
     "train_alt_x_loss",
+    "train_alt_x_loss_weighted",
     "eval_alt_x_loss",
     "train_x_constraint_loss",
 ]
 
-TOTAL_COLUMNS = ["train_loss", "eval_loss"]
+TOTAL_COLUMNS = ["train_loss", "eval_loss", "train_reference_loss", "eval_reference_loss"]
 COMPONENT_COLUMNS = [column for column in LOSS_COLUMNS if column not in TOTAL_COLUMNS]
 
 

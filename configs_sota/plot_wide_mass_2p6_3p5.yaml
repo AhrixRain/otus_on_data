@@ -1,0 +1,28 @@
+# Plot-only config: same model/data pipeline as Run E, but the CMS data
+# selection uses the full J/psi analysis window [2.6, 3.5] GeV so both
+# sideband shoulders are visible.  The model checkpoint remains the one
+# trained on the narrow fiducial window; this plot is deliberately an
+# out-of-training-window diagnostic.
+extends: ./cms_Jpsi_ptj5_runE_tierA.yaml
+
+run_name: runE_wide_mass_plot
+
+muon_selection:
+  muon_pt_min: 3.0
+  muon_pt_max: 100.0
+  muon_abs_eta_max: 2.4
+  jpsi_mass_min: 2.6
+  jpsi_mass_max: 3.5
+
+evaluation:
+  min_truth_count: 20
+  mass_range: [2.6, 3.5]
+  mass_bin_width: 0.01
+  mass_label: "m(mumu) [GeV]"
+  channel_title: "CMS DoubleMuParked: J/psi -> mumu"
+  reference_mass: 3.0969
+  reference_label: "m_J/psi"
+  diagnostic_freq: 10
+  independent_diagnostic_rng: true
+  sw_batch_size: 20000
+  sw_eval_seed: 12345

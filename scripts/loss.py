@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from physics import (
     invariant_mass_np,
@@ -72,6 +73,12 @@ KNOWN_LOSS_SETTINGS = frozenset(
         "mass_kin_swd_components",
         "space_weights",
         "selection_score",
+        "pair_swd_weight",
+        "pair_log_m_std_floor",
+        "pair_log_pt_std_floor",
+        "pair_y_std_floor",
+        "cycle_mass_huber_weight",
+        "cycle_mass_huber_delta",
     }
 )
 KNOWN_LOSS_KEYS = frozenset(DEFAULT_SPACE_WEIGHTS) | KNOWN_LOSS_SETTINGS
@@ -180,6 +187,27 @@ def validate_loss_config(loss_config: dict[str, Any]) -> None:
         value = float(loss_config["tail_frac"])
         if not np.isfinite(value) or not 0.0 < value < 1.0:
             raise ValueError(f"loss.tail_frac must lie in (0, 1), got {loss_config['tail_frac']!r}")
+    for key in ("pair_swd_weight", "cycle_mass_huber_weight"):
+        if key in loss_config:
+            _require_finite_weight(key, loss_config[key])
+            if float(loss_config[key]) < 0.0:
+                raise ValueError(
+                    f"loss.{key} must be non-negative, got " + repr(loss_config[key])
+                )
+    for key in ("pair_log_m_std_floor", "pair_log_pt_std_floor", "pair_y_std_floor"):
+        if key in loss_config:
+            value = float(loss_config[key])
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"loss.{key} must be positive and finite, got " + repr(loss_config[key])
+                )
+    if "cycle_mass_huber_delta" in loss_config:
+        value = float(loss_config["cycle_mass_huber_delta"])
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(
+                "loss.cycle_mass_huber_delta must be positive and finite, got "
+                + repr(loss_config["cycle_mass_huber_delta"])
+            )
     if "resonance_mass_half_width" in loss_config:
         value = float(loss_config["resonance_mass_half_width"])
         if not np.isfinite(value) or value <= 0.0:
@@ -428,6 +456,16 @@ class SpaceFeatureOTLoss:
             loss_config.get("standardize_raw_matching", True)
         )
 
+        # Optional scale-aware pair-level sliced-Wasserstein term. The feature
+        # vector is dimensionless and generic across dilepton mass scales:
+        #   [log(m_ll), log(pT_ll), y_ll, cos(dphi), sin(dphi)]
+        # with train-set standardization and configurable std floors. Keeping
+        # the floors explicit avoids baking a J/psi mass scale into the code.
+        self.pair_swd_weight = float(loss_config.get("pair_swd_weight", 0.0))
+        self.pair_log_m_std_floor = float(loss_config.get("pair_log_m_std_floor", 0.01))
+        self.pair_log_pt_std_floor = float(loss_config.get("pair_log_pt_std_floor", 0.05))
+        self.pair_y_std_floor = float(loss_config.get("pair_y_std_floor", 0.20))
+
         self.raw_mean = np.mean(train_samples, axis=0)
         self.raw_std = _safe_numpy_std(train_samples)
 
@@ -472,6 +510,29 @@ class SpaceFeatureOTLoss:
             physics_coord = self.physics_coord_features(train)
             self.feature_mean = features.mean(dim=0).detach()
             self.feature_std = _safe_torch_std(features, self.eps).detach()
+            pair_features = torch.stack(
+                [
+                    torch.log(features[:, 4].clamp(min=self.eps)),
+                    torch.log(features[:, 5].clamp(min=self.eps)),
+                    features[:, 6],
+                    features[:, 7],
+                    features[:, 8],
+                ],
+                dim=1,
+            )
+            self.pair_feature_mean = pair_features.mean(dim=0).detach()
+            pair_std = _safe_torch_std(pair_features, self.eps).detach()
+            pair_floor = torch.as_tensor(
+                [
+                    self.pair_log_m_std_floor,
+                    self.pair_log_pt_std_floor,
+                    self.pair_y_std_floor,
+                    1e-3,
+                    1e-3,
+                ],
+                dtype=pair_std.dtype,
+            )
+            self.pair_feature_std = torch.maximum(pair_std, pair_floor)
             self.transverse_mean = transverse.mean(dim=0).detach()
             self.transverse_std = _safe_torch_std(transverse, self.eps).detach()
             self.longitudinal_mean = longitudinal.mean(dim=0).detach()
@@ -517,6 +578,40 @@ class SpaceFeatureOTLoss:
             self.daughter_masses,
             mass_from_energy=self.mass_from_energy,
         )["m_ee"]
+
+    def pair_features(self, values: torch.Tensor) -> torch.Tensor:
+        """Dimensionless, mass-scale-aware pair-level slicing features.
+
+        Returns [log(m_ll), log(pT_ll), y_ll, cos(dphi), sin(dphi)] after
+        standardization to the training sample. The log scales make the term
+        equally usable for J/psi, Upsilon, Drell-Yan, and Z; no resonance
+        mass constant appears in the implementation.
+        """
+        features = self.physics_features(values)
+        raw = torch.stack(
+            [
+                torch.log(features[:, 4].clamp(min=self.eps)),
+                torch.log(features[:, 5].clamp(min=self.eps)),
+                features[:, 6],
+                features[:, 7],
+                features[:, 8],
+            ],
+            dim=1,
+        )
+        return self.standardize_features(
+            raw,
+            self.pair_feature_mean,
+            self.pair_feature_std,
+        )
+
+    def pair_swd(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
+        """Sliced Wasserstein distance over standardized pair-level features."""
+        return sliced_wasserstein(
+            self.pair_features(truth),
+            self.pair_features(pred),
+            self.num_slices,
+            self.p,
+        )
 
     def safe_eta(self, pt: torch.Tensor, pz: torch.Tensor) -> torch.Tensor:
         return torch.asinh(pz / torch.clamp(pt, min=self.eps))
@@ -1008,6 +1103,12 @@ class DualSpaceFeatureOTLoss:
         self.num_slices = int(loss_config.get("num_slices", 1000))
         self.decoder_num_noise_samples = max(1, int(loss_config.get("decoder_num_noise_samples", 1)))
         self.x_reco_physics_w1 = float(loss_config.get("x_reco_physics_w1", 0.0))
+        self.cycle_mass_huber_weight = float(
+            loss_config.get("cycle_mass_huber_weight", 0.0)
+        )
+        self.cycle_mass_huber_delta = float(
+            loss_config.get("cycle_mass_huber_delta", 0.02)
+        )
         self.latest_components: dict[str, torch.Tensor] = {}
         score_weights = loss_config.get("selection_score", {})
         self.selection_weights = {
@@ -1077,6 +1178,14 @@ class DualSpaceFeatureOTLoss:
             self.latest_components["z_raw_swd"] = value
             self.latest_components["z_raw_swd_raw"] = value
             self.latest_components["z_raw_swd_weighted"] = value
+            if self.z_space.pair_swd_weight > 0.0:
+                pair_value = self.z_space.pair_swd(z_true, z_encoded)
+                self.latest_components["z_pair_swd"] = pair_value
+                self.latest_components["z_pair_swd_raw"] = pair_value
+                self.latest_components["z_pair_swd_weighted"] = (
+                    self.z_space.pair_swd_weight * pair_value
+                )
+                value = value + self.z_space.pair_swd_weight * pair_value
             return value
         loss = self._weighted_distribution_loss(self.z_space, z_true, z_encoded, "z")
         # Per-component marginal W1 (standardized), the channel-independent
@@ -1101,12 +1210,58 @@ class DualSpaceFeatureOTLoss:
         return loss
 
     def x_sim_loss(self, x_true: torch.Tensor, x_from_z: torch.Tensor) -> torch.Tensor:
+        if self.vanilla_swae:
+            # Mirror z_prior_loss: in vanilla mode the direct generator path
+            # uses the same raw/standardized 8-vector SWD. No mass/physics
+            # terms are added here.
+            if self.x_space.standardize_raw_matching:
+                truth_std = self.x_space.standardize_raw(x_true)
+                pred_std = self.x_space.standardize_raw(x_from_z)
+            else:
+                truth_std = x_true
+                pred_std = x_from_z
+            value = sliced_wasserstein(
+                truth_std,
+                pred_std,
+                self.num_slices,
+                self.x_space.p,
+            )
+            self.latest_components["x_raw_swd"] = value
+            self.latest_components["x_raw_swd_raw"] = value
+            self.latest_components["x_raw_swd_weighted"] = value
+            if self.x_space.pair_swd_weight > 0.0:
+                pair_value = self.x_space.pair_swd(x_true, x_from_z)
+                self.latest_components["x_pair_swd"] = pair_value
+                self.latest_components["x_pair_swd_raw"] = pair_value
+                self.latest_components["x_pair_swd_weighted"] = (
+                    self.x_space.pair_swd_weight * pair_value
+                )
+                value = value + self.x_space.pair_swd_weight * pair_value
+            return value
         return self._weighted_distribution_loss(self.x_space, x_true, x_from_z, "x")
 
     def x_reco_loss(self, x_true: torch.Tensor, x_reco: torch.Tensor) -> torch.Tensor:
         if self.vanilla_swae:
             value = torch.mean((x_true - x_reco) ** 2)
             self.latest_components["x_reco_mse_raw"] = value
+            if self.cycle_mass_huber_weight > 0.0:
+                mass_true = self.x_space.invariant_mass(x_true)
+                mass_reco = self.x_space.invariant_mass(x_reco)
+                relative_residual = (mass_reco - mass_true) / torch.clamp(
+                    mass_true,
+                    min=self.x_space.eps,
+                )
+                mass_term = F.smooth_l1_loss(
+                    relative_residual,
+                    torch.zeros_like(relative_residual),
+                    beta=self.cycle_mass_huber_delta,
+                    reduction="mean",
+                )
+                self.latest_components["x_reco_mass_huber_raw"] = mass_term
+                self.latest_components["x_reco_mass_huber_weighted"] = (
+                    self.cycle_mass_huber_weight * mass_term
+                )
+                value = value + self.cycle_mass_huber_weight * mass_term
             return value
         loss = self.paired_mse_standardized(x_true, x_reco, self.standardize_x_raw)
         if self.x_reco_physics_w1 > 0.0:
