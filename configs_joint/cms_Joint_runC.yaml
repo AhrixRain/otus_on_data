@@ -1,0 +1,47 @@
+# cms_Joint Run C: balanced checkpoint selection and a deeper shared model.
+#
+# Run C keeps Run B's dedicated Z->mumu prior, data splits, physics losses,
+# cuts, and locked Upsilon policy. It uses RMS aggregation across every
+# normalized validation target so one nearly-flat Z pair-pT metric cannot hide
+# improvements elsewhere.
+extends: cms_Joint_runB.yaml
+
+run_label: Run C
+run_name: Run_C
+
+comparison:
+  baseline_run: Run_B
+  controlled_change: balanced_rms_6x512_20pct_longer_lower_batch
+
+checkpoint_selection:
+  mode: worst_region_rms
+  region_reduction: rms
+
+model:
+  hidden_dims: [512, 512, 512, 512, 512, 512]
+
+loaders:
+  train_batch_size: 24576
+  eval_batch_size: 4096
+  steps_per_epoch: 4
+
+final_evaluation:
+  batch_size: 4096
+
+# Twenty percent more epochs than Run B. These entries merge into the inherited
+# named stages, leaving every other optimizer/noise/loss setting unchanged.
+stages:
+  - name: runA_stage1_deterministic_identity
+    epochs: 72
+  - name: runA_stage2_gaussian_response
+    epochs: 120
+  - name: runA_stage3_stochastic_joint
+    epochs: 144
+  - name: runA_stage4_tail_polish
+    epochs: 96
+
+holdout:
+  policy: >-
+    Do not load, train on, tune against, or select checkpoints with Upsilon.
+    Open it only after Run C architecture, priors, cuts, checkpoint, metrics,
+    and the identity/no-correction comparison are frozen.

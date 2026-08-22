@@ -1,0 +1,386 @@
+# cms_Joint Run A (JSON is valid YAML; restored from the completed run contract).
+{
+  "checkpoint_selection": {
+    "base_loss_weight": 0,
+    "gate_fail_penalty": 1000000,
+    "hard_gates": true,
+    "mode": "worst_region_direction"
+  },
+  "cuda_memory_limit_gb": 11,
+  "device": "auto",
+  "final_evaluation": {
+    "batch_size": 8192,
+    "bootstrap_replicates": 200,
+    "c2st_folds": 5,
+    "c2st_max_samples": 5000,
+    "c2st_mlp_iterations": 250,
+    "max_events": null,
+    "seed": 20260821
+  },
+  "float_type": "float32",
+  "holdout": {
+    "cms_mass_window_gev": [
+      8.5,
+      11.5
+    ],
+    "nominal_mass_gev": 9.4603,
+    "policy": "Do not load, train on, tune against, or select checkpoints with Upsilon. Open it only after Run A architecture, priors, cuts, checkpoint, metrics, and the identity/no-correction comparison are frozen.",
+    "resonance": "Upsilon",
+    "status": "locked_zero_shot"
+  },
+  "loaders": {
+    "eval_batch_size": 8192,
+    "steps_per_epoch": 3,
+    "train_batch_size": 36864,
+    "validation_draws": 2,
+    "validation_events": 8192
+  },
+  "loss": {
+    "decoder_num_noise_samples": 1,
+    "delta_eta_w1": 0.25,
+    "delta_phi_w1": 0.25,
+    "kind": "cms_jpsi_doublemuon_loss",
+    "lepton_pt_w1": 0.5,
+    "longitudinal_w1": 0.2,
+    "marginal_w1": 0.25,
+    "mass_kin_swd": 0.5,
+    "mass_w1": 0,
+    "mmd": 0,
+    "num_slices": 512,
+    "p": 1,
+    "pair_mass_w1": 1,
+    "pair_pt_w1": 1,
+    "pair_rapidity_w1": 0.25,
+    "physics_coord_swd": 0.25,
+    "physics_swd": 0.5,
+    "raw_swd": 0.25,
+    "resonance_mass_w1": 0,
+    "selection_score": {
+      "cycle": 0,
+      "x_reco": 0.1,
+      "x_sim": 1,
+      "z_prior": 1
+    },
+    "standardize_raw_matching": true,
+    "tail_w1": 0.1,
+    "transverse_w1": 0.25,
+    "vanilla_swae": false,
+    "vanilla_v3_7": false,
+    "x_reco_physics_w1": 1
+  },
+  "model": {
+    "activation": "SiLU",
+    "class": "joint_cylindrical_residual",
+    "condition_features": [
+      "log_pt_minus",
+      "eta_minus",
+      "sin_phi_minus",
+      "cos_phi_minus",
+      "log_pt_plus",
+      "eta_plus",
+      "sin_phi_plus",
+      "cos_phi_plus",
+      "log_pair_pt",
+      "pair_rapidity",
+      "cos_delta_phi",
+      "sin_delta_phi",
+      "delta_eta"
+    ],
+    "condition_stats_max_events_per_region": 70000,
+    "core_log_sigma_bias": -4,
+    "core_sigma_floors": [
+      0.001,
+      0.001,
+      0.001,
+      0.001,
+      0.001,
+      0.001
+    ],
+    "core_sigma_scales": [
+      0.08,
+      0.08,
+      0.06,
+      0.08,
+      0.08,
+      0.06
+    ],
+    "daughter_masses": [
+      0.1056583755,
+      0.1056583755
+    ],
+    "flow_steps": 2,
+    "hidden_dims": [
+      512,
+      512,
+      512,
+      512
+    ],
+    "maximum_heavy_noise": 6,
+    "mean_residual_limits": [
+      0.35,
+      0.3,
+      0.25,
+      0.35,
+      0.3,
+      0.25
+    ],
+    "student_t_degrees_of_freedom": 4,
+    "tail_log_sigma_bias": -5,
+    "tail_sigma_scales": [
+      0.12,
+      0.12,
+      0.1,
+      0.12,
+      0.12,
+      0.1
+    ]
+  },
+  "muon_mass_gev": 0.1056583755,
+  "paths": {
+    "cms_root_file": "Run2012BC_DoubleMuParked_Muons.root",
+    "data_root": "data",
+    "output_root": "outputs/cms_Joint",
+    "repo_root": "."
+  },
+  "region_order": [
+    "jpsi",
+    "z"
+  ],
+  "region_weights": {
+    "jpsi": 1,
+    "z": 1
+  },
+  "regions": {
+    "jpsi": {
+      "data": {
+        "channel": "muon",
+        "root_step_size": "100 MB"
+      },
+      "data_split": {
+        "test_max": 10000,
+        "train_max": 70000,
+        "train_ratio": 0.8,
+        "val_max": 10000,
+        "val_ratio": 0.1
+      },
+      "label": "J/psi -> mumu",
+      "muon_selection": {
+        "jpsi_mass_max": 3.1569,
+        "jpsi_mass_min": 3.0369,
+        "muon_abs_eta_max": 2.4,
+        "muon_pt_max": 100,
+        "muon_pt_min": 3
+      },
+      "paths": {
+        "cms_root_file": "Run2012BC_DoubleMuParked_Muons.root",
+        "theory_prior_file": "cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5"
+      },
+      "seed": 1701,
+      "selection": {
+        "gates": {
+          "cycle_mass_ks": 0.15,
+          "cycle_mass_w1_gev": 0.015,
+          "direct_mass_ks": 0.12,
+          "direct_mass_w1_gev": 0.015,
+          "direct_mass_width_rel_error": 0.5,
+          "direct_pair_pt_ks": 0.15,
+          "latent_mass_ks": 0.12,
+          "latent_mass_w1_gev": 0.015,
+          "latent_mass_width_rel_error": 0.5,
+          "latent_pair_pt_ks": 0.15
+        },
+        "targets": {
+          "cycle_mass_ks": 0.04,
+          "cycle_mass_w1_gev": 0.0025,
+          "direct_mass_ks": 0.03,
+          "direct_mass_w1_gev": 0.002,
+          "direct_mass_width_rel_error": 0.1,
+          "direct_pair_pt_ks": 0.07,
+          "latent_mass_ks": 0.04,
+          "latent_mass_w1_gev": 0.003,
+          "latent_mass_width_rel_error": 0.1,
+          "latent_pair_pt_ks": 0.07
+        }
+      },
+      "theory_prior_selection": {
+        "mass_max": 3.1569,
+        "mass_min": 3.0369,
+        "muon_abs_eta_max": 2.4,
+        "muon_pt_min": 3
+      }
+    },
+    "z": {
+      "data": {
+        "channel": "muon",
+        "root_step_size": "100 MB"
+      },
+      "data_split": {
+        "test_max": 15000,
+        "train_max": 120000,
+        "train_ratio": 0.8,
+        "val_max": 15000,
+        "val_ratio": 0.1
+      },
+      "label": "Z -> mumu",
+      "muon_selection": {
+        "jpsi_mass_max": 110,
+        "jpsi_mass_min": 70,
+        "muon_abs_eta_max": 2.4,
+        "muon_pt_max": 100,
+        "muon_pt_min": 25
+      },
+      "paths": {
+        "cms_root_file": "Run2012BC_DoubleMuParked_Muons.root",
+        "theory_prior_file": "cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5"
+      },
+      "seed": 1801,
+      "selection": {
+        "gates": {
+          "cycle_mass_ks": 0.15,
+          "cycle_mass_w1_gev": 3,
+          "direct_mass_ks": 0.15,
+          "direct_mass_w1_gev": 3,
+          "direct_mass_width_rel_error": 0.5,
+          "direct_pair_pt_ks": 0.2,
+          "latent_mass_ks": 0.15,
+          "latent_mass_w1_gev": 3,
+          "latent_mass_width_rel_error": 0.5,
+          "latent_pair_pt_ks": 0.2
+        },
+        "targets": {
+          "cycle_mass_ks": 0.04,
+          "cycle_mass_w1_gev": 0.5,
+          "direct_mass_ks": 0.03,
+          "direct_mass_w1_gev": 0.5,
+          "direct_mass_width_rel_error": 0.1,
+          "direct_pair_pt_ks": 0.07,
+          "latent_mass_ks": 0.04,
+          "latent_mass_w1_gev": 0.5,
+          "latent_mass_width_rel_error": 0.1,
+          "latent_pair_pt_ks": 0.07
+        }
+      },
+      "theory_prior_selection": {
+        "mass_max": 110,
+        "mass_min": 70,
+        "muon_abs_eta_max": 2.4,
+        "muon_pt_min": 25
+      }
+    }
+  },
+  "require_stage_gate_pass": false,
+  "run_label": "Run A",
+  "run_name": "Run_A",
+  "seed": 1701,
+  "series": "cms_Joint",
+  "stages": [
+    {
+      "adam_eps": 1e-7,
+      "beta": 1,
+      "core_noise_multiplier": 0,
+      "enabled": true,
+      "epochs": 60,
+      "eval_every": 5,
+      "gradient_clip_norm": 1,
+      "lamb": 1,
+      "lr": 0.0002,
+      "lr_min_factor": 0.1,
+      "lr_schedule": "cosine",
+      "lr_warmup_epochs": 5,
+      "lr_warmup_start_factor": 0.1,
+      "name": "runA_stage1_deterministic_identity",
+      "nu_d": 1,
+      "nu_e": 1,
+      "num_slices": 256,
+      "optimizer": "adamw",
+      "rho": 0,
+      "tail_noise_multiplier": 0,
+      "tau": 0.25,
+      "weight_decay": 0.00001
+    },
+    {
+      "adam_eps": 1e-7,
+      "beta": 1,
+      "core_noise_multiplier": {
+        "end": 1,
+        "schedule": "cosine",
+        "start": 0.1
+      },
+      "enabled": true,
+      "epochs": 100,
+      "eval_every": 5,
+      "gradient_clip_norm": 1,
+      "lamb": 1,
+      "lr": 0.0001,
+      "lr_min_factor": 0.1,
+      "lr_schedule": "cosine",
+      "lr_warmup_epochs": 3,
+      "lr_warmup_start_factor": 0.2,
+      "name": "runA_stage2_gaussian_response",
+      "nu_d": 0.1,
+      "nu_e": 0.1,
+      "num_slices": 384,
+      "optimizer": "adamw",
+      "rho": 0,
+      "tail_noise_multiplier": 0,
+      "tau": 1,
+      "weight_decay": 0.00001
+    },
+    {
+      "adam_eps": 1e-7,
+      "beta": 1,
+      "core_noise_multiplier": 1,
+      "enabled": true,
+      "epochs": 120,
+      "eval_every": 5,
+      "gradient_clip_norm": 0.5,
+      "lamb": 1,
+      "lr": 0.00003,
+      "lr_min_factor": 0.1,
+      "lr_schedule": "cosine",
+      "lr_warmup_epochs": 2,
+      "lr_warmup_start_factor": 0.4,
+      "name": "runA_stage3_stochastic_joint",
+      "nu_d": 0,
+      "nu_e": 0,
+      "num_slices": 512,
+      "optimizer": "adamw",
+      "rho": 0,
+      "tail_noise_multiplier": {
+        "end": 0.25,
+        "schedule": "linear",
+        "start": 0
+      },
+      "tau": 1,
+      "weight_decay": 0.00001
+    },
+    {
+      "adam_eps": 1e-7,
+      "beta": 1,
+      "core_noise_multiplier": 1,
+      "enabled": true,
+      "epochs": 80,
+      "eval_every": 5,
+      "gradient_clip_norm": 0.5,
+      "lamb": 0.75,
+      "lr": 0.00001,
+      "lr_min_factor": 0.1,
+      "lr_schedule": "cosine",
+      "lr_warmup_epochs": 2,
+      "lr_warmup_start_factor": 0.5,
+      "name": "runA_stage4_tail_polish",
+      "nu_d": 0,
+      "nu_e": 0,
+      "num_slices": 512,
+      "optimizer": "adamw",
+      "rho": 0,
+      "tail_noise_multiplier": {
+        "end": 1,
+        "schedule": "cosine",
+        "start": 0.25
+      },
+      "tau": 1.25,
+      "weight_decay": 0.00001
+    }
+  ]
+}

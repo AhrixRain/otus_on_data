@@ -49,6 +49,92 @@ def _set_trainable(model, encoder: bool, decoder: bool) -> None:
         parameter.requires_grad_(decoder)
 
 
+def _build_optimizer(parameters, stage):
+    """Build the configured optimizer with conservative, validated numerics."""
+    name = str(stage.get("optimizer", "adam")).lower()
+    lr = float(stage["lr"])
+    weight_decay = float(stage.get("weight_decay", 0.0))
+    eps = float(stage.get("adam_eps", 1.0e-8))
+    betas = tuple(float(value) for value in stage.get("adam_betas", (0.9, 0.999)))
+    if len(betas) != 2 or not (0.0 <= betas[0] < 1.0 and 0.0 <= betas[1] < 1.0):
+        raise ValueError(f"Invalid Adam betas for stage {stage.get('name')}: {betas}")
+    if lr <= 0.0 or weight_decay < 0.0 or eps <= 0.0:
+        raise ValueError(
+            f"Invalid optimizer settings for stage {stage.get('name')}: "
+            f"lr={lr}, weight_decay={weight_decay}, eps={eps}"
+        )
+    kwargs = {
+        "lr": lr,
+        "betas": betas,
+        "eps": eps,
+        "weight_decay": weight_decay,
+    }
+    if name == "adam":
+        return torch.optim.Adam(parameters, **kwargs)
+    if name == "adamw":
+        return torch.optim.AdamW(parameters, **kwargs)
+    raise ValueError(f"Unknown optimizer {name!r}; expected 'adam' or 'adamw'.")
+
+
+def _build_scheduler(optimizer, stage, start_local_epoch: int):
+    """Create an optional warmup + cosine schedule and advance it on resume."""
+    schedule = str(stage.get("lr_schedule", "none")).lower()
+    stage_epochs = max(1, int(stage["epochs"]))
+    warmup_epochs = max(0, int(stage.get("lr_warmup_epochs", 0)))
+    warmup_epochs = min(warmup_epochs, max(0, stage_epochs - 1))
+    start_factor = float(stage.get("lr_warmup_start_factor", 0.1))
+    min_factor = float(stage.get("lr_min_factor", 0.0))
+    if not 0.0 < start_factor <= 1.0:
+        raise ValueError("lr_warmup_start_factor must be in (0, 1]")
+    if not 0.0 <= min_factor <= 1.0:
+        raise ValueError("lr_min_factor must be in [0, 1]")
+
+    scheduler = None
+    if schedule == "cosine":
+        eta_min = float(stage["lr"]) * min_factor
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, stage_epochs - warmup_epochs),
+            eta_min=eta_min,
+        )
+        if warmup_epochs > 0:
+            warmup = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=start_factor,
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup, cosine],
+                milestones=[warmup_epochs],
+            )
+        else:
+            scheduler = cosine
+    elif schedule == "none" and stage.get("lr_decay", False):
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer, lr_lambda=lambda epoch: 1 / (1 + 0.1 * epoch)
+        )
+    elif schedule != "none":
+        raise ValueError(f"Unknown lr_schedule {schedule!r}; expected 'none' or 'cosine'.")
+
+    if scheduler is not None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for _ in range(max(0, int(start_local_epoch) - 1)):
+                scheduler.step()
+    return scheduler
+
+
+def _resolve_stage_train_config(stage, local_epoch: int):
+    """Resolve loss schedules without dropping trainer-only safety controls."""
+    resolved = dict(stage)
+    resolved.update(
+        make_stage_loss_config(stage, local_epoch, int(stage["epochs"]))
+    )
+    return resolved
+
+
 def _train_epoch(
     model,
     optimizer,
@@ -122,10 +208,8 @@ def _train_epoch(
         total.backward()
         grad_norm = torch.nn.utils.clip_grad_norm_(
             [p for p in model.parameters() if p.requires_grad and p.grad is not None],
-            max_norm=clip,
-        ) if clip > 0 else torch.nn.utils.clip_grad_norm_(
-            [p for p in model.parameters() if p.requires_grad and p.grad is not None],
-            max_norm=math.inf,
+            max_norm=clip if clip > 0 else math.inf,
+            error_if_nonfinite=True,
         )
         optimizer.step()
 
@@ -280,8 +364,10 @@ def run_sota_training(
                 float(stage.get("core_noise_multiplier", 1.0)),
                 float(stage.get("tail_noise_multiplier", 0.0)),
             )
+        if hasattr(loss_factory, "set_num_slices"):
+            loss_factory.set_num_slices(int(stage.get("num_slices", 1000)))
         params = [p for p in model.parameters() if p.requires_grad]
-        optimizer = torch.optim.Adam(params, lr=float(stage["lr"]))
+        optimizer = _build_optimizer(params, stage)
         if restore_optimizer and resume_optimizer_state:
             try:
                 optimizer.load_state_dict(resume_optimizer_state)
@@ -289,23 +375,7 @@ def run_sota_training(
                 # A shape/config mismatch should not prevent resuming from the
                 # saved model weights with a fresh optimizer.
                 pass
-        scheduler = None
-        if stage.get("lr_schedule", "none") == "cosine":
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=max(1, int(stage["epochs"]))
-            )
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                for _ in range(start_local_epoch - 1):
-                    scheduler.step()
-        elif stage.get("lr_decay", False):
-            scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optimizer, lr_lambda=lambda epoch: 1 / (1 + 0.1 * epoch)
-            )
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                for _ in range(start_local_epoch - 1):
-                    scheduler.step()
+        scheduler = _build_scheduler(optimizer, stage, start_local_epoch)
 
         stage_rows = [row for row in history if row.get("stage") == stage_name]
         stage_finite_scores = [
@@ -319,7 +389,9 @@ def run_sota_training(
         for local_epoch in range(start_local_epoch, stage_epochs + 1):
             global_epoch += 1
             started = time.time()
-            stage_cfg = make_stage_loss_config(stage, local_epoch, int(stage["epochs"]))
+            if device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(device)
+            stage_cfg = _resolve_stage_train_config(stage, local_epoch)
             train = _train_epoch(
                 model, optimizer, train_loaders[0], train_loaders[1],
                 stage_cfg, loss_factory, device,
@@ -340,6 +412,13 @@ def run_sota_training(
                 "seconds": time.time() - started,
                 **{f"train_{k}": v for k, v in train.items()},
             }
+            if device.type == "cuda":
+                row["peak_cuda_allocated_gb"] = (
+                    torch.cuda.max_memory_allocated(device) / 1024**3
+                )
+                row["peak_cuda_reserved_gb"] = (
+                    torch.cuda.max_memory_reserved(device) / 1024**3
+                )
             if should_eval:
                 losses = _evaluate_losses(model, eval_loaders[0], eval_loaders[1], loss_factory, device)
                 gates, passed = evaluate_mass_gates(

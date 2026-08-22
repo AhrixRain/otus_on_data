@@ -16,12 +16,15 @@ for directory in (REPO_ROOT / "scripts", REPO_ROOT / "scripts_sota"):
         sys.path.insert(0, str(directory))
 
 from g0_contract import array_fingerprint, build_split_manifest, distribution_report  # noqa: E402
+from cms_data import load_config, resolve_config  # noqa: E402
 from reciprocal_bridge import build_reciprocal_bridge_autoencoder  # noqa: E402
 from selection import checkpoint_selection_score  # noqa: E402
+from trainer import _resolve_stage_train_config  # noqa: E402
 
 
 MUON_MASS = 0.1056583755
 MASSES = (MUON_MASS, MUON_MASS)
+G0_CONFIG = REPO_ROOT / "configs_sota" / "cms_Jpsi_ptj5_runG0_reciprocal_bridge.yaml"
 
 
 def _p4(pt: float, eta: float = 0.0, delta: float = 0.0) -> np.ndarray:
@@ -77,6 +80,24 @@ class TestReciprocalBridge(unittest.TestCase):
             set(model.latest_bridge_components),
             {"bridge_flow", "bridge_score", "bridge_reciprocity"},
         )
+
+    def test_stable_training_config_and_trainer_controls(self):
+        config = resolve_config(load_config(G0_CONFIG))
+        self.assertEqual(config["cuda_memory_limit_gb"], 8.0)
+        self.assertLessEqual(config["loaders"]["train_batch_size"], 2048)
+        self.assertTrue(config["loss"]["standardize_raw_matching"])
+        self.assertEqual(config["loss"]["p"], 1)
+        for stage in config["stages"]:
+            self.assertLessEqual(float(stage["lr"]), 2.0e-4)
+            self.assertLessEqual(float(stage["gradient_clip_norm"]), 1.0)
+            self.assertGreater(int(stage["lr_warmup_epochs"]), 0)
+            resolved = _resolve_stage_train_config(stage, 1)
+            # Regression: these were previously discarded, silently turning
+            # off bridge training and gradient clipping in Run G0.
+            self.assertEqual(resolved["flow_weight"], stage["flow_weight"])
+            self.assertEqual(
+                resolved["gradient_clip_norm"], stage["gradient_clip_norm"]
+            )
 
 
 class TestG0Contract(unittest.TestCase):

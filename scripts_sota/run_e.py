@@ -49,6 +49,25 @@ from sota_loss import SotaLossFactory  # noqa: E402
 from trainer import run_sota_training  # noqa: E402
 
 
+def configure_cuda_memory_limit(config: dict, device: torch.device) -> dict | None:
+    """Apply an optional hard PyTorch allocator cap before CUDA tensors exist."""
+    if device.type != "cuda" or config.get("cuda_memory_limit_gb") is None:
+        return None
+    limit_gb = float(config["cuda_memory_limit_gb"])
+    if not 0.0 < limit_gb:
+        raise ValueError("cuda_memory_limit_gb must be positive")
+    device_index = device.index if device.index is not None else torch.cuda.current_device()
+    total_bytes = int(torch.cuda.get_device_properties(device_index).total_memory)
+    requested_bytes = int(limit_gb * 1024**3)
+    fraction = min(1.0, requested_bytes / total_bytes)
+    torch.cuda.set_per_process_memory_fraction(fraction, device=device_index)
+    return {
+        "requested_gb": limit_gb,
+        "device_total_gb": total_bytes / 1024**3,
+        "allocator_fraction": fraction,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run E: Tier A neural-OT cylindrical-flow OTUS.")
     parser.add_argument("--config", type=Path, required=True)
@@ -147,8 +166,11 @@ def main() -> int:
     config = resolve_config(load_config(args.config))
     config = apply_overrides(config, args)
     device = select_device(args.device)
+    memory_limit = configure_cuda_memory_limit(config, device)
     report = device_report(device)
     print("Device:", device)
+    if memory_limit is not None:
+        print("CUDA memory limit:", json.dumps(memory_limit, sort_keys=True))
     print("Resolved config path:", config.get("_config_path"))
 
     run_name = args.run_name or config.get("run_name") or "run_e"

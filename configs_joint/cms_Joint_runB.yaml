@@ -1,0 +1,23 @@
+# cms_Joint Run B: controlled replacement of the Z prior with dedicated dimuons.
+#
+# Every training, model, selection, and evaluation setting is inherited from
+# Run A. The only physics-input change is the Z-region truth prior below.
+extends: cms_Joint_runA.yaml
+
+run_label: Run B
+run_name: Run_B
+
+comparison:
+  baseline_run: Run_A
+  controlled_change: dedicated_dymumu_z_prior
+
+holdout:
+  policy: >-
+    Do not load, train on, tune against, or select checkpoints with Upsilon.
+    Open it only after Run B architecture, priors, cuts, checkpoint, metrics,
+    and the identity/no-correction comparison are frozen.
+
+regions:
+  z:
+    paths:
+      theory_prior_file: cms_dymumu_mg5_8tev_dy1j_ptj5_fiducial_70_110_1M.hdf5

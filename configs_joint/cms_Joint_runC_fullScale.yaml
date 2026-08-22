@@ -1,0 +1,35 @@
+# cms_Joint Run C full-scale: uncapped selected data with deterministic coverage.
+#
+# Every selected CMS/prior event is assigned to the locked 80/10/10 split.
+# Optimization uses the full 80% training partitions; validation and test rows
+# remain held out. All Run C model, loss, schedule, and RMS-selection settings
+# are inherited unchanged.
+extends: cms_Joint_runC.yaml
+
+run_label: Run C full-scale
+run_name: Run_C_fullScale
+
+comparison:
+  baseline_run: Run_C
+  controlled_change: uncapped_selected_splits_with_deterministic_train_coverage
+
+loaders:
+  sampling: cycling_without_replacement
+
+regions:
+  jpsi:
+    data_split:
+      train_max: null
+      val_max: null
+      test_max: null
+  z:
+    data_split:
+      train_max: null
+      val_max: null
+      test_max: null
+
+holdout:
+  policy: >-
+    Do not load, train on, tune against, or select checkpoints with Upsilon.
+    Open it only after Run C full-scale architecture, priors, cuts, checkpoint,
+    metrics, and the identity/no-correction comparison are frozen.

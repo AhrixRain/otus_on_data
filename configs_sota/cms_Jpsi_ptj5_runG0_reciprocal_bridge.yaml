@@ -21,6 +21,8 @@ data:
   root_step_size: 100 MB
 
 device: auto
+# Enforced by the training entry point through PyTorch's CUDA allocator.
+cuda_memory_limit_gb: 8.0
 seed: 0
 float_type: float32
 muon_mass_gev: 0.1056583755
@@ -45,28 +47,29 @@ model:
   activation: SiLU
   integration_steps: 12
   noise_dim: 4
-  sigma: 0.10
-  score_weight: 0.10
-  reciprocity_weight: 0.25
-  ot_regularization: 0.05
-  ot_max_iter: 50
-  # MPS shares the machine's 16 GB unified memory with the Minecraft server.
-  # Keep the quadratic endpoint coupling bounded to a 256x256 cost matrix.
-  ot_max_batch: 256
+  sigma: 0.08
+  score_weight: 0.05
+  reciprocity_weight: 0.10
+  ot_regularization: 0.10
+  ot_max_iter: 40
+  # Endpoint coupling is quadratic; this cap leaves ample room below 8 GB.
+  ot_max_batch: 128
   daughter_masses: [0.105658, 0.105658]
 
 loss:
   kind: cms_jpsi_doublemuon_loss
   vanilla_swae: true
   vanilla_v3_7: false
-  standardize_raw_matching: false
-  p: 2
-  num_slices: 1000
-  pair_swd_weight: 0.5
+  # Dimensionless p=1 matching is substantially less outlier-sensitive than
+  # squared raw four-momentum SWD, while the pair/SOTA terms retain physics.
+  standardize_raw_matching: true
+  p: 1
+  num_slices: 512
+  pair_swd_weight: 0.25
   pair_log_m_std_floor: 0.01
   pair_log_pt_std_floor: 0.05
   pair_y_std_floor: 0.20
-  cycle_mass_huber_weight: 50.0
+  cycle_mass_huber_weight: 20.0
   cycle_mass_huber_delta: 0.02
   decoder_num_noise_samples: 1
   selection_score:
@@ -77,23 +80,23 @@ loss:
   sota:
     sinkhorn:
       enabled: true
-      weight: 0.10
-      regularization: 0.10
-      max_iter: 50
+      weight: 0.05
+      regularization: 0.15
+      max_iter: 40
       tolerance: 1.0e-5
-      max_batch: 256
+      max_batch: 128
       debias: true
       log_scale: true
     max_swd:
       enabled: true
-      weight: 0.25
-      num_directions: 32
+      weight: 0.10
+      num_directions: 16
       p: 1
       lr: 0.0001
       diversity_weight: 0.05
-      direction_grad_clip: 1.0
-      update_every: 5
-      distance_clamp: 25.0
+      direction_grad_clip: 0.5
+      update_every: 10
+      distance_clamp: 10.0
     monge_gap:
       enabled: false
       weight: 0.1
@@ -137,9 +140,10 @@ sota_selection_targets:
   reco_mass_ks: 0.035
 
 loaders:
-  # Reduced from 16384 so training leaves headroom for the ~7 GB Java server.
-  train_batch_size: 4096
-  eval_batch_size: 4096
+  # 2048 keeps the integration autograd graph comfortably below the hard
+  # 8 GB CUDA allocator limit; evaluation is smaller because it runs cycles.
+  train_batch_size: 2048
+  eval_batch_size: 1024
   validation_draws: 1
   preload_data_to_accelerator: false
   train_sampler: shuffled_without_replacement
@@ -155,13 +159,12 @@ evaluation:
   reference_label: "m_J/psi"
   diagnostic_freq: 10
   independent_diagnostic_rng: true
-  # Keep sliced-Wasserstein diagnostics bounded in unified memory as well.
-  sw_batch_size: 4096
+  sw_batch_size: 1024
   sw_eval_seed: 12345
 
 g0_contract:
   enabled: true
-  batch_size: 2048
+  batch_size: 1024
   max_events: null
   bootstrap_replicates: 200
   c2st_max_samples: 5000
@@ -173,36 +176,48 @@ stages:
   - name: rung0_stage1_reciprocal_warmup
     mode: standard
     enabled: true
-    epochs: 50
-    lr: 1.0e-3
+    epochs: 60
+    optimizer: adamw
+    weight_decay: 1.0e-5
+    adam_eps: 1.0e-7
+    lr: 2.0e-4
     lr_schedule: cosine
-    gradient_clip_norm: 5.0
+    lr_warmup_epochs: 5
+    lr_warmup_start_factor: 0.1
+    lr_min_factor: 0.1
+    gradient_clip_norm: 1.0
     flow_weight: 1.0
-    beta: 1.0
-    lamb: 1.0
-    tau: 0.5
+    beta: 0.5
+    lamb: {start: 0.25, end: 0.75, schedule: linear}
+    tau: {start: 0.0, end: 0.25, schedule: linear}
     rho: 0.0
-    nu_e: 10.0
-    nu_d: 10.0
-    num_slices: 500
+    nu_e: {start: 1.0, end: 0.25, schedule: cosine}
+    nu_d: {start: 1.0, end: 0.25, schedule: cosine}
+    num_slices: 256
     eval_every: 5
     freeze_encoder: false
     freeze_decoder: false
   - name: rung0_stage2_stochastic_bridge
     mode: standard
     enabled: true
-    epochs: 150
-    lr: 3.0e-4
+    epochs: 160
+    optimizer: adamw
+    weight_decay: 1.0e-5
+    adam_eps: 1.0e-7
+    lr: 1.0e-4
     lr_schedule: cosine
-    gradient_clip_norm: 5.0
+    lr_warmup_epochs: 3
+    lr_warmup_start_factor: 0.25
+    lr_min_factor: 0.1
+    gradient_clip_norm: 1.0
     flow_weight: 1.0
-    beta: 1.0
-    lamb: 1.0
-    tau: 1.0
+    beta: 0.75
+    lamb: 0.75
+    tau: {start: 0.25, end: 0.75, schedule: linear}
     rho: 0.0
-    nu_e: 0.25
-    nu_d: 0.25
-    num_slices: 700
+    nu_e: {start: 0.10, end: 0.0, schedule: cosine}
+    nu_d: {start: 0.10, end: 0.0, schedule: cosine}
+    num_slices: 384
     eval_every: 5
     freeze_encoder: false
     freeze_decoder: false
@@ -210,17 +225,23 @@ stages:
     mode: standard
     enabled: true
     epochs: 100
-    lr: 1.0e-4
+    optimizer: adamw
+    weight_decay: 1.0e-5
+    adam_eps: 1.0e-7
+    lr: 3.0e-5
     lr_schedule: cosine
-    gradient_clip_norm: 5.0
+    lr_warmup_epochs: 2
+    lr_warmup_start_factor: 0.5
+    lr_min_factor: 0.1
+    gradient_clip_norm: 0.5
     flow_weight: 0.5
     beta: 1.0
-    lamb: 1.0
-    tau: 1.5
+    lamb: 0.75
+    tau: 1.0
     rho: 0.0
     nu_e: 0.0
     nu_d: 0.0
-    num_slices: 1000
+    num_slices: 512
     eval_every: 5
     freeze_encoder: false
     freeze_decoder: false

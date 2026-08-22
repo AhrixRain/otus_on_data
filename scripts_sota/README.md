@@ -43,6 +43,11 @@ python scripts_sota/run_g.py \
   --config configs_sota/cms_Jpsi_ptj5_runG0_reciprocal_bridge.yaml \
   --device auto --num-samples 10000 --smoke --run-name runG0_smoke
 
+# Full stable Run G0 (the config enforces an 8 GiB CUDA allocator ceiling)
+python scripts_sota/run_g.py \
+  --config configs_sota/cms_Jpsi_ptj5_runG0_reciprocal_bridge.yaml \
+  --device cuda --run-name runG0_stable_full_20260821
+
 # Locked equal-count Run E / Run F baseline comparison
 python scripts_sota/run_g0.py \
   --config configs_sota/cms_Jpsi_ptj5_runG0_reciprocal_bridge.yaml \
