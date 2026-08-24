@@ -126,6 +126,46 @@ The default figures are `outputs/cms_Joint/Run_A/loss_curve.png` and
 curves, `--linear-y` for a linear loss axis, or pass alternative run
 directories with `--run-a` and `--run-b`.
 
+## Run D: showered inclusive Z prior
+
+Run D keeps the complete full-scale Run C training contract and replaces only
+the Z prior with the one-million-event MG5+Pythia8 CKKW-L inclusive 0/1-parton
+sample:
+
+```powershell
+python scripts_joint/run_d.py --device cuda --dry-run
+python scripts_joint/run_d.py --device cuda --smoke
+python scripts_joint/run_d.py --device cuda
+```
+
+The full run writes to `outputs/cms_Joint/Run_D`. Resume it with:
+
+```powershell
+python scripts_joint/run_d.py --device cuda --resume
+```
+
+Run D never loads Upsilon during training, validation, or checkpoint
+selection. Since the original Run C Upsilon first look has already occurred,
+describe a later Run D Upsilon result as post-unblinding held-out transfer.
+
+## Run E: one full training pass per epoch
+
+Run E inherits Run D and changes only the meaning of an epoch. Instead of four
+fixed-size updates, each epoch visits every selected training row exactly once
+in all four independent partitions (J/psi x/z and Z x/z):
+
+```powershell
+python scripts_joint/run_e.py --device cuda --dry-run
+python scripts_joint/run_e.py --device cuda --smoke
+python scripts_joint/run_e.py --device cuda
+```
+
+The number of optimizer updates is derived from the largest training
+partition. Shorter partitions use balanced smaller batches, so no event is
+repeated merely to fill the epoch. The inherited 432-stage-epoch schedule is
+therefore much more training than Run D's four-update epochs; use an explicit
+`--epochs` override only for a named duration ablation.
+
 ## Windows OpenMP error
 
 If Python reports `OMP: Error #15` for `libiomp5md.dll`, first restart the

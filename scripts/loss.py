@@ -338,8 +338,7 @@ def sliced_wasserstein(
         raise ValueError("sliced_wasserstein expects rank-2 tensors.")
     if truth.shape[1] != pred.shape[1]:
         raise ValueError("sliced_wasserstein inputs must have the same feature dimension.")
-    n = min(truth.shape[0], pred.shape[0])
-    if n == 0:
+    if truth.shape[0] == 0 or pred.shape[0] == 0:
         return truth.new_tensor(0.0)
     theta = torch.randn(
         int(num_slices),
@@ -348,15 +347,15 @@ def sliced_wasserstein(
         device=truth.device,
     )
     theta = theta / torch.clamp(torch.linalg.norm(theta, dim=1, keepdim=True), min=eps)
-    truth_proj = truth[:n].matmul(theta.t())
-    pred_proj = pred[:n].matmul(theta.t())
+    truth_proj = truth.matmul(theta.t())
+    pred_proj = pred.matmul(theta.t())
     truth_sorted = torch.sort(truth_proj, dim=0)[0]
     pred_sorted = torch.sort(pred_proj, dim=0)[0]
-    diff = pred_sorted - truth_sorted
+    diff, weights = _empirical_quantile_difference(truth_sorted, pred_sorted)
     if int(p) == 1:
-        return torch.mean(torch.abs(diff))
+        return torch.mean(torch.sum(torch.abs(diff) * weights[:, None], dim=0))
     if int(p) == 2:
-        return torch.mean(diff**2)
+        return torch.mean(torch.sum(diff**2 * weights[:, None], dim=0))
     raise ValueError("Only p=1 and p=2 are supported.")
 
 
@@ -374,24 +373,54 @@ def _safe_torch_std(values: torch.Tensor, eps: float) -> torch.Tensor:
     )
 
 
-def _empirical_quantile(sorted_values: torch.Tensor, quantiles: torch.Tensor) -> torch.Tensor:
-    """Linear-interpolation empirical quantile function (differentiable).
+def _empirical_quantile_difference(
+    first: torch.Tensor,
+    second: torch.Tensor,
+    *,
+    lower_quantile: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return exact empirical-quantile differences and integration weights.
 
-    ``sorted_values`` is an ascending 1-D tensor of ``n`` samples and
-    ``quantiles`` a 1-D tensor of probabilities in [0, 1]. Uses the
-    ``(n - 1) * q`` interpolation convention shared with NumPy/scipy, so the
-    result matches those offline reference implementations while remaining
-    differentiable with respect to ``sorted_values``.
+    Empirical quantile functions are step functions with boundaries i/N. Their
+    exact Wasserstein integral is therefore a weighted sum over the union of
+    both samples' boundaries. This includes every row from unequal batches and
+    preserves the original sorted-pair loss for equal cardinalities.
     """
-    n = sorted_values.numel()
-    positions = quantiles * (n - 1)
-    lower = torch.floor(positions).to(torch.long)
-    upper = torch.clamp(lower + 1, max=n - 1)
-    fraction = positions - lower.to(sorted_values.dtype)
-    return (
-        sorted_values[lower]
-        + fraction * (sorted_values[upper] - sorted_values[lower])
+    if first.shape[0] == 0 or second.shape[0] == 0:
+        raise ValueError("empirical quantile matching requires non-empty tensors")
+    lower = float(lower_quantile)
+    if not 0.0 <= lower < 1.0:
+        raise ValueError("lower_quantile must lie in [0, 1)")
+    first_count, second_count = first.shape[0], second.shape[0]
+    boundaries = torch.unique(
+        torch.cat(
+            [
+                torch.arange(
+                    first_count + 1, dtype=first.dtype, device=first.device
+                )
+                / first_count,
+                torch.arange(
+                    second_count + 1, dtype=first.dtype, device=first.device
+                )
+                / second_count,
+                first.new_tensor([lower]),
+            ]
+        ),
+        sorted=True,
     )
+    boundaries = boundaries[boundaries >= lower]
+    left, right = boundaries[:-1], boundaries[1:]
+    positive = right > left
+    left, right = left[positive], right[positive]
+    midpoints = 0.5 * (left + right)
+    first_index = torch.clamp(
+        torch.floor(midpoints * first_count).to(torch.long), max=first_count - 1
+    )
+    second_index = torch.clamp(
+        torch.floor(midpoints * second_count).to(torch.long), max=second_count - 1
+    )
+    weights = (right - left) / (1.0 - lower)
+    return second[second_index] - first[first_index], weights
 
 
 class SpaceFeatureOTLoss:
@@ -693,8 +722,10 @@ class SpaceFeatureOTLoss:
     def wasserstein_1d_sorted(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         a_sorted = torch.sort(a.reshape(-1))[0]
         b_sorted = torch.sort(b.reshape(-1))[0]
-        n = min(a_sorted.numel(), b_sorted.numel())
-        return torch.mean(torch.abs(a_sorted[:n] - b_sorted[:n]))
+        if a_sorted.numel() == 0 or b_sorted.numel() == 0:
+            return a.new_tensor(0.0)
+        difference, weights = _empirical_quantile_difference(a_sorted, b_sorted)
+        return torch.sum(torch.abs(difference) * weights)
 
     def _marginal_w1_std(
         self,
@@ -709,8 +740,14 @@ class SpaceFeatureOTLoss:
         """
         truth_sorted = torch.sort(truth_std, dim=0)[0]
         pred_sorted = torch.sort(pred_std, dim=0)[0]
-        n = min(truth_sorted.shape[0], pred_sorted.shape[0])
-        return torch.mean(torch.abs(truth_sorted[:n] - pred_sorted[:n]))
+        if truth_sorted.shape[0] == 0 or pred_sorted.shape[0] == 0:
+            return truth_std.new_tensor(0.0)
+        difference, weights = _empirical_quantile_difference(
+            truth_sorted, pred_sorted
+        )
+        return torch.mean(
+            torch.sum(torch.abs(difference) * weights[:, None], dim=0)
+        )
 
     def marginal_w1(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
         if self.standardize_raw_matching:
@@ -741,11 +778,20 @@ class SpaceFeatureOTLoss:
     def tail_wasserstein_abs(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
         truth_sorted = torch.sort(torch.abs(truth.reshape(-1)))[0]
         pred_sorted = torch.sort(torch.abs(pred.reshape(-1)))[0]
-        n = min(truth_sorted.numel(), pred_sorted.numel())
-        if n == 0:
+        if truth_sorted.numel() == 0 or pred_sorted.numel() == 0:
             return truth.new_tensor(0.0)
-        start = max(0, min(int((1.0 - self.tail_frac) * n), n - 1))
-        return torch.mean(torch.abs(truth_sorted[start:n] - pred_sorted[start:n]))
+        if truth_sorted.numel() == pred_sorted.numel():
+            n = truth_sorted.numel()
+            start = max(0, min(int((1.0 - self.tail_frac) * n), n - 1))
+            return torch.mean(
+                torch.abs(truth_sorted[start:n] - pred_sorted[start:n])
+            )
+        difference, weights = _empirical_quantile_difference(
+            truth_sorted,
+            pred_sorted,
+            lower_quantile=1.0 - self.tail_frac,
+        )
+        return torch.sum(torch.abs(difference) * weights)
 
     def _tail_w1_std(
         self,
@@ -756,11 +802,22 @@ class SpaceFeatureOTLoss:
         """Batched tail Wasserstein-1 over the selected columns."""
         truth_sorted = torch.sort(torch.abs(truth_std[:, dims]), dim=0)[0]
         pred_sorted = torch.sort(torch.abs(pred_std[:, dims]), dim=0)[0]
-        n = min(truth_sorted.shape[0], pred_sorted.shape[0])
-        if n == 0:
+        if truth_sorted.shape[0] == 0 or pred_sorted.shape[0] == 0:
             return truth_std.new_tensor(0.0)
-        start = max(0, min(int((1.0 - self.tail_frac) * n), n - 1))
-        return torch.mean(torch.abs(truth_sorted[start:n] - pred_sorted[start:n]))
+        if truth_sorted.shape[0] == pred_sorted.shape[0]:
+            n = truth_sorted.shape[0]
+            start = max(0, min(int((1.0 - self.tail_frac) * n), n - 1))
+            return torch.mean(
+                torch.abs(truth_sorted[start:n] - pred_sorted[start:n])
+            )
+        difference, weights = _empirical_quantile_difference(
+            truth_sorted,
+            pred_sorted,
+            lower_quantile=1.0 - self.tail_frac,
+        )
+        return torch.mean(
+            torch.sum(torch.abs(difference) * weights[:, None], dim=0)
+        )
 
     def tail_w1(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
         if self.standardize_raw_matching:
@@ -800,16 +857,7 @@ class SpaceFeatureOTLoss:
             return truth_mass.new_tensor(0.0)
         if truth_selected.numel() == pred_selected.numel():
             return self.wasserstein_1d_sorted(truth_selected, pred_selected)
-        truth_sorted = torch.sort(truth_selected)[0]
-        pred_sorted = torch.sort(pred_selected)[0]
-        grid_size = max(truth_sorted.numel(), pred_sorted.numel())
-        quantiles = (
-            torch.arange(grid_size, dtype=truth_mass.dtype, device=truth_mass.device)
-            + 0.5
-        ) / grid_size
-        truth_quantiles = _empirical_quantile(truth_sorted, quantiles)
-        pred_quantiles = _empirical_quantile(pred_sorted, quantiles)
-        return torch.mean(torch.abs(truth_quantiles - pred_quantiles))
+        return self.wasserstein_1d_sorted(truth_selected, pred_selected)
 
     def paired_physics_mse_standardized(
         self,

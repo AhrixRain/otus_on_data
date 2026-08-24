@@ -1,0 +1,25 @@
+# cms_Joint Run E: conventional full-pass epoch semantics.
+#
+# Run E inherits the complete Run D scientific contract. The controlled change
+# is purely the optimization epoch definition: every selected x/z training row
+# in both J/psi and Z is visited exactly once before the next epoch begins.
+extends: cms_Joint_runD.yaml
+
+run_label: Run E
+run_name: Run_E
+
+comparison:
+  baseline_run: Run_D
+  controlled_change: full_training_partitions_once_per_epoch
+
+loaders:
+  sampling: cycling_without_replacement
+  epoch_definition: full_pass
+  steps_per_epoch: null
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Do not load, train on, tune against, or select Run E checkpoints with
+    Upsilon. Run E follows the original Run C Upsilon first look; any Upsilon
+    evaluation is a post-unblinding held-out transfer test.

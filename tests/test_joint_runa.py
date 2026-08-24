@@ -25,7 +25,12 @@ from joint_data import (  # noqa: E402
 )
 from joint_metrics import score_joint_metrics  # noqa: E402
 from joint_model import build_joint_autoencoder, resolve_condition_indices  # noqa: E402
-from joint_trainer import _coverage_indices, train_joint_epoch  # noqa: E402
+from joint_trainer import (  # noqa: E402
+    _coverage_indices,
+    _full_pass_batches,
+    _full_pass_step_count,
+    train_joint_epoch,
+)
 from loss import CmsJpsiDoubleMuonLossFactory  # noqa: E402
 
 
@@ -34,6 +39,8 @@ RUN_A_CONFIG = REPO_ROOT / "configs_joint" / "cms_Joint_runA.yaml"
 RUN_B_CONFIG = REPO_ROOT / "configs_joint" / "cms_Joint_runB.yaml"
 RUN_C_CONFIG = REPO_ROOT / "configs_joint" / "cms_Joint_runC.yaml"
 RUN_C_FULL_CONFIG = REPO_ROOT / "configs_joint" / "cms_Joint_runC_fullScale.yaml"
+RUN_D_CONFIG = REPO_ROOT / "configs_joint" / "cms_Joint_runD.yaml"
+RUN_E_CONFIG = REPO_ROOT / "configs_joint" / "cms_Joint_runE.yaml"
 
 
 def _pairs(n: int, mass: float, seed: int) -> np.ndarray:
@@ -185,6 +192,52 @@ def test_run_c_fullscale_is_uncapped_and_preserves_run_c_model_contract():
     assert full["region_weights"] == run_c["region_weights"]
 
 
+def test_run_d_changes_only_z_prior_identity_and_holdout_claim():
+    full = resolve_joint_config(load_config(RUN_C_FULL_CONFIG))
+    run_d = resolve_joint_config(load_config(RUN_D_CONFIG))
+
+    assert run_d["run_label"] == "Run D"
+    assert run_d["run_name"] == "Run_D"
+    assert run_d["comparison"] == {
+        "baseline_run": "Run_C_fullScale",
+        "controlled_change": "showered_inclusive_ckkwl_0j1j_z_prior",
+    }
+    assert Path(run_d["regions"]["z"]["paths"]["theory_prior_file"]).name == (
+        "cms_dymumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_70_110_1M.hdf5"
+    )
+    assert run_d["regions"]["jpsi"] == full["regions"]["jpsi"]
+    run_d_z = dict(run_d["regions"]["z"])
+    full_z = dict(full["regions"]["z"])
+    run_d_z["paths"] = dict(run_d_z["paths"])
+    full_z["paths"] = dict(full_z["paths"])
+    run_d_z["paths"].pop("theory_prior_file")
+    full_z["paths"].pop("theory_prior_file")
+    assert run_d_z == full_z
+    for key in ("model", "loss", "stages", "loaders", "data_split", "region_weights"):
+        if key in full:
+            assert run_d[key] == full[key]
+    assert run_d["holdout"]["resonance"] == "Upsilon"
+    assert run_d["holdout"]["status"] == "excluded_post_unblinding"
+
+
+def test_run_e_changes_only_epoch_definition():
+    run_d = resolve_joint_config(load_config(RUN_D_CONFIG))
+    run_e = resolve_joint_config(load_config(RUN_E_CONFIG))
+
+    assert run_e["run_label"] == "Run E"
+    assert run_e["run_name"] == "Run_E"
+    assert run_e["comparison"] == {
+        "baseline_run": "Run_D",
+        "controlled_change": "full_training_partitions_once_per_epoch",
+    }
+    assert run_e["loaders"]["sampling"] == "cycling_without_replacement"
+    assert run_e["loaders"]["epoch_definition"] == "full_pass"
+    assert run_e["loaders"]["steps_per_epoch"] is None
+    for key in ("model", "loss", "stages", "regions", "region_weights"):
+        assert run_e[key] == run_d[key]
+    assert run_e["holdout"]["status"] == "excluded_post_unblinding"
+
+
 def test_fullscale_coverage_stream_visits_every_row_before_repeating():
     first = _coverage_indices(17, 0, 17, seed=1701, stream=0)
     resumed = np.concatenate(
@@ -199,6 +252,35 @@ def test_fullscale_coverage_stream_visits_every_row_before_repeating():
     assert np.array_equal(first, resumed)
     assert sorted(second.tolist()) == list(range(17))
     assert not np.array_equal(first, second)
+
+
+def test_full_pass_batches_visit_every_training_row_once():
+    arrays = {
+        "jpsi": {
+            "x_train": np.zeros((23, 8), dtype=np.float32),
+            "z_train": np.zeros((11, 8), dtype=np.float32),
+        },
+        "z": {
+            "x_train": np.zeros((31, 8), dtype=np.float32),
+            "z_train": np.zeros((17, 8), dtype=np.float32),
+        },
+    }
+    steps = _full_pass_step_count(arrays, ["jpsi", "z"], batch_size=8)
+    assert steps == 4
+
+    first = _full_pass_batches(
+        arrays["z"]["x_train"], steps, 1, seed=1701, stream=2
+    )
+    second = _full_pass_batches(
+        arrays["z"]["x_train"], steps, 2, seed=1701, stream=2
+    )
+    first_flat = np.concatenate(first)
+    second_flat = np.concatenate(second)
+    assert sorted(first_flat.tolist()) == list(range(31))
+    assert sorted(second_flat.tolist()) == list(range(31))
+    assert len(np.unique(first_flat)) == 31
+    assert max(len(batch) for batch in first) <= 8
+    assert not np.array_equal(first_flat, second_flat)
 
 
 def test_joint_model_is_shared_and_preserves_muon_mass_shell():
@@ -335,6 +417,82 @@ def test_one_joint_step_updates_shared_parameters():
     assert not torch.equal(original, next(model.parameters()).detach())
 
 
+def test_full_pass_training_consumes_unequal_partitions_once():
+    arrays = _arrays()
+    arrays["jpsi"]["z_train"] = arrays["jpsi"]["z_train"][:12]
+    arrays["z"]["x_train"] = arrays["z"]["x_train"][:27]
+    arrays["z"]["z_train"] = arrays["z"]["z_train"][:16]
+    model = build_joint_autoencoder(
+        _model_config(), arrays, MUON_MASS, [MUON_MASS, MUON_MASS]
+    )
+    loss_config = {
+        "kind": "cms_jpsi_doublemuon_loss",
+        "num_slices": 4,
+        "raw_swd": 0.1,
+        "marginal_w1": 0.1,
+        "mass_w1": 0.0,
+        "resonance_mass_w1": 0.0,
+        "physics_swd": 0.0,
+        "mass_kin_swd": 0.0,
+        "transverse_w1": 0.0,
+        "longitudinal_w1": 0.0,
+        "tail_w1": 0.0,
+        "pair_mass_w1": 0.1,
+        "pair_pt_w1": 0.0,
+        "lepton_pt_w1": 0.0,
+        "delta_phi_w1": 0.0,
+        "delta_eta_w1": 0.0,
+        "pair_rapidity_w1": 0.0,
+        "physics_coord_swd": 0.0,
+        "mmd": 0.0,
+        "x_reco_physics_w1": 0.1,
+    }
+    factories = {
+        name: CmsJpsiDoubleMuonLossFactory(
+            region["x_train"],
+            region["z_train"],
+            loss_config,
+            [MUON_MASS, MUON_MASS],
+        )
+        for name, region in arrays.items()
+    }
+    config = {
+        "seed": 1701,
+        "region_order": ["jpsi", "z"],
+        "region_weights": {"jpsi": 1.0, "z": 1.0},
+        "loaders": {
+            "train_batch_size": 8,
+            "sampling": "cycling_without_replacement",
+            "epoch_definition": "full_pass",
+        },
+    }
+    stage = {
+        "beta": 1.0,
+        "lamb": 1.0,
+        "tau": 1.0,
+        "nu_e": 0.0,
+        "nu_d": 0.0,
+        "gradient_clip_norm": 1.0,
+    }
+    result = train_joint_epoch(
+        model,
+        torch.optim.Adam(model.parameters(), lr=1.0e-4),
+        arrays,
+        factories,
+        config,
+        stage,
+        device=torch.device("cpu"),
+        seed=99,
+        epoch_index=1,
+    )
+    assert np.isfinite(result["loss"])
+    assert result["optimizer_updates"] == 4
+    assert result["jpsi_x_events"] == 32
+    assert result["jpsi_z_events"] == 12
+    assert result["z_x_events"] == 27
+    assert result["z_z_events"] == 16
+
+
 def load_tests(loader, tests, pattern):
     suite = unittest.TestSuite()
     for function in (
@@ -343,11 +501,15 @@ def load_tests(loader, tests, pattern):
         test_run_c_contract_has_requested_depth_duration_batch_and_selection,
         test_rms_checkpoint_selection_balances_all_target_metrics,
         test_run_c_fullscale_is_uncapped_and_preserves_run_c_model_contract,
+        test_run_d_changes_only_z_prior_identity_and_holdout_claim,
+        test_run_e_changes_only_epoch_definition,
         test_fullscale_coverage_stream_visits_every_row_before_repeating,
+        test_full_pass_batches_visit_every_training_row_once,
         test_joint_model_is_shared_and_preserves_muon_mass_shell,
         test_worst_region_checkpoint_score_cannot_be_hidden_by_other_region,
         test_joint_contract_hash_is_independent_of_cache_hit_state,
         test_one_joint_step_updates_shared_parameters,
+        test_full_pass_training_consumes_unequal_partitions_once,
     ):
         suite.addTest(unittest.FunctionTestCase(function))
     return suite

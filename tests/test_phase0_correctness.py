@@ -44,6 +44,7 @@ from cms_training import build_loss_factory  # noqa: E402
 from loss import (  # noqa: E402
     JPSI_DIMUON_LOSS_KIND,
     build_ee_physics_features,
+    sliced_wasserstein,
     validate_loss_config,
 )
 from physics import (  # noqa: E402
@@ -490,6 +491,32 @@ class TestResonanceMassW1(unittest.TestCase):
         pred = torch.tensor([center - 1.0, center + 1.0], dtype=torch.float32)
         self.assertEqual(float(space.resonance_mass_w1(truth, pred)), 0.0)
         self.assertEqual(float(space.resonance_mass_w1(pred, truth)), 0.0)
+
+    @unittest.skipUnless(HAS_SCIPY, "scipy not available")
+    def test_general_unequal_w1_uses_both_complete_batches(self) -> None:
+        space = self.make_space()
+        truth = torch.tensor([0.0, 1.0, 2.0, 8.0, 13.0], dtype=torch.float32)
+        pred = torch.tensor([1.0, 3.0], dtype=torch.float32, requires_grad=True)
+        actual = space.wasserstein_1d_sorted(truth, pred)
+        expected = wasserstein_distance(truth.numpy(), pred.detach().numpy())
+        self.assertLessEqual(
+            abs(float(actual.detach()) - expected), 0.05 * expected + 1e-3
+        )
+        actual.backward()
+        self.assertTrue(torch.isfinite(pred.grad).all())
+
+    @unittest.skipUnless(HAS_SCIPY, "scipy not available")
+    def test_unequal_one_dimensional_swd_uses_empirical_quantiles(self) -> None:
+        truth = torch.tensor([[0.0], [1.0], [2.0], [8.0], [13.0]])
+        pred = torch.tensor([[1.0], [3.0]], requires_grad=True)
+        torch.manual_seed(7)
+        actual = sliced_wasserstein(truth, pred, num_slices=1, p=1)
+        expected = wasserstein_distance(truth[:, 0].numpy(), pred.detach()[:, 0].numpy())
+        self.assertLessEqual(
+            abs(float(actual.detach()) - expected), 0.05 * expected + 1e-3
+        )
+        actual.backward()
+        self.assertTrue(torch.isfinite(pred.grad).all())
 
 
 class TestDeltaEtaNormalization(unittest.TestCase):

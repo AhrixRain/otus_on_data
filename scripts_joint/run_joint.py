@@ -36,7 +36,11 @@ from joint_data import (  # noqa: E402
     write_joint_split_manifest,
 )
 from joint_model import build_joint_autoencoder  # noqa: E402
-from joint_trainer import restore_joint_checkpoint, run_joint_training  # noqa: E402
+from joint_trainer import (  # noqa: E402
+    _full_pass_step_count,
+    restore_joint_checkpoint,
+    run_joint_training,
+)
 
 
 def parse_args(default_config: Path | None = None) -> argparse.Namespace:
@@ -74,7 +78,9 @@ def apply_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[st
         config.setdefault("loaders", {})["train_batch_size"] = int(args.batch_size)
         config.setdefault("loaders", {})["eval_batch_size"] = int(args.batch_size)
     if args.steps_per_epoch is not None:
-        config.setdefault("loaders", {})["steps_per_epoch"] = int(args.steps_per_epoch)
+        loaders = config.setdefault("loaders", {})
+        loaders["steps_per_epoch"] = int(args.steps_per_epoch)
+        loaders["epoch_definition"] = "fixed_steps"
     if args.smoke:
         model = config.setdefault("model", {})
         model["hidden_dims"] = [64, 64]
@@ -224,6 +230,24 @@ def main(default_config: Path | None = None) -> int:
     for name in config["region_order"]:
         shapes = {key: list(value.shape) for key, value in region_arrays[name].items()}
         print(f"[{name}] {json.dumps(shapes, sort_keys=True)}")
+    epoch_definition = str(
+        config.get("loaders", {}).get("epoch_definition", "fixed_steps")
+    ).lower()
+    if epoch_definition == "full_pass":
+        steps = _full_pass_step_count(
+            region_arrays,
+            list(config["region_order"]),
+            int(config["loaders"]["train_batch_size"]),
+        )
+        epochs = sum(
+            int(stage["epochs"])
+            for stage in config["stages"]
+            if stage.get("enabled", True)
+        )
+        print(
+            f"Full-pass epoch: {steps} optimizer updates; "
+            f"configured schedule: {epochs} epochs / {steps * epochs} updates"
+        )
 
     manifest = build_joint_split_manifest(
         config,
@@ -323,7 +347,13 @@ def main(default_config: Path | None = None) -> int:
     )
     print(f"{run_label} complete: {output_dir / 'best_model.pt'}")
     print(f"Evaluation: {report_path}")
-    print("Upsilon remains unopened and locked for zero-shot testing.")
+    if config.get("holdout", {}).get("status") == "locked_zero_shot":
+        print("Upsilon remains unopened and locked for zero-shot testing.")
+    else:
+        print(
+            "Upsilon was not opened by this run and remained excluded from "
+            "training, tuning, and checkpoint selection."
+        )
     return 0
 
 

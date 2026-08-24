@@ -29,7 +29,23 @@ of each training pool before starting that pool's next shuffled cycle. This
 uses all selected training-partition events without contaminating validation
 or test data.
 
-Do not modify Run A in place after producing a full checkpoint. Copy the
+`cms_Joint_runD.yaml` inherits the full-scale Run C contract and replaces only
+the Z truth prior with
+`cms_dymumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_70_110_1M.hdf5`.
+The new prior contains post-shower stable muons from merged 0/1-parton
+MG5+Pythia8 CKKW-L production, includes lepton QED FSR, and removes the old
+hard pair-recoil floor. Upsilon remains excluded from training and selection;
+because its original first look has already occurred, any later Run D Upsilon
+evaluation is post-unblinding held-out transfer rather than a new zero-shot
+claim.
+
+`cms_Joint_runE.yaml` inherits Run D and changes only the epoch definition.
+One Run E epoch deterministically visits every selected J/psi-data,
+J/psi-prior, Z-data, and Z-prior training row exactly once. The largest
+partition determines the number of optimizer updates, and shorter partitions
+are divided into the same number of balanced batches without oversampling.
+
+Do not modify a completed run in place after producing a full checkpoint. Copy the
 configuration to a new run name for broad-mass support, alternative priors,
-region-weight changes, or architecture changes. This preserves the meaning of
-the locked Upsilon test.
+region-weight changes, or architecture changes. This preserves each run's
+identity and the meaning of the original locked Upsilon test.

@@ -1014,3 +1014,54 @@ three-term runs; keep only the current chain:
   coverage. Keep Run E as the main result; treat Run F as an ablation /
   future-work direction, or retrain with more integration steps and a
   larger sigma before making claims.
+
+- **2026-08-22 — Run D prepared with the new showered inclusive Z prior.**
+  Verified
+  `data/cms_dymumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_70_110_1M.hdf5`:
+  1,000,000 finite float32 events, post-Pythia8 stable muons with lepton QED
+  FSR, merged MG5 0/1-parton CKKW-L production, and 100% pass of the Run D
+  Z selection. Against the full-scale Run C CMS Z test split, the new prior
+  improves mass KS 0.174 -> 0.086 and pair-pT KS 0.212 -> 0.069 relative to
+  the old fixed-order DY+1j prior (pair-pT W1 is worse, 1.74 -> 2.27 GeV,
+  because the new showered prior has a harder extreme tail). Added
+  `configs_joint/cms_Joint_runD.yaml` inheriting Run C full-scale and changing
+  only the Z prior, `scripts_joint/run_d.py`, contract tests, and docs. Dry-run
+  and four-stage CPU smoke passed; focused joint tests 11/11.
+
+- **2026-08-22 — Run D completed, plotted, and evaluated on Upsilon.**
+  Full-scale Run D completed 432 epochs. The accepted `best_model.pt` is global
+  epoch 70 (stage 1 deterministic identity, core/tail noise multipliers 0/0),
+  with all J/psi and Z gates passing. Direct z->x test metrics: J/psi mass
+  W1/KS = 0.000789 GeV / 0.0138 and pair-pT KS = 0.0675; Z mass W1/KS =
+  0.298 GeV / 0.0175 and pair-pT KS = 0.0300. Generated 19 all-element
+  artifacts, 22 paper-style plots, and log/linear loss curves under
+  `outputs/cms_Joint/Run_D/`.
+  Decoded all 1,000,000 events from the matched showered inclusive Upsilon
+  0/1j prior and generated raw/decoded peak comparisons plus 19 direct-z->x
+  quantitative plots under `Run_D/upsilon_transfer/`. Equal-count Upsilon
+  metrics (16,600 per distribution): mass W1/KS = 0.264 GeV / 0.185,
+  pair-pT W1/KS = 1.420 GeV / 0.318, linear/MLP C2ST AUC = 0.759/0.802.
+  State mean response biases are -28.0/-30.7/-32.4 MeV for 1S/2S/3S. The
+  deterministic selected checkpoint preserves overly narrow prior peaks and
+  does not improve the inclusive Upsilon mass comparison (raw W1/KS
+  0.206/0.174; decoded 0.213/0.179 in [8.5,11.2] GeV). This is recorded as
+  `post_unblinding_heldout_transfer`, not a new zero-shot claim. Fixed the
+  existing Upsilon plotter's hard-coded Run C title and zero-shot provenance;
+  it now derives the run label/scope from decode metadata.
+
+- **2026-08-23 — Run E full-pass epoch implementation.**
+  Added `loaders.epoch_definition: full_pass` to the joint trainer and created
+  `configs_joint/cms_Joint_runE.yaml` / `scripts_joint/run_e.py`. A Run E epoch
+  now deterministically visits every J/psi x/z and Z x/z training row exactly
+  once, partitions unequal datasets into the same number of balanced batches,
+  and records per-partition event counts plus optimizer updates in history.
+  Unequal-cardinality Wasserstein/SWD paths now integrate the complete empirical
+  quantile functions instead of truncating the larger batch. Equal-cardinality
+  behavior is preserved. Focused correctness/joint/loss tests pass (63 tests,
+  one optional skip); full discovery passes all relevant tests but still has
+  two pre-existing environment/data errors: Windows h5py temporary-file
+  creation and the absent legacy `cms_jpsi_mumu_mg5_8tev_1M.hdf5` fixture.
+  CPU dry-run and four-stage full-pass smoke passed without opening Upsilon.
+  With Run D's measured partition sizes and batch 24,576, production Run E is
+  172 updates per epoch versus Run D's four; the inherited 432 epochs would be
+  74,304 updates (43x Run D), so production was not launched automatically.

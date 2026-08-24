@@ -127,6 +127,61 @@ def _coverage_batches(
     ).reshape(int(steps), int(batch_size))
 
 
+def _full_pass_step_count(
+    region_arrays: dict[str, dict[str, np.ndarray]],
+    region_order: list[str],
+    batch_size: int,
+) -> int:
+    """Return the updates needed to visit every training row once.
+
+    A joint epoch uses one x batch and one z batch from every region per
+    optimizer update. The largest training partition determines the number of
+    updates; every other partition is divided into the same number of balanced
+    (usually smaller) batches. This avoids repeating a shorter prior merely to
+    keep pace with a larger CMS partition.
+    """
+    batch_size = int(batch_size)
+    if batch_size < 1:
+        raise ValueError("loaders.train_batch_size must be positive")
+    lengths = [
+        len(region_arrays[name][key])
+        for name in region_order
+        for key in ("x_train", "z_train")
+    ]
+    if not lengths or min(lengths) < 1:
+        raise ValueError("full-pass epochs require non-empty x/z training partitions")
+    steps = max(math.ceil(length / batch_size) for length in lengths)
+    if steps > min(lengths):
+        raise ValueError(
+            "full-pass epoch would require an empty per-update batch in a shorter "
+            "training partition; increase train_batch_size or provide more events"
+        )
+    return int(steps)
+
+
+def _full_pass_batches(
+    values: np.ndarray,
+    steps: int,
+    epoch_index: int,
+    *,
+    seed: int,
+    stream: int,
+) -> list[np.ndarray]:
+    """Partition one deterministic epoch permutation into balanced batches."""
+    length = len(values)
+    indices = _coverage_indices(
+        length,
+        (int(epoch_index) - 1) * length,
+        length,
+        seed=seed,
+        stream=stream,
+    )
+    batches = [np.asarray(part, dtype=np.int64) for part in np.array_split(indices, steps)]
+    if any(len(part) == 0 for part in batches):
+        raise ValueError("full-pass epoch produced an empty batch")
+    return batches
+
+
 def _build_optimizer(parameters, stage: dict[str, Any]):
     name = str(stage.get("optimizer", "adamw")).lower()
     kwargs = {
@@ -198,7 +253,19 @@ def train_joint_epoch(
     model.train()
     loaders = config.get("loaders", {})
     batch_size = int(loaders.get("train_batch_size", 1024))
-    steps = int(loaders.get("steps_per_epoch", 100))
+    epoch_definition = str(loaders.get("epoch_definition", "fixed_steps")).lower()
+    if epoch_definition not in {"fixed_steps", "full_pass"}:
+        raise ValueError(
+            "loaders.epoch_definition must be 'fixed_steps' or 'full_pass'"
+        )
+    if epoch_definition == "full_pass":
+        steps = _full_pass_step_count(
+            region_arrays, list(config["region_order"]), batch_size
+        )
+    else:
+        steps = int(loaders.get("steps_per_epoch", 100))
+        if steps < 1:
+            raise ValueError("loaders.steps_per_epoch must be positive")
     weights = _region_weights(config)
     rng = np.random.default_rng(seed)
     sums: dict[str, float] = {"loss": 0.0, "grad_norm": 0.0}
@@ -208,7 +275,7 @@ def train_joint_epoch(
         raise ValueError(
             "loaders.sampling must be 'random' or 'cycling_without_replacement'"
         )
-    coverage: dict[tuple[str, str], np.ndarray] = {}
+    coverage: dict[tuple[str, str], Any] = {}
     if sampling == "cycling_without_replacement":
         if epoch_index is None or int(epoch_index) < 1:
             raise ValueError(
@@ -218,14 +285,28 @@ def train_joint_epoch(
         for region_index, name in enumerate(config["region_order"]):
             arrays = region_arrays[name]
             for domain_index, key in enumerate(("x_train", "z_train")):
-                coverage[(name, key)] = _coverage_batches(
-                    arrays[key],
-                    batch_size,
-                    steps,
-                    int(epoch_index),
-                    seed=base_seed,
-                    stream=2 * region_index + domain_index,
-                )
+                if epoch_definition == "full_pass":
+                    coverage[(name, key)] = _full_pass_batches(
+                        arrays[key],
+                        steps,
+                        int(epoch_index),
+                        seed=base_seed,
+                        stream=2 * region_index + domain_index,
+                    )
+                else:
+                    coverage[(name, key)] = _coverage_batches(
+                        arrays[key],
+                        batch_size,
+                        steps,
+                        int(epoch_index),
+                        seed=base_seed,
+                        stream=2 * region_index + domain_index,
+                    )
+    elif epoch_definition == "full_pass":
+        raise ValueError(
+            "loaders.epoch_definition='full_pass' requires "
+            "loaders.sampling='cycling_without_replacement'"
+        )
 
     for step_index in range(steps):
         optimizer.zero_grad(set_to_none=True)
@@ -305,7 +386,17 @@ def train_joint_epoch(
         optimizer.step()
         sums["loss"] += step_total
         sums["grad_norm"] += _as_float(grad_norm)
-    return {key: value / max(1, steps) for key, value in sums.items()}
+    result = {key: value / max(1, steps) for key, value in sums.items()}
+    result["optimizer_updates"] = float(steps)
+    for name in config["region_order"]:
+        if epoch_definition == "full_pass":
+            result[f"{name}_x_events"] = float(len(region_arrays[name]["x_train"]))
+            result[f"{name}_z_events"] = float(len(region_arrays[name]["z_train"]))
+        else:
+            events = float(batch_size * steps)
+            result[f"{name}_x_events"] = events
+            result[f"{name}_z_events"] = events
+    return result
 
 
 def validate_joint(

@@ -1,0 +1,4 @@
+state,pdg_mass_GeV,fitted_mass_GeV,mass_error_GeV,sigma_GeV,sigma_error_GeV,fitted_yield,yield_error
+Upsilon(1S),9.4603,9.445066,0.002976,0.084416,0.003118,2074.8,79.4
+Upsilon(2S),10.0233,10.016274,0.009376,0.084335,0.010574,603.3,80.7
+Upsilon(3S),10.3552,10.341689,0.012605,0.080288,0.013684,412.4,71.8

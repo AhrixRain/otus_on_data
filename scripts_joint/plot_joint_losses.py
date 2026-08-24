@@ -16,7 +16,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RUN_A = REPO_ROOT / "outputs" / "cms_Joint" / "Run_A"
-DEFAULT_RUN_B = REPO_ROOT / "outputs" / "cms_Joint" / "Run_B"
+DEFAULT_RUN_B = REPO_ROOT / "outputs" / "cms_Joint" / "Run_E"
 
 
 def parse_args() -> argparse.Namespace:

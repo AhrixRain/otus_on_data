@@ -1,0 +1,30 @@
+# cms_Joint Run D: controlled replacement with the showered inclusive Z prior.
+#
+# Run D preserves the full-scale Run C model, losses, schedules, selected CMS
+# data, and deterministic full-coverage sampler. The only training-input change
+# is the Z-region prior: an inclusive 0/1-parton MG5+Pythia8 CKKW-L sample with
+# ISR, lepton QED FSR, and support down to zero pair recoil.
+extends: cms_Joint_runC_fullScale.yaml
+
+run_label: Run D
+run_name: Run_D
+
+comparison:
+  baseline_run: Run_C_fullScale
+  controlled_change: showered_inclusive_ckkwl_0j1j_z_prior
+
+regions:
+  z:
+    paths:
+      theory_prior_file: cms_dymumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_70_110_1M.hdf5
+
+# Upsilon was opened after the original Run C contract was frozen. It remains
+# excluded from Run D training, tuning, and checkpoint selection, but a later
+# Run D Upsilon result must be described as post-unblinding held-out transfer,
+# not as the original first-look zero-shot test.
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Do not load, train on, tune against, or select Run D checkpoints with
+    Upsilon. Run D was specified after the original Run C Upsilon first look;
+    any later Upsilon evaluation is a post-unblinding held-out transfer test.
