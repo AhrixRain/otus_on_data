@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 """Generate the legacy paper-style density/ratio suite for a joint run."""
 
+
 from __future__ import annotations
 
+import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import json
 import sys

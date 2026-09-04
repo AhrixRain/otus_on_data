@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 """Generic entry point for the locked ``cms_Joint`` run series."""
 
+
 from __future__ import annotations
 
+import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import json
 import os

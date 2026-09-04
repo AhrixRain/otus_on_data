@@ -1065,3 +1065,18 @@ three-term runs; keep only the current chain:
   With Run D's measured partition sizes and batch 24,576, production Run E is
   172 updates per epoch versus Run D's four; the inherited 432 epochs would be
   74,304 updates (43x Run D), so production was not launched automatically.
+
+- **2026-09-01 — Joint Run F live plateau review (distinct from the older SOTA Run F).**
+  artifact-measured: Run_F is active around epoch 235/432; stage-3 mean loss
+  decreased from 0.8128 (193–202) to 0.7721 (223–234), while J/psi latent mass
+  KS remains failing (0.5007 at epoch 232; gate 0.12). All Z gates pass.
+  Fixed-checkpoint CPU validation probes show reducing encoder noise improves
+  mass W1 but worsens KS because a roughly -8.8 MeV mass bias persists; this
+  is not a validated one-setting fix. proposal: bounded continuation to about
+  epoch 260, then use sustained validation improvement to decide whether to
+  adjust; no automatic monitoring/stop was installed and training is unchanged.
+  source-verified + artifact-measured: resume resets the stage-best score;
+  saved stage-2 checkpoint is epoch 192 despite a better historical score at
+  epoch 112. Also joint_model.py is deleted in the working tree; resolve before
+  restarting. Full findings and retained evidence:
+  `outputs/cms_Joint/Run_F/diagnostics/plateau_review.md`.

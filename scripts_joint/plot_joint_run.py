@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 """Complete per-component diagnostics for a trained cms_Joint checkpoint."""
 
+
 from __future__ import annotations
 
+import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import json
 import sys

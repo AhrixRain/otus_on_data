@@ -1,0 +1,28 @@
+# cms_Joint Run F: CMS-matched inclusive 0j+1j priors for both J/psi and Z.
+#
+# Run F inherits Run E's full-pass epoch semantics and Run D's showered
+# inclusive 0j+1j Z prior, and adds the new CMS-reweighted inclusive 0j+1j
+# J/psi prior. Upsilon remains excluded from training, tuning, and checkpoint
+# selection.
+extends: cms_Joint_runE.yaml
+
+run_label: Run F
+run_name: Run_F
+
+comparison:
+  baseline_run: Run_E
+  controlled_change: >-
+    CMS-matched inclusive 0j1j J/psi prior added to Run E's full-pass training;
+    both training priors now have low-pair-pT support.
+
+regions:
+  jpsi:
+    paths:
+      theory_prior_file: cms_jpsi_mumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_3p0369_3p1569_1M_reweighted.hdf5
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Do not load, train on, tune against, or select Run F checkpoints with Upsilon.
+    Run F follows the original Run C Upsilon first look; any later Upsilon
+    evaluation is a post-unblinding held-out transfer test.
