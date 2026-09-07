@@ -416,6 +416,7 @@ def main(argv=None) -> int:
     else:
         idx = apply_signal_fraction(cid, continuum_ids, target, rng)
         z, cid = z[idx], cid[idx]
+        weight = weight[idx] if weight is not None else None
         achieved = float(np.isin(cid, list(continuum_ids), invert=True).mean())
         report["signal_fraction_requested"] = float(target)
         report["signal_fraction_applied"] = achieved
@@ -459,10 +460,15 @@ def main(argv=None) -> int:
             out.attrs[f"source_{key}"] = value
         for key, value in report.items():
             out.attrs[key] = (json.dumps(value)
-                              if isinstance(value, (dict, list)) else value)
+                              if value is None or isinstance(value, (dict, list)) else value)
+        # Consumers need the mapping at the top level to interpret the labels.
+        # source_* remains an immutable record of the generated input.
+        out.attrs["component_id_mapping"] = json.dumps(mapping)
+        out.attrs["component_counts"] = json.dumps(report.get("component_counts_out", {}))
+        out.attrs["composition_scope"] = "declared evaluation mixture; see signal_fraction_source"
         out.attrs["derived_by"] = "scripts/prior_build/materialize_eval_prior.py"
         out.attrs["selection_baked_in"] = True
-        out.attrs["ready_for_decode_prior"] = True
+        out.attrs["ready_for_decode_prior"] = weight is None
 
     json_path = args.out_file.with_suffix(".json")
     json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

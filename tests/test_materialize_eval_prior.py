@@ -171,10 +171,37 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertTrue(bool(handle.attrs["selection_baked_in"]))
                 self.assertEqual(handle.attrs["unweighting"], "accept_reject")
                 self.assertEqual(int(handle.attrs["duplicated_rows"]), 0)
+                self.assertEqual(json.loads(handle.attrs["component_id_mapping"]),
+                                 {"sig": 0, "continuum": 3})
+                self.assertTrue(bool(handle.attrs["ready_for_decode_prior"]))
             pt1 = np.hypot(z[:, 0], z[:, 1])
             self.assertTrue((pt1 > 3.0).all(), "muon pT cut not baked in")
             self.assertAlmostEqual(float((cid != 3).mean()), 0.3, places=1)
             self.assertTrue(dst.with_suffix(".json").exists())
+
+    def test_no_fraction_serializes_null_and_keeps_mapping(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            src, dst = Path(tmp) / "src.hdf5", Path(tmp) / "out.hdf5"
+            self._write_source(src, n=100)
+            main(["--in", str(src), "--out", str(dst), "--min-events", "1",
+                  "--skip-cms-data-check"])
+            with h5py.File(dst, "r") as handle:
+                self.assertIsNone(json.loads(handle.attrs["signal_fraction_applied"]))
+
+    def test_retained_weights_follow_mixture_and_are_not_decode_ready(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            src, dst = Path(tmp) / "src.hdf5", Path(tmp) / "out.hdf5"
+            self._write_source(src, n=100)
+            main(["--in", str(src), "--out", str(dst), "--min-events", "1",
+                  "--unweight", "none", "--signal-fraction", "0.3",
+                  "--skip-cms-data-check"])
+            with h5py.File(dst, "r") as handle, h5py.File(src, "r") as source:
+                self.assertFalse(bool(handle.attrs["ready_for_decode_prior"]))
+                z, w = handle["FDL/zData"][:], handle["FDL/weight"][:]
+                self.assertEqual(len(z), len(w))
+                original = {row.tobytes(): weight for row, weight in
+                            zip(source["FDL/zData"][:], source["FDL/weight"][:])}
+                np.testing.assert_array_equal(w, [original[row.tobytes()] for row in z])
 
     def test_refuses_window_wider_than_generation(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:

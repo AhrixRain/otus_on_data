@@ -42,6 +42,37 @@
 
 ## 1. Status at a glance
 
+**2026-09-07 update — joint Run E final-checkpoint Upsilon test reproduced.**
+artifact-measured: legacy-prior decoding with last_model.pt (epoch 432,
+noise 1/1) gives matched mass W1 identity/model/floor
+0.23668/0.09698/0.01295 GeV, gauge 0.376, versus best_model gauge 1.183.
+But pair-pT W1 worsens to 1.71378 (identity 1.36373, floor 0.11627,
+gauge 1.281); window retention drops from 98.36% to 87.87%, and the decoded
+state widths become 480–537 MeV, washing out the peaks. This is an inclusive
+mass improvement, not demonstrated Upsilon response closure. Report:
+`outputs/cms_Joint/Run_E/upsilon_transfer_legacy_last_model_20260907/REPORT.md`.
+
+**2026-09-07 update — joint Run E legacy Upsilon test reproduced.**
+artifact-measured: a fresh one-million-event decode of the legacy prior with
+the selected deterministic epoch-65 checkpoint reproduces the earlier mass
+metrics to numerical precision. Matched 8,300-event mass W1
+identity/model/floor = 0.23668/0.27764/0.01295 GeV, gauge 1.183; pair-pT KS
+0.33217/0.22000/0.01423, gauge 0.647. Momentum improves, mass degrades.
+Report: `outputs/cms_Joint/Run_E/upsilon_transfer_legacy_20260907/REPORT.md`.
+
+**2026-09-07 update — joint unifiedP1 Upsilon evaluation completed.**
+artifact-measured: the frozen epoch-432 fallback checkpoint was evaluated on
+both the legacy prior and 17,802 correctly materialized new unified-prior
+events. On matched 8,300-event comparisons the new prior's mass W1 increases
+from identity 0.18097 to decoded 0.28268 GeV, with floor 0.01295 and gauge
+1.605; legacy increases from 0.23668 to 0.35483, gauge 1.528. The dominant
+0–5 GeV pair-pT bin degrades; smaller higher-pT bins have mixed results.
+artifact-measured: the checkpoint contains hard gates and a 1e6 failure
+penalty despite the current config requesting nonblocking 35/65 selection.
+This is an evaluation of the saved fallback, not validation of the intended
+unifiedP1 training policy. Full report:
+`outputs/cms_Joint/unifiedP1/upsilon_transfer_comparison/REPORT.md`.
+
 *Updated 2026-09-04 (Session 24).*
 
 **Best accepted result: joint Run E** (`outputs/cms_Joint/Run_E/`), one shared
@@ -3178,3 +3209,128 @@ lists are in `joint_split_manifest.json` - but it makes that file **13 MB** for
 this run. If a future paired run is larger, move the arrays to a sidecar npz
 and keep the per-split count, seed and sha256 in the manifest; the digest check
 in `paired_data.materialize_pairs` already exists to make that safe.
+
+### Session 31 — unifiedP1 new Upsilon prior transfer (2026-09-07)
+
+User requested repository status and testing the new Y/Upsilon prior with
+joint unifiedP1. artifact-measured: the repository started clean at 64c80cf,
+one commit ahead of the locally recorded origin/main; that remote-tracking
+reference became aligned during the session. No commit or push was performed
+by this evaluation. Concurrent changes to existing J/psi/Z plots were observed
+and left alone.
+
+artifact-measured: decoded the full 1,000,000-event legacy prior and the new
+17,802-event evaluation prior using identical frozen best_model.pt (epoch 432,
+stage 4, noise 1/1). Both CUDA transfer pipelines completed, including peak
+plots, state response, distribution metrics and C2ST. Source priors and model
+checkpoints were read only. Outputs are under unifiedP1/upsilon_transfer_legacy,
+upsilon_transfer_unified, and upsilon_transfer_comparison.
+
+artifact-measured: the new input funnel was 3,295,815 generated -> 2,016,181
+selected -> 261,026 uncapped accept-reject -> 17,802 after matching the old
+prior's total signal fraction 0.1905. ESS/N=0.73354; retained state counts
+1S/2S/3S/continuum=677/1053/1661/14411. The 50,000-event default minimum was
+explicitly lowered to 10,000; weights were not clipped and no rows duplicated.
+Inter-state ratios remain those of the new generator, not the legacy mixture.
+
+artifact-measured: shared 8,300-event inclusive comparisons give new mass W1
+identity/model/floor=0.18097/0.28268/0.01295 GeV, gauge 1.605; old
+0.23668/0.35483/0.01295, gauge 1.528. New mass KS
+identity/model/floor=0.12012/0.15976/0.01354, gauge 1.372. New pair-pT KS
+identity/model/floor=0.32554/0.33807/0.01423, gauge 1.040. The new prior is
+closer before and after decoding, but decoding degrades both priors.
+The new prior's mass W1 gauge by own-distribution pair pT is 1.543 (0–5),
+0.775 (5–10), 0.707 (10–20), 0.881 (20–40). Above 40 GeV only 31 matched
+events are available, so no metric is scored. These are conditional marginal
+comparisons, not paired response closure or statistically established gains.
+
+artifact-measured: the saved checkpoint has global_gate_fallback=true,
+hard_gates=true, gate_fail_penalty=1e6 and score 1000002.8452, inconsistent
+with the current nonblocking 35/65 configuration. source-verified: current
+region_data_config does not forward prior_components and load_theory_prior_z
+reads zData only; no certification that the requested training-time generator
+weights/mixtures were implemented is possible from this evaluation. The
+frozen run was evaluated as it exists, without retraining or checkpoint tuning.
+
+source-verified changes: materialize_eval_prior preserves top-level component
+mapping, serializes nullable metadata, keeps retained weights aligned after
+mixture selection and marks weighted outputs not decode-ready;
+upsilon_transfer_test accepts --output-dir; compare_transfer_priors reports
+old/new identity and repeated disjoint-CMS floors in fixed pair-pT bins.
+artifact-measured validation: 16 materializer tests and 3 comparison tests
+passed, both full transfer pipelines succeeded, and the comparison plot was
+visually checked. See the retained REPORT.md and transfer_comparison.json for
+methods, hashes, limitations and reproduction commands.
+
+### Session 32 — joint Run E with legacy Upsilon prior (2026-09-07)
+
+User requested a test of joint Run E with the legacy Y prior. artifact-measured:
+a fresh CUDA decode of all 1,000,000 legacy events with best_model.pt (selected
+epoch 65, deterministic stage 1, noise 0/0) and full transfer evaluation
+completed successfully. No training, tuning, source changes or checkpoint
+modifications. Fresh artifacts are in
+outputs/cms_Joint/Run_E/upsilon_transfer_legacy_20260907/.
+
+artifact-measured: matched 8,300-event comparisons give mass W1
+identity/model/floor=0.23668/0.27764/0.01295 GeV, gauge 1.183; mass KS
+0.16530/0.18386/0.01354, gauge 1.122. Pair-pT KS
+0.33217/0.22000/0.01423, gauge 0.647; pair-pT W1
+1.36373/1.24146/0.11627 GeV, gauge 0.902. Run E improves pair momentum but
+worsens mass. It scores better than unifiedP1 on this legacy prior (mass W1
+0.35483, gauge 1.528 in Session 31), but the selected deterministic epoch-65
+checkpoint and stochastic fallback epoch 432 are not a controlled comparison.
+
+artifact-measured: prior/seed/checkpoint hashes match the historic retained
+Run E transfer; inputs are bit-identical, outputs differ by at most 3.052e-5
+GeV per four-vector element. Standard 16,600-event evaluation mass KS
+0.1916265 is identical, and W1 0.281751353 differs by approximately 1.1e-10
+GeV. Historical findings are reproduced to numerical precision. The 16,600
+sample must not be paired with the 8,300-event reference table's floor.
+MLP C2ST AUC is 0.81455. Mean decoded-minus-input state mass shifts are
+-52.76/-55.58/-57.70 MeV for 1S/2S/3S; these are not CMS-fit peak biases.
+
+artifact-measured: differential mass W1 gauges are 1.034/6.826/1.121/1.102
+in own-distribution pair-pT bins 0–5/5–10/10–20/20–40 GeV. The 5–10 GeV
+reference has little headroom (identity W1 0.05976, floor 0.05297); no
+significance is claimed. The 40+ bin has only 31 matched events and is not
+scored. Identity references, fixed-bin results and provenance checks are in
+identity_references.json. REPORT.md records full methods and limitations;
+the peak plot was visually inspected. This is post-unblinding held-out transfer.
+
+### Session 33 — joint Run E last_model.pt on legacy Upsilon (2026-09-07)
+
+User requested the same legacy Y test with last_model.pt. artifact-measured:
+decoded all 1,000,000 events on CUDA with epoch 432, stage 4, noise 1/1;
+full evaluation succeeded. No source or checkpoint changes, retraining,
+Upsilon tuning or checkpoint selection. Fresh artifacts are in
+outputs/cms_Joint/Run_E/upsilon_transfer_legacy_last_model_20260907/.
+
+artifact-measured: matched 8,300-event mass W1 identity/model/floor is
+0.23668/0.09698/0.01295 GeV, gauge 0.376; mass KS
+0.16530/0.06614/0.01354, gauge 0.347. Best_model from Session 32 gave
+mass W1 0.27764, gauge 1.183. However, pair-pT W1 for last_model is
+identity/model/floor 1.36373/1.71378/0.11627 GeV, gauge 1.281, and pair-pT
+KS 0.33217/0.30120/0.01423, gauge 0.903. Both momentum metrics are worse
+than best_model, whose gauges were 0.902 and 0.647 respectively.
+
+artifact-measured: mass-window retention falls from best_model's 98.3644%
+to 87.8701%. The inclusive metrics condition on survival and do not penalize
+that loss. Mean labelled 1S/2S/3S decoded-minus-input mass shifts are
++184.9/+199.6/+205.8 MeV; final state distribution standard deviations are
+480/512/537 MeV. The overlay visibly washes out the peak structure. These
+are full labelled-state moments, not CMS-fitted Gaussian peak parameters.
+The mass-score improvement is not a successful detector-response claim.
+
+artifact-measured: mass W1 gauges by own-distribution pair-pT bins
+0–5/5–10/10–20/20–40 GeV are 0.257/13.177/4.660/2.157. Low-pT events
+carry the inclusive improvement; higher-pT bins degrade. The 5–10 identity
+is close to its floor, so that gauge is unstable. Above 40 GeV only 31
+matched events exist and no score is reported. No significance is claimed.
+
+artifact-measured: standard 16,600-event evaluation gives mass W1 0.100575,
+KS 0.070241 and MLP C2ST AUC 0.78698. These do not use the 8,300-event
+reference table's sample. The fresh decoded arrays reproduce the existing
+upsilon_transfer_last_model arrays bit-for-bit with matching checkpoint,
+prior and seed. All output events are finite. REPORT.md,
+identity_references.json and best_vs_last_mass.png retain the methods,
+references, hashes and comparison. The plot was visually inspected.

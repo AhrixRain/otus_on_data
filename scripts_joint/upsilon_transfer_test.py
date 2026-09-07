@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
         "gate-selected, so their best_model.pt files are not comparable.",
     )
     parser.add_argument("--prior", type=Path, default=DEFAULT_PRIOR)
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="Separate transfer directory when evaluating multiple priors.")
     parser.add_argument("--cms", type=Path, default=DEFAULT_CMS)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--overwrite", action="store_true")
@@ -74,6 +76,8 @@ def main() -> int:
     transfer_dir = run_dir / "upsilon_transfer"
     if args.checkpoint is not None:
         transfer_dir = run_dir / f"upsilon_transfer_{checkpoint.stem}"
+    if args.output_dir is not None:
+        transfer_dir = args.output_dir.expanduser().resolve()
     decoded_dir = transfer_dir / "decoded"
     decoded_path = decoded_dir / "upsilon_0j1j_prior_decoded_xspace.hdf5"
     decoded_dir.mkdir(parents=True, exist_ok=True)
@@ -103,7 +107,7 @@ def main() -> int:
         "--prior", args.prior,
         "--cms", args.cms,
         "--output-dir", raw_plot_dir,
-        "--sample-label", "Upsilon 0j+1j prior",
+        "--sample-label", args.prior.stem,
     ])
 
     # Decoded x-space vs CMS
