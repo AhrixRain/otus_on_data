@@ -1,0 +1,35 @@
+# Normalize line endings in the repository.
+#
+# The repo was authored on macOS/Linux and later moved to Windows without
+# core.autocrlf set, which rewrote 161 tracked text files to CRLF and made the
+# whole working tree show as modified. Declaring the policy here fixes it for
+# every clone, independent of each machine's git config.
+*               text=auto eol=lf
+
+# Explicitly text, so a stray CRLF never sneaks back in.
+*.py            text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.md            text eol=lf
+*.txt           text eol=lf
+*.json          text eol=lf
+*.csv           text eol=lf
+*.tex           text eol=lf
+*.bib           text eol=lf
+*.ipynb         text eol=lf
+*.dat           text eol=lf
+
+# Windows-only helpers genuinely want CRLF.
+*.ps1           text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# Never touch these.
+*.png           binary
+*.pdf           binary
+*.hdf5          binary
+*.h5            binary
+*.npz           binary
+*.npy           binary
+*.pt            binary
+*.root          binary

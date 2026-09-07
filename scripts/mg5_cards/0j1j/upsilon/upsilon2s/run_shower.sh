@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+DYLD_LIBRARY_PATH=/Users/ahrimarin/MG5_aMC_v3_7_0/HEPTools/lib:$DYLD_LIBRARY_PATH /Users/ahrimarin/MG5_aMC_v3_7_0/HEPTools/pythia8/share/Pythia8/examples/main164 -c tag_1_pythia8.cmd

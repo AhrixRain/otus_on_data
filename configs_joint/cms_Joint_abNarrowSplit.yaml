@@ -1,0 +1,148 @@
+# cms_Joint A/B narrow prior, encoder and decoder noise schedules SPLIT.
+#
+# Question under test (memory.md section 6, open question 8)
+# ---------------------------------------------------------
+# The completed narrow arm (outputs/cms_Joint/AB_narrow) failed the J/psi
+# latent mass gate at all 35 validations and ended WORSE than the identity map
+# (KS 0.4148 against an identity baseline of 0.3706, gauge 1.12). The leading
+# explanation is structural rather than statistical:
+#
+#   stage 1 sets core_noise_multiplier = tail_noise_multiplier = 0 for BOTH
+#   components. A deterministic decoder has no stochastic source with which to
+#   put detector resolution back, so the cycle reconstruction term penalises
+#   any encoder that throws mass width away. Against a near-delta prior
+#   (the narrow arm's prior has an IQR width of 0.16 MeV) the physically
+#   correct encoder is therefore not merely hard to find, it is forbidden.
+#
+# This arm changes exactly one thing against cms_Joint_abNarrow.yaml: the
+# decoder is stochastic from epoch 1 while the encoder stays deterministic,
+# which is the physically correct assignment -- the decoder ADDS resolution,
+# the encoder REMOVES it.
+#
+# Read-out
+# --------
+# Primary: regions.jpsi.gates.latent_mass_ks_vs_identity in each validation.
+#   < 1.0  the encoder is doing something the input alone does not do
+#   <= 0.5 the gate threshold set below
+#   0.0    the finite-sample floor
+# The completed narrow arm sits at or above 1.0 at every single validation, so
+# any sustained excursion below 1.0 is the signal. Secondary: the raw
+# latent_mass_ks, which must fall below the identity baseline of 0.3706.
+#
+# If this arm still cannot get below 1.0, the deterministic-stage-1 explanation
+# is wrong and the failure is in the objective itself (a point-estimate encoder
+# standing in for a posterior), which is section 7 step 5.
+extends: cms_Joint_abNarrow.yaml
+
+run_label: A/B narrow prior, split noise schedules
+run_name: AB_narrow_split
+
+comparison:
+  baseline_run: AB_narrow
+  controlled_change: >-
+    Encoder/decoder noise schedules only. The prior file, data, model,
+    losses, learning rates, epoch budget and seeds are inherited unchanged
+    from cms_Joint_abNarrow.yaml. The decoder is stochastic from the first
+    epoch; the encoder is deterministic until stage 2.
+
+# The inherited runA stages are retired by name so the merge keeps their
+# identities but never runs them. The two split stages below are appended.
+stages:
+  - name: runA_stage1_deterministic_identity
+    enabled: false
+  - name: runA_stage2_gaussian_response
+    enabled: false
+  - name: runA_stage3_stochastic_joint
+    enabled: false
+  - name: runA_stage4_tail_polish
+    enabled: false
+
+  # Stage A -- the actual experiment. Identical to the retired stage 1 in every
+  # optimiser and loss setting; only the noise assignment differs.
+  - name: split_stageA_stochastic_decoder
+    enabled: true
+    epochs: 72
+    eval_every: 5
+    optimizer: adamw
+    lr: 0.0002
+    lr_schedule: cosine
+    lr_min_factor: 0.1
+    lr_warmup_epochs: 5
+    lr_warmup_start_factor: 0.1
+    weight_decay: 1.0e-05
+    adam_eps: "1e-7"
+    gradient_clip_norm: 1
+    num_slices: 256
+    beta: 1
+    lamb: 1
+    tau: 0.25
+    rho: 0
+    nu_e: 1
+    nu_d: 1
+    # The decoder runs at its learned sigmas from epoch 1: multiplier 1.0 means
+    # "use the resolution the network has learned", not "add extra noise".
+    decoder_core_noise_multiplier: 1.0
+    decoder_tail_noise_multiplier: 0.0
+    encoder_core_noise_multiplier: 0.0
+    encoder_tail_noise_multiplier: 0.0
+    # Shared keys retained so any reader (or older code path) that ignores the
+    # per-component keys still sees a well-formed stage.
+    core_noise_multiplier: 0.0
+    tail_noise_multiplier: 0.0
+
+  # Stage B -- let the encoder become stochastic too, decoder held at 1.0.
+  - name: split_stageB_stochastic_encoder
+    enabled: true
+    epochs: 88
+    eval_every: 5
+    optimizer: adamw
+    lr: 0.0001
+    lr_schedule: cosine
+    lr_min_factor: 0.1
+    lr_warmup_epochs: 3
+    lr_warmup_start_factor: 0.2
+    weight_decay: 1.0e-05
+    adam_eps: "1e-7"
+    gradient_clip_norm: 1
+    num_slices: 384
+    beta: 1
+    lamb: 1
+    tau: 1
+    rho: 0
+    nu_e: 0.1
+    nu_d: 0.1
+    decoder_core_noise_multiplier: 1.0
+    decoder_tail_noise_multiplier: 0.0
+    encoder_core_noise_multiplier:
+      start: 0.1
+      end: 1.0
+      schedule: cosine
+    encoder_tail_noise_multiplier: 0.0
+    core_noise_multiplier:
+      start: 0.1
+      end: 1.0
+      schedule: cosine
+    tail_noise_multiplier: 0.0
+
+# Gates and targets on the identity gauge. Thresholds are not guesses: the Z
+# region of the completed A/B reaches 0.001-0.03 (so a working map clears 0.5
+# by more than an order of magnitude), the smeared J/psi arm sits at 0.19-1.72,
+# and the narrow J/psi arm never goes below 1.0. A 0.5 gate therefore separates
+# "did real work" from "did what the input already did" on measured evidence.
+regions:
+  jpsi:
+    selection:
+      gates:
+        latent_mass_ks_vs_identity: 0.5
+        latent_mass_w1_gev_vs_identity: 0.5
+      targets:
+        latent_mass_ks_vs_identity: 0.25
+        latent_mass_w1_gev_vs_identity: 0.25
+  z:
+    selection:
+      gates:
+        latent_mass_ks_vs_identity: 0.5
+        latent_mass_w1_gev_vs_identity: 0.5
+      targets:
+        latent_mass_ks_vs_identity: 0.25
+        latent_mass_w1_gev_vs_identity: 0.25

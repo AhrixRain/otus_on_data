@@ -1,0 +1,15 @@
+{
+  "_source_file": "cms_jpsi_mumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_3p0369_3p1569_1M_reweighted.hdf5",
+  "_selection": "jpsi",
+  "_mass_convention": "stable (massive muons, momentum-based) - see prior_stats.py",
+  "_provenance": "Measured 2026-09-04 by scripts_joint/build_ab_priors.py and recorded as the 'narrow' arm of data/cms_jpsi_ab_manifest.json. The narrow arm IS this file plus the J/psi training selection, with no smearing applied.",
+  "_why": "This is the prior underlying joint Run F and both arms of the prior-width A/B. Its generation cards are not in version control; a regenerated prior must reproduce these numbers before its cards can be committed as provenance.",
+  "events": 1000000,
+  "mass_mean_gev": 3.095502615787251,
+  "mass_std_mev": 14.704454073157972,
+  "muon_pt_median_gev": 12.407457781598577,
+  "muon_pt_p99_gev": 40.64612941058868,
+  "pair_pt_median_gev": 26.055430266427926,
+  "pair_pt_p99_gev": 64.21779843941073,
+  "abs_eta_median": 0.8381325952509378
+}

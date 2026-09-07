@@ -21,6 +21,10 @@ saves/
 *.h5
 *.json
 
+# Ignore images for now
+*.md
+*.pdf
+
 # Ignore model checkpoints (any size)
 *.pt
 *.pth
@@ -47,3 +51,19 @@ outputs/**/.plot_cache/
 outputs/**/*.csv
 outputs/**/*.txt
 outputs/**/*.md
+
+# Provenance references are small JSON that MUST be in version control; the
+# blanket *.json rule above would otherwise silently drop them, which defeats
+# the point of a reproduction reference (see docs/mg5_vm_runbook.md).
+!scripts/prior_build/reference/*.json
+
+# MG5 / Pythia8 generation artifacts. The toolchain and its output live on the
+# generation VM's local disk, never in the repo or on the shared folder.
+*.lhe
+*.lhe.gz
+MG5_aMC*/
+mg5work/
+Events/
+.slide-build
+docs
+deliverables

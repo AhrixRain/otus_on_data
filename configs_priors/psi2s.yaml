@@ -1,0 +1,24 @@
+# psi(2S) region - BLIND, do not open the CMS data
+# Every number below is PDG or derived by the rule in _common.yaml.
+extends: _common.yaml
+region: psi2s
+label: "psi(2S) region - BLIND, do not open the CMS data"
+
+states:
+  - name: psi2s
+    pdg_id: 100443
+    mass_gev: 3.686097
+    width_gev: 2.94e-4
+    br_mumu: 0.0080
+
+components:
+  # Generated in the same fiducial region, stored side by side, never mixed.
+  - {id: 0, kind: signal, states: [psi2s]}
+  - {id: 3, kind: continuum, model: sm_mumass}
+
+blinding:
+  status: sealed
+  policy: >-
+    Build this prior with the others so it is ready, then do not load, plot or
+    compare the psi(2S) CMS data until the method is frozen. Upsilon is already
+    unblinded, so this is the only genuinely blind prediction left.

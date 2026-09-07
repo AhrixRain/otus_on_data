@@ -1,0 +1,41 @@
+# Same experiment as cms_Joint_abNarrowSplit.yaml, on a shortened schedule.
+#
+# Why a separate file: the schedule and the matmul precision both change, so
+# this run is NOT bit-comparable with AB_narrow_split or with either A/B arm.
+# Use it for NEW questions, not to re-read an old one.
+#
+# Where the time goes (artifact-measured on AB_narrow_split, RTX 4080 Laptop):
+#   109 s/epoch, of which validation costs 0.8 s. Validation is essentially
+#   free; the cost is training, and inside training it is the sorts in the
+#   sliced-Wasserstein and W1 terms, not the six-layer 512 MLP.
+#   Peak CUDA 7.94 GiB against an 11 GiB cap, so memory is not the constraint.
+#
+# Four changes, expected ~40% wall-clock reduction:
+#   1. 60 + 60 epochs instead of 72 + 88   (-25% epochs)
+#   2. num_slices 192 / 288 instead of 256 / 384  (-25% sort work per step;
+#      SWD error grows only as 1/sqrt(L), so this costs ~15% more estimator
+#      noise for ~25% less time)
+#   3. eval_every 2 instead of 5. Validation costs 0.8 s, so this is +0.4%
+#      wall clock for 2.5x the resolution on the trend curve. The M1 read-out
+#      was limited by having 13 points, not by anything expensive.
+#   4. performance.tf32 on.
+extends: cms_Joint_abNarrowSplit.yaml
+
+run_label: A/B narrow prior, split noise, fast schedule
+run_name: AB_narrow_split_fast
+
+performance:
+  # TF32 changes every matmul mantissa, so it is opt-in and recorded in
+  # provenance.json. Safe here because it never touches the cancellation-free
+  # invariant mass or the sorts: those are elementwise and comparison ops.
+  tf32: true
+
+stages:
+  - name: split_stageA_stochastic_decoder
+    epochs: 60
+    eval_every: 2
+    num_slices: 192
+  - name: split_stageB_stochastic_encoder
+    epochs: 60
+    eval_every: 2
+    num_slices: 288

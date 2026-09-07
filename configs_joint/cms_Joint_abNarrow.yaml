@@ -1,0 +1,53 @@
+# cms_Joint A/B arm "narrow": controlled prior-mass-width test, honest width.
+#
+# Question under test
+# -------------------
+# Runs D and E scored extremely well on J/psi mass closure and both selected a
+# stage-1 DETERMINISTIC checkpoint as best. Their prior had been hand-smeared to
+# a 26.2 MeV pair-mass width against CMS data at 28.1 MeV, so the encoder only
+# had to remove ~7% of the width -- close to an identity map in mass. Run F used
+# the 14.7 MeV showered prior and failed the J/psi latent mass gate at every one
+# of its 51 validations.
+#
+# Those runs differ in generator, shower, reweighting, event count and width at
+# once. This arm and cms_Joint_abSmeared.yaml differ ONLY in the pair-mass width
+# of the prior: both read event-matched files built by
+# scripts_joint/build_ab_priors.py from the same source events.
+#
+# This arm keeps the unsmeared ~14.7 MeV width.
+#
+# Bounded probe: stages 1 and 2 only. Run E selected its best checkpoint at
+# stage-1 epoch 65 and Run F was already failing inside stage 1, so the
+# discriminating signal is expected well before stage 2 ends.
+extends: cms_Joint_runE.yaml
+
+run_label: A/B narrow prior
+run_name: AB_narrow
+
+comparison:
+  baseline_run: Run_E
+  controlled_change: >-
+    Prior pair-mass width only. Arm "narrow" keeps the source 0j1j width
+    (~14.7 MeV); arm "smeared" is the same events smeared to ~26.2 MeV.
+    Event-matched, so count, kinematics and composition are identical.
+
+regions:
+  jpsi:
+    paths:
+      theory_prior_file: cms_jpsi_ab_narrow.hdf5
+
+stages:
+  - name: runA_stage1_deterministic_identity
+    epochs: 72
+  - name: runA_stage2_gaussian_response
+    epochs: 88
+  - name: runA_stage3_stochastic_joint
+    enabled: false
+  - name: runA_stage4_tail_polish
+    enabled: false
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Do not load, train on, tune against, or select these checkpoints with
+    Upsilon. This is a diagnostic A/B, not a result run.

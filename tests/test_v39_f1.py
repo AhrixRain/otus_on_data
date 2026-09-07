@@ -196,6 +196,13 @@ class TestV39Config(unittest.TestCase):
         cfg = resolve_config(
             load_config(REPO_ROOT / "configs/archive/cms_JpsiDoubleMuons_v3.9_F1_restricted.yaml")
         )
+        # data_cache_metadata fingerprints the prior file, so it needs the file
+        # to exist. This archived Program A config points at the original delta
+        # prior, which is not present on every machine. Skip loudly rather than
+        # error, so a missing input is never mistaken for a code regression.
+        prior_file = Path(cfg["paths"]["theory_prior_file"])
+        if not prior_file.exists():
+            self.skipTest(f"prior file not present on this machine: {prior_file}")
         meta = cms_data.data_cache_metadata(cfg, None)
         self.assertIn("theory_prior_selection", meta)
         self.assertEqual(meta["theory_prior_selection"]["muon_pt_min"], 3.0)

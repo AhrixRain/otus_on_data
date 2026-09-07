@@ -1,4 +1,18 @@
-"""Deterministic validation and worst-region selection for ``cms_Joint``."""
+"""Deterministic validation and worst-region selection for ``cms_Joint``.
+
+Every ``{direction}_*`` metric is reported alongside two references computed by
+``identity_reference``: ``{direction}_identity_*`` (the score of doing nothing
+at all) and ``{direction}_floor_*`` (the score of two independent draws of the
+same distribution). The derived ``{direction}_*_vs_identity`` gauge is 1.0 for
+a no-op map, 0.0 at the finite-sample floor, and is what a gate should be
+placed on. See ``identity_reference`` for why: on the 2026-09-04 smeared-prior
+A/B arm the identity map passed every strict latent target, so the raw metrics
+alone cannot certify that any unfolding took place.
+
+The cycle direction gets no identity reference on purpose: the identity cycle
+is x -> x, whose metrics are identically zero, so cycle gates have no power
+against a no-op by construction and a gauge there would divide by zero.
+"""
 
 from __future__ import annotations
 
@@ -10,63 +24,19 @@ import torch
 
 from physics import invariant_mass_np, validate_daughter_masses
 
+# Re-exported so callers keep importing the 1-D statistics from this module.
+from identity_reference import (  # noqa: F401
+    equal_subset as _equal_subset,
+    ks_distance,
+    pair_pt,
+    reference_block,
+    wasserstein_1d,
+    width_relative_error as _width_relative_error,
+)
+
 
 def _first(value):
     return value[0] if isinstance(value, (tuple, list)) else value
-
-
-def wasserstein_1d(a: np.ndarray, b: np.ndarray) -> float:
-    """Dependency-free empirical W1, including unequal sample counts."""
-    a = np.sort(np.asarray(a, dtype=np.float64).reshape(-1))
-    b = np.sort(np.asarray(b, dtype=np.float64).reshape(-1))
-    if not len(a) or not len(b):
-        return float("nan")
-    n = max(len(a), len(b))
-    q = (np.arange(n, dtype=np.float64) + 0.5) / n
-    aq = np.interp(q, (np.arange(len(a)) + 0.5) / len(a), a)
-    bq = np.interp(q, (np.arange(len(b)) + 0.5) / len(b), b)
-    return float(np.mean(np.abs(aq - bq)))
-
-
-def ks_distance(a: np.ndarray, b: np.ndarray) -> float:
-    a = np.sort(np.asarray(a, dtype=np.float64).reshape(-1))
-    b = np.sort(np.asarray(b, dtype=np.float64).reshape(-1))
-    if not len(a) or not len(b):
-        return float("nan")
-    grid = np.sort(np.concatenate([a, b]))
-    cdf_a = np.searchsorted(a, grid, side="right") / len(a)
-    cdf_b = np.searchsorted(b, grid, side="right") / len(b)
-    return float(np.max(np.abs(cdf_a - cdf_b)))
-
-
-def pair_pt(values: np.ndarray) -> np.ndarray:
-    values = np.asarray(values)
-    return np.hypot(values[:, 0] + values[:, 4], values[:, 1] + values[:, 5])
-
-
-def _width_relative_error(real: np.ndarray, fake: np.ndarray) -> float:
-    real_width = float(np.std(real))
-    fake_width = float(np.std(fake))
-    return abs(fake_width - real_width) / max(real_width, 1.0e-12)
-
-
-def _equal_subset(
-    a: np.ndarray,
-    b: np.ndarray,
-    *,
-    max_events: int | None,
-    seed: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    n = min(len(a), len(b))
-    if max_events is not None:
-        n = min(n, int(max_events))
-    if n < 2:
-        raise ValueError("Joint validation needs at least two events per distribution")
-    rng = np.random.default_rng(seed)
-    return (
-        np.asarray(a[rng.choice(len(a), n, replace=False)], dtype=np.float32),
-        np.asarray(b[rng.choice(len(b), n, replace=False)], dtype=np.float32),
-    )
 
 
 @torch.inference_mode()
@@ -165,6 +135,42 @@ def evaluate_region(
     metrics.update(
         _distribution_metrics(
             "cycle", x, x_cycle, daughter_masses=masses, stable_mass=True
+        )
+    )
+
+    # Identity and finite-sample references. These make every gated number
+    # readable: a metric is only evidence of unfolding if it beats what the
+    # input itself scores. The mass convention is passed in rather than
+    # re-derived, so the references can never drift from the metrics above.
+    #
+    # latent: the map is x -> z. Doing nothing means emitting x unchanged.
+    # direct: the map is z -> x. Doing nothing means emitting z unchanged,
+    #         tiled to match the decoder-draw count so the floor is estimated
+    #         at the sample size the model was actually scored at.
+    metrics.update(
+        reference_block(
+            "latent",
+            real_values=z,
+            identity_values=x,
+            reference_pool=arrays["z_val"],
+            model_metrics=metrics,
+            mass_fn=lambda values: invariant_mass_np(
+                values, daughter_masses=masses, stable=False
+            ),
+            seed=seed + 500,
+        )
+    )
+    metrics.update(
+        reference_block(
+            "direct",
+            real_values=x_direct_truth,
+            identity_values=np.tile(z, (len(direct_draws), 1)),
+            reference_pool=arrays["x_val"],
+            model_metrics=metrics,
+            mass_fn=lambda values: invariant_mass_np(
+                values, daughter_masses=masses, stable=True
+            ),
+            seed=seed + 600,
         )
     )
 

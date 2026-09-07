@@ -1,0 +1,17 @@
+# Z region
+# Every number below is PDG or derived by the rule in _common.yaml.
+extends: _common.yaml
+region: z
+label: "Z region"
+
+states:
+  - name: z
+    pdg_id: 23
+    mass_gev: 91.1876
+    width_gev: 2.4952
+    br_mumu: 0.033662
+
+components:
+  # Generated in the same fiducial region, stored side by side, never mixed.
+  - {id: 0, kind: signal, states: [z]}
+  - {id: 3, kind: continuum, model: sm_mumass}

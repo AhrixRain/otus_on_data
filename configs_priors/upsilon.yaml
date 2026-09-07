@@ -1,0 +1,21 @@
+# Upsilon region - three narrow states in one window.
+# Replaces the current prior, whose signal components are 110-192 MeV wide
+# against physical widths of 20-54 keV (memory.md section 7.9).
+extends: _common.yaml
+region: upsilon
+label: "Upsilon(1S,2S,3S) region"
+
+states:
+  - {name: upsilon1s, pdg_id: 553,    mass_gev: 9.46040,  width_gev: 5.402e-5, br_mumu: 0.0248}
+  - {name: upsilon2s, pdg_id: 100553, mass_gev: 10.02326, width_gev: 3.198e-5, br_mumu: 0.0193}
+  - {name: upsilon3s, pdg_id: 200553, mass_gev: 10.35520, width_gev: 2.032e-5, br_mumu: 0.0218}
+
+components:
+  - {id: 0, kind: signal, states: [upsilon1s]}
+  - {id: 1, kind: signal, states: [upsilon2s]}
+  - {id: 2, kind: signal, states: [upsilon3s]}
+  - {id: 3, kind: continuum, model: sm_mumass}
+
+window_note: >-
+  The window is the union of the three per-state windows from the common rule,
+  8.987 - 10.873 GeV. The current file uses 8.5 - 11.5, chosen by hand.

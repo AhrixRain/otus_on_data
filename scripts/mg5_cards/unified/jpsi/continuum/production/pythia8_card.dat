@@ -1,0 +1,40 @@
+! Unified prior Pythia8 INPUT card, method book section 6.
+! Region jpsi, component continuum.
+!
+! This is the card MG5 reads, NOT the resolved `tag_1_pythia8.cmd` MG5 writes.
+! The two are easy to confuse and the confusion is fatal: the resolved card
+! carries MG5-owned parameters such as `JetMatching:setMad` and `Beams:LHEF`,
+! and feeding those back in makes MG5 abort with
+!   "The parameter JetMatching:setMad is already set to False."
+! artifact-measured 2026-09-06 -- that is exactly how the first shakedown run
+! failed.  So this card carries only what a user is allowed to set, and matches
+! the recovered originals field for field.
+!
+! Merging:TMS = -1.0 means "take it from the run card's ktdurham".  The merging
+! scan is therefore driven entirely by `ktdurham` in the run card, and TMS
+! cannot silently disagree with the matrix-element cut.  Merging:doKTMerging and
+! Merging:Dparameter are set by MG5 from ktdurham and dparameter.
+!
+! MPI-off and hadronisation-off are inherited from the recovered original for
+! continuity and are declared DELIBERATELY, not silently.  MPI affects pair pT,
+! which is a conditioning feature of the response, so MPI-on is a systematic
+! variation to run once -- not a setting to leave undocumented.
+!
+! Merging:Process = guess is kept because it is what the original used.  What
+! Pythia actually resolves must be read out of the run log and recorded; "guess"
+! is not a provenance record.  artifact-measured 2026-09-06 on the J/psi signal
+! reshower: Pythia resolved it to "Les Houches User Process(es) code 9999, 2 -> 2"
+! with m3Hat = 3.097 (the resonance) and m4Hat = 0 (the light parton).
+!
+Main:numberOfEvents       = -1
+HEPMCoutput:file          = hepmc.gz
+Merging:TMS               = -1.0
+Merging:Process           = guess
+Merging:nJetMax           = 1
+PartonLevel:ISR           = on
+PartonLevel:FSR           = on
+TimeShower:QEDshowerByL   = on
+PartonLevel:MPI           = off
+HadronLevel:all           = off
+Random:setSeed            = on
+Random:seed               = 20260916

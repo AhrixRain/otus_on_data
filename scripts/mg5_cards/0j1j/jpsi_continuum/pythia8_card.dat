@@ -1,0 +1,21 @@
+! Pythia8 card for inclusive J/psi-window 0/1-parton CKKW-L samples.
+Main:numberOfEvents       = -1
+HEPMCoutput:file          = hepmc.gz
+
+! MadGraph transfers ktdurham=5 GeV to Merging:TMS.
+Merging:TMS               = -1.0
+Merging:Process           = guess
+Merging:nJetMax           = 1
+
+! Keep ISR/FSR and explicitly retain lepton QED FSR. Hadronization and MPI
+! are excluded so the prompt hard-process dimuon is unambiguous.
+PartonLevel:ISR           = on
+PartonLevel:FSR           = on
+TimeShower:QEDshowerByL   = on
+PartonLevel:MPI           = off
+HadronLevel:all           = off
+
+! Fixed production seed for the shower. Chunk-specific seeds are copied into
+! the process Cards before each generate_events call and recorded in HDF5.
+Random:setSeed            = on
+Random:seed               = 340102

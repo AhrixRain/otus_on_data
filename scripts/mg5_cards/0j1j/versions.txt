@@ -1,0 +1,1004 @@
+# Generation toolchain for the mg5py8_ckkwl_8tev_inclusive_0j1j priors
+#
+# Rewritten 2026-09-05 on the Ubuntu 24.04 generation VM, by
+# docs/vm_rebuild_2404_prompt.md step 9. It has FOUR sections and they are
+# deliberately NOT merged or reconciled:
+#
+#   [this VM - Ubuntu 24.04, built 2026-09-05]   what is installed here now
+#   [previous VM - Ubuntu 22.04, SUPERSEDED]     kept verbatim; machine destroyed
+#   [recovered from the original toolchain]      what actually made the priors
+#   [deltas]                                     every field where they disagree
+#
+# Merging them would destroy the only thing this file is for: telling a reader
+# whether this VM can reproduce the original priors or only regenerate them.
+# Evidence labels follow CLAUDE.md section 2. An unlabelled number is a bug.
+
+
+#=====================================================================
+[this VM - Ubuntu 24.04, built 2026-09-05]
+#=====================================================================
+# source-verified unless marked otherwise: read from this machine or printed by
+# the tool itself. INCOMPLETE - see [install status] at the end of this section.
+
+[host]
+os                      Ubuntu 24.04.4 LTS          # lsb_release -d; /etc/os-release
+kernel                  7.0.0-31-generic            # uname -r
+hostname                ahrimarin-VMware-Virtual-Platform
+arch                    x86_64
+cpu_model               13th Gen Intel(R) Core(TM) i9-13980HX
+vcpu                    8                           # nproc
+ram                     15 GiB total, 13 GiB available   # free -h
+disk_install_volume     /dev/sda2 on /  126 GiB, 109 GiB free   # df -h /
+install_root            ~/MG5_aMC                   # VM local disk, NOT /mnt/hgfs
+work_root               ~/mg5work                   # generation target, NOT /mnt/hgfs
+python3                 Python 3.12.3               # system interpreter
+open_vm_tools           2:13.0.10-0ubuntu0.24.04.1  # dpkg-query
+
+[network - runbook step 1, verified before installing anything]
+# This was checked first on purpose: the 22.04 VM was reinstalled because of a
+# networking and shared-folder fault, and finding such a fault after a
+# three-hour build wastes the build.
+dns_mode                systemd-resolved, stub resolv.conf, DNS 192.168.6.2
+interface               ens33 UP, 192.168.6.130/24, default via 192.168.6.2 (dhcp)
+launchpad.net           resolves (AAAA 2620:2d:4000:1009::f3), HTTP 200 in 0.776 s
+lhapdf.hepforge.org     HTTP/2 301, reachable
+verdict                 CLEAN - the 22.04 networking fault did not follow the reinstall
+
+[shared folder - runbook step 1]
+mount                   vmhgfs-fuse on /mnt/hgfs type fuse.vmhgfs-fuse
+                        (rw,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+repo_visible            /mnt/hgfs/otus/CLAUDE.md readable
+old_tree_visible        /mnt/hgfs/MG5_aMC_v3_7_0/MG5_aMC_v3_7_0 readable
+write_test              wrote and deleted /mnt/hgfs/otus/docs/.vm_write_test.tmp - OK
+fstab_entry             ABSENT - and deliberately left absent, see below
+persistence             source-verified: the share is auto-mounted at boot by
+                        open-vm-tools, not by fstab. This boot began at epoch
+                        1788634242 (2026-09-05 11:50:42) and the journal records
+                        `vmtoolsd[5577]: /usr/bin/vmhgfs-fuse: 0 - HGFS FUSE
+                        client enabled` at 11:53:11 of the same boot. systemd
+                        tracks the result as mnt-hgfs.mount with FragmentPath
+                        empty and SourcePath=/proc/self/mountinfo - i.e. a
+                        discovered mount, no unit file and no fstab line.
+# proposal, NOT done: the runbook section 5 fstab line
+#   .host:/  /mnt/hgfs  fuse.vmhgfs-fuse  allow_other,defaults  0  0
+# was NOT added. On 24.04 with open-vm-tools 13.0.10 the share already mounts at
+# boot, and an fstab entry for the same mountpoint would race the vmtoolsd mount
+# and risk a stacked mount. If a future boot comes up without /mnt/hgfs, add the
+# line then. Recorded as a deviation from the runbook, not as an improvement.
+# NOTE: no reboot was performed to test this. A reboot would kill the Claude Code
+# CLI session doing the testing. The evidence above is from the boot this session
+# is running in, which is itself a completed reboot of the reinstalled OS.
+
+[guest clock - runbook section 9]
+ntp_service             active; "System clock synchronized: yes"
+timezone                America/Los_Angeles (PDT, UTC-7)
+checked_at_epoch        1788634683
+guest_epoch             1788634683
+cloudflare_epoch        1788634683   # HTTP Date header, www.cloudflare.com
+google_epoch            1788634683   # HTTP Date header, www.google.com
+clock_offset            0 seconds against both - the guest clock is correct
+# The repo's apparent date inconsistency is a UTC/PDT artefact, not a fault.
+# Do not "fix" it by editing dates. Compare epoch seconds, never formatted times.
+
+[base packages - runbook section 3, installed 2026-09-05]
+# Installed by the user in a native terminal, because sudo on this VM requires a
+# password that a Claude Code CLI session cannot supply (`sudo -n true` ->
+# "sudo: a password is required"). Recorded as a real constraint on unattended
+# work, not as a fault.
+gcc                     gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+g++                     g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+gfortran                GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+make                    GNU Make 4.3
+python3                 Python 3.12.3
+# Present: build-essential, gfortran, python3-dev, zlib1g-dev (pulled in as a
+# dependency), wget, rsync, curl, gnupg, open-vm-tools.
+# STILL MISSING, and none of them blocked anything: python3-venv, libbz2-dev,
+# git. They were lost to a line-wrap when the install command was pasted, so
+# only the first line reached apt. MG5, LHAPDF and Pythia8 need none of them.
+# git is absent, which is consistent with this session running no git command.
+pip                     ABSENT - `python3 -m pip` -> "No module named pip".
+#   Nothing needed it. PEP 668 was therefore never actually hit.
+fortran_workaround      NONE NEEDED. Both LHAPDF and Pythia8 built clean under
+#   gfortran 13.3.0. The anticipated -fallow-argument-mismatch was NOT required,
+#   so this build IS clean out of the box. Recorded because the opposite was
+#   expected.
+
+[generator - runbook step 4, installed 2026-09-05]
+mg5_amc                 3.7.0                     # ~/MG5_aMC/VERSION
+mg5_amc_url             https://launchpad.net/mg5amcnlo/3.0/3.6.x/+download/MG5_aMC_v3.7.0.tar.gz
+# NOTE THE SERIES PATH. The URL pattern in the rebuild prompt,
+#   .../3.0/3.7.x/+download/MG5_aMC_v3.7.0.tar.gz
+# returns HTTP 404. MG5_aMC 3.7.0 is published under the **3.6.x** series, not
+# 3.7.x; only 3.7.3 lives under 3.7.x. Found by scraping the hrefs on
+# launchpad.net/mg5amcnlo/+download. Verified with a HEAD request
+# (303 -> 200, Content-Length 31786016) before downloading.
+mg5_amc_sha256          b151dee0a46bfd625959ca0202aa5f3a26ed5492a0fb98e1f3c164c860947870
+#   COMPUTED HERE, on the 31,786,016-byte file actually downloaded. Not carried
+#   over from anywhere. (For contrast, the 3.7.3 hash in the superseded section
+#   below is a different file entirely.)
+mg5_amc_tarball_mtime   2026-01-05 21:21:59 (from the gzip header)
+#   which independently corroborates the "date = 2026-01-05" in VERSION.
+install_root            /home/ahrimarin/MG5_aMC   # local disk, NOT /mnt/hgfs
+# artifact-measured, and the strongest single check in this section:
+#   sha256(~/MG5_aMC/VERSION) = d8521e7ace79d59769027ff095a48d6772801b6d264e47960a804d9d39d8fb5e
+#   which is BYTE-IDENTICAL to sha256(<OLD_TREE>/VERSION). The launchpad tarball
+#   is the same 3.7.0 release as the original macOS installation.
+python312_compatibility OK - MG5 3.7.0 RUNS UNDER PYTHON 3.12.3.
+#   `import model sm` succeeds, restricts with restrict_default.dat, defines the
+#   multiparticles and `display particles mu-` prints correctly. No traceback.
+#   So the prompt's contingency (install python3.11 alongside) is NOT needed and
+#   was not proposed. Note `./bin/mg5_aMC --version` does not exist in 3.7.0 -
+#   it errors with "no such option"; the version comes from VERSION and the banner.
+
+[MG5 options persisted - runbook section 6.1]
+automatic_html_opening  False   # input/mg5_configuration.txt line 116
+auto_update             0       # input/mg5_configuration.txt line 105
+# The Session 27 trap is CONFIRMED again: `set automatic_html_opening False`
+# printed "In order to keep this changes permanent please run 'save options'".
+# `--save` alone does not persist it.
+# auto_update=0 is a NEW addition this session and it is load-bearing: on first
+# run MG5 3.7.0 offered "New Version of MG5 available! Do you want to update
+# your current version?" with a 60-second timeout. Accepting that would silently
+# destroy the 3.7.0 pin this whole exercise depends on. Turn it off before any
+# unattended run.
+
+[pdf - runbook step 5, installed 2026-09-05]
+lhapdf                  6.5.6   # MATCHED to the original
+lhapdf_route            MANUAL BUILD, then pointed MG5 at it.
+#   Three routes were considered, as the prompt asks. `help install` in MG5 3.7.0
+#   shows the installer takes ONLY --force and --keep_source for lhapdf6 - there
+#   is NO version pin - and it hardcodes LHAPDF-6.5.5:
+#     wget https://lhapdf.hepforge.org/downloads/LHAPDF-6.5.5.tar.gz
+#   So `install lhapdf6` gives 6.5.5, not the recovered 6.5.6. That is exactly
+#   how the 22.04 build ended up on 6.5.5.
+#   What was done: ran `install lhapdf6` first (succeeded, 6.5.5, ~60 s), then
+#   built 6.5.6 from source and repointed MG5 at it.
+lhapdf_656_url          https://lhapdf.hepforge.org/downloads/?f=LHAPDF-6.5.6.tar.gz
+lhapdf_656_sha256       6b8b7e38dc26a977a24f5a321215b7054c14a4469d04134d70cb93a860eeeea7
+lhapdf_656_prefix       ~/MG5_aMC/HEPTools/lhapdf6_py3_656
+lhapdf_656_configure    ./configure --prefix=<above> PYTHON=/usr/bin/python3
+# 24.04 GOTCHA, worth recording: LHAPDF's configure aborts with
+#   "configure: error: Cannot find python in your system path"
+# because 24.04 ships only `python3`, no `python`. Passing PYTHON=/usr/bin/python3
+# fixes it without installing python-is-python3 (which would need sudo).
+lhapdf_655_still_present ~/MG5_aMC/HEPTools/lhapdf6_py3 - installed but NOT pointed at
+#   Left in place rather than deleted, so this record stays checkable.
+mg5_lhapdf_config       lhapdf = ~/MG5_aMC/HEPTools/lhapdf6_py3_656/bin/lhapdf-config
+#   input/mg5_configuration.txt line 258, via `set lhapdf ... ` + `save options`.
+#   After saving, the stale `lhapdf_py3` line is commented out, so exactly one
+#   lhapdf entry is active. Verified.
+
+pdf_set                 NNPDF31_lo_as_0130     # MATCHED to the original
+pdf_lhaid               315200                 # MATCHED - SetIndex in the .info
+pdf_member              0                      # MATCHED
+pdf_set_data_version    1                      # MATCHED
+pdf_num_members         101
+pdf_order_qcd           0                      # LO
+pdf_alphas_mz           0.1300000
+pdf_set_desc            "NNPDF3.1 LO global fit, alphas(MZ)=0.130. mem=0 =>
+                        average on replicas; mem=1-100 => PDF replicas"
+# Installed with `lhapdf install NNPDF31_lo_as_0130` using the 6.5.6 binary, and
+# the SetIndex was then VERIFIED against the recovered lhaid rather than assumed.
+# The wrong sets that `install lhapdf6` pulled alongside 6.5.5
+# (NNPDF23_lo_as_0130_qed, NNPDF23_nlo_as_0119_qed) are in the 6.5.5 datadir and
+# are NOT on the active path. This is the single most important correction this
+# session made to the previous build.
+
+[shower - runbook step 5, installed 2026-09-05]
+pythia8                 8.317   # MATCHED to the original
+pythia8_route           `install pythia8` through MG5, unpinned - and it landed on
+                        the right version anyway, for a reason worth recording.
+# artifact-measured from the install log: it fetched pythia8317.tgz (31,291,506 B).
+# And it is NOT luck. MG5 3.7.0 pins the installer to
+#   http://madgraph.mi.infn.it//Downloads/HEPToolsInstaller/HEPToolsInstaller_V168.tar.gz
+# and <OLD_TREE>/HEPTools/HEPToolsInstallers/VERSION is exactly 168. MG5 3.7.0 and
+# the original agree on the installer, so `install pythia8` under 3.7.0 reproduces
+# the original's Pythia. This closes a question the previous build could not answer.
+# (`help install` confirms there is a `--pythia8_tarball=` pin available if it had
+#  been needed; it was not.)
+mg5amc_py8_interface    1.3     # MATCHED     HEPTools/MG5aMC_PY8_interface/VERSION
+hepmc                   2.06.09 # MATCHED     HEPMC_VERSION in HepMCDefs.h
+zlib                    1.3.2   (zlib-1.3.2.tar.gz), pulled by the pythia8 installer
+pythia8_links           source-verified from HEPTools/pythia8/Makefile.inc:
+                          --with-hepmc2=~/MG5_aMC/HEPTools/hepmc
+                          --with-lhapdf6=~/MG5_aMC/HEPTools/lhapdf6_py3_656
+                          --with-gzip=~/MG5_aMC/HEPTools/zlib
+                        HEPMC2_USE=true, LHAPDF6_USE=true, GZIP_USE=true
+#   Note the LHAPDF path: Pythia8 is linked against the **6.5.6** build, because
+#   the repoint happened before this install. Ordering mattered and was deliberate.
+hepmc_path_config       COSMETIC BUG, harmless: input/mg5_configuration.txt line 97
+                        reads `hepmc_path = /home/ahrimarin/MG5_aMC/None`. The
+                        installer wrote the literal string "None". The actual build
+                        used the correct path (see pythia8_links above) and the
+                        shower produces valid HepMC, so nothing is broken. Recorded
+                        so nobody chases it later.
+fastjet                 None (line 200) - matches the original, which also had no
+                        FastJet configured. Bundled fjcore is used.
+
+[models - runbook step 6, installed and NUMERICALLY verified 2026-09-05]
+# The three recovered UFO models were copied FROM THE REPO
+# (scripts/mg5_cards/0j1j/models/) into ~/MG5_aMC/models/, 21 files each, so what
+# was tested is the committed deliverable rather than the shared-folder original.
+# All three import under MG5 3.7.0 / Python 3.12 and carry the right numbers.
+# The prompt is right that an import which loads different numbers is the most
+# dangerous outcome, so these are values, not just exit codes:
+sm_onia-c_mass          mdl_MJPSI = 3.0969      mdl_WJPSI = 9.29e-05
+                        mdl_gJpsi = 0.01        mdl_MM    = 0.105658
+                        jpsiv: name == antiname (self-conjugate), mass mdl_MJPSI,
+                        width mdl_WJPSI
+sm_upsilon_family-c_mass mdl_MUPSILON  = 9.4603   mdl_WUPSILON  = 5.402e-05  g 0.01
+                        mdl_MUPSILON2 = 10.0234  mdl_WUPSILON2 = 3.198e-05  g 0.01
+                        mdl_MUPSILON3 = 10.3551  mdl_WUPSILON3 = 2.032e-05  g 0.01
+                        mdl_MM = 0.105658
+sm_mumass-c_mass        mdl_MM = 0.105658        mdl_MC = 1.55
+# Every value agrees with the recovered `parameters.py` / `restrict_c_mass.dat`.
+# In particular MM resolves to 0.105658 (the restrict-card value) and NOT to the
+# 0.10566 default in parameters.py, which is what the original runs used.
+
+[verification run - runbook step 7, TWO runs 2026-09-05]
+# THIS IS A TOOLCHAIN SMOKE TEST. It is NOT a physics sample and has NO relation
+# to any file in data/. 1000 Drell-Yan events, twice, differing in one variable.
+process                 p p > mu+ mu-   (model sm, MG5 defaults for all cuts)
+run_dir                 ~/mg5work/smoke_dy   (VM local disk, NOT /mnt/hgfs)
+ebeam1 / ebeam2         4000.0 / 4000.0 GeV     # 8 TeV, read back from the banner
+nevents                 1000
+iseed                   90501  (same in both runs - deliberately)
+pdlabel                 lhapdf
+cuts (MG5 defaults)     ptl 10.0, etal 2.5, drll 0.4, mmll 0.0
+mg5_version_in_banner   3.7.0
+
+# run_01 - the recovered PDF, i.e. how this VM is now configured
+lhaid                   315200  (NNPDF31_lo_as_0130, member 0)
+cross_section           643.7 +- 4.012 pb      # integrated weight 643.69
+lhe_events              1000    # count of <event> in unweighted_events.lhe.gz
+showered_events         1000    # count of E lines in tag_1_pythia8_events.hepmc.gz
+first_event_multiplicity 1718 particles        # ~6 at parton level, so the shower ran
+shower_wall_time        1 second
+
+# run_02 - IDENTICAL except the PDF. One controlled variable, per CLAUDE.md 3.
+lhaid                   247000  (NNPDF23_lo_as_0130_qed, member 0)
+cross_section           556.9 +- 3.425 pb
+# The NNPDF23 set was copied into the 6.5.6 datadir from the 6.5.5 install, because
+# the 6.5.6 pdfsets.index does not list it ("No PDFs known matching patterns").
+# Its .info confirms SetIndex 247000, DataVersion 1, 101 members, LO, as(MZ) 0.130003.
+
+[verification comparison against the previous VM - artifact-measured, not hypothesis]
+# The 22.04 build's number was 554.8 +- 3.237 pb, with MG5 3.7.3, gcc 11.4.0 and
+# NNPDF23/247000. Three changes separated the two builds: MG5 version, compiler,
+# and PDF. run_02 above isolates the PDF, so the attribution is measured:
+#
+#   this VM NNPDF31 (643.7+-4.012) vs this VM NNPDF23 (556.9+-3.425)
+#     -> +86.8 pb, combined error 5.275 pb  =  16.5 sigma
+#   this VM NNPDF23 (556.9+-3.425) vs 22.04 NNPDF23 (554.8+-3.237)
+#     -> +2.1 pb, combined error 4.713 pb   =   0.4 sigma
+#   this VM NNPDF31 (643.7+-4.012) vs 22.04 NNPDF23 (554.8+-3.237)
+#     -> +88.9 pb, combined error 5.155 pb  =  17.2 sigma
+#
+# CONCLUSION, artifact-measured: **the PDF family change accounts for essentially
+# the whole 17.2 sigma difference.** Holding the PDF fixed at 247000, this 24.04 /
+# MG5 3.7.0 / gcc 13.3.0 build agrees with the 22.04 / MG5 3.7.3 / gcc 11.4.0 build
+# to 0.4 sigma - statistically indistinguishable. So the MG5 downgrade 3.7.3->3.7.0
+# and the compiler move 11.4->13.3 together produce no measurable shift at this
+# sample size, and the previous VM's 554.8 pb was low for exactly one reason: it was
+# using NNPDF2.3 where the original used NNPDF3.1.
+# Nothing was tuned to make any of these numbers agree.
+
+
+#=====================================================================
+[previous VM - Ubuntu 22.04, built 2026-09-04, SUPERSEDED]
+#=====================================================================
+# This machine NO LONGER EXISTS. It was reinstalled as Ubuntu 24.04 LTS on
+# 2026-09-05 because 22.04 had a networking and shared-folder fault. Everything
+# it installed - MG5_aMC 3.7.3, LHAPDF 6.5.5, Pythia8 8.317, HepMC 2.06.09 -
+# went with it.
+#
+# The content below is the previous versions.txt kept VERBATIM, unedited. It is
+# retained rather than deleted for two reasons: its smoke-run numbers are
+# artifact-measured and remain a valid comparison point for the 24.04 build, and
+# deleting the record of what was tried would hide that 3.7.3 was the wrong
+# target version (see [deltas]).
+#
+# Do not read any line below as describing a live machine.
+# ---------------- BEGIN VERBATIM COPY (sha256 of the copied text:
+# 0ca7c3c5b0a18f976bd3fee439ddd4f02ea851f600fc37eacbee48cd1a0e7534) ------------
+
+| # Generation toolchain - MG5 + Pythia8 VM
+| #
+| # Written 2026-09-04 by the runbook docs/mg5_vm_runbook.md sections 3-6.
+| # Every value below is source-verified: read from the installed tree or printed
+| # by the tool itself on this machine. Nothing here is copied from the old macOS
+| # machine, and nothing here is claimed to match the toolchain that produced the
+| # existing mg5py8_ckkwl_8tev_inclusive_0j1j priors - that toolchain is still
+| # unrecovered (memory.md section 9.1).
+| 
+| [host]
+| os                      Ubuntu 22.04.5 LTS          # lsb_release -d
+| kernel                  6.8.0-138-generic
+| hostname                ahrimarin-virtual-machine
+| arch                    x86_64
+| vcpu                    8
+| ram                     15 GiB
+| install_root            /home/ahrimarin/MG5_aMC     # VM local disk /dev/sda3, NOT /mnt/hgfs
+| work_root               /home/ahrimarin/mg5work     # generation target, NOT /mnt/hgfs
+| 
+| [generator]
+| mg5_amc                 3.7.3                       # ~/MG5_aMC/VERSION, dated 2026-09-01
+| mg5_amc_source          https://launchpad.net/mg5amcnlo/3.0/3.7.x/+download/MG5_aMC_v3.7.3.tar.gz
+| mg5_amc_sha256          5964645515a130550f77a1e66f5db62b63d3f79ef81c24cb41ba657c1a45769b
+| 
+| [shower]
+| pythia8                 8.317                       # PYTHIA banner in run_01 tag_1_pythia8.log
+| mg5amc_py8_interface    1.3                         # HEPTools/MG5aMC_PY8_interface/VERSION
+| hepmc                   2.06.09                     # HEPTools/hepmc include/HepMC/HepMCDefs.h
+| 
+| [pdf]
+| lhapdf                  6.5.5                       # lhapdf-config --version
+| pdf_set                 NNPDF23_lo_as_0130_qed
+| pdf_lhaid               247000                      # SetIndex in the set .info
+| pdf_member              0                           # mem=0 => average over the 100 replicas
+| pdf_order_qcd           0                           # LO
+| pdf_alphas_mz           0.130003
+| pdf_num_members         101
+| pdf_data_version        1
+| # Second set also present but NOT used in the verification run:
+| #   NNPDF23_nlo_as_0119_qed  lhaid 244800  DataVersion 5
+| # Both sets were pulled automatically by "install lhapdf6"; neither is yet
+| # asserted to be the set the 0j1j priors were generated with.
+| 
+| [compilers]
+| gfortran                GNU Fortran (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+| gcc                     gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+| g++                     g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+| make                    GNU Make 4.3
+| python                  Python 3.10.12              # system python3, used by MG5
+| 
+| [not installed]
+| fastjet                 absent - MG5 falls back to its bundled fjcore
+| eMELA                   absent
+| # Neither is required by section 6 of the runbook. If a recovered 0j1j run card
+| # turns out to need a real FastJet, this file must be regenerated.
+| 
+| [how it was installed]
+| # Base packages, runbook section 3:
+| #   apt-get install -y build-essential gfortran python3 python3-dev \
+| #     zlib1g-dev libbz2-dev wget rsync git curl gnupg open-vm-tools
+| # Toolchain, runbook section 6, through MG5 so the interfaces are wired:
+| #   ./bin/mg5_aMC
+| #   MG5_aMC> install lhapdf6      -> lhapdf6_py3 successfully installed in ./HEPTools
+| #   MG5_aMC> install pythia8      -> pulled hepmc + zlib, then pythia8, then
+| #                                    mg5amc_py8_interface; all reported success
+| # Paths then persisted with "set <var> <path> --save" into
+| #   ~/MG5_aMC/input/mg5_configuration.txt
+| # for lhapdf, pythia8_path and mg5amc_py8_interface_path.
+| 
+| [runbook 6.1 settings]
+| automatic_html_opening  False   # saved into input/mg5_configuration.txt line 116
+|                                 # via "set automatic_html_opening False" + "save options";
+|                                 # the --save flag alone does NOT persist this one.
+| # Also persisted there: lhapdf, pythia8_path, mg5amc_py8_interface_path.
+| 
+| [guest clock]
+| # Runbook section 9: keep the clock honest, and compare epoch seconds.
+| ntp_service             active, "System clock synchronized: yes"
+| timezone                America/Los_Angeles (PDT, UTC-7)
+| checked_at_epoch        1788591162
+| guest_epoch             1788591162
+| cloudflare_epoch        1788591162   # HTTP Date header
+| google_epoch            1788591162   # HTTP Date header
+| clock_offset            0 seconds - the guest clock is correct
+| # NOTE the local/UTC split, which is exactly the trap section 9 warns about:
+| # epoch 1788591162 is 2026-09-04 23:52 PDT and 2026-09-05 06:52 UTC. The same
+| # instant prints as two different dates. This file is dated 2026-09-04 local.
+| 
+| [verification run]
+| # Purpose: prove the chain runs end to end. This is NOT a physics sample and is
+| # NOT related to any prior in data/.
+| process                 p p > mu+ mu-
+| run_dir                 ~/mg5work/smoke_dy/Events/run_01
+| ebeam1 / ebeam2         4000.0 / 4000.0 GeV         # 8 TeV, from the run banner
+| nevents                 1000
+| pdlabel                 lhapdf                      # from the run banner
+| lhaid                   247000                      # from the run banner
+| cross_section           554.8 +- 3.237 pb
+| lhe_events              1000                        # count of <event> in unweighted_events.lhe.gz
+| showered_events         1000                        # count of E lines in tag_1_pythia8_events.hepmc.gz
+| first_event_multiplicity 1057 particles             # parton level would be ~6; the shower ran
+| shower_wall_time        2 seconds (8 parallel PY8 jobs)
+| 
+| [what this file does not establish]
+| # The MG5 process card, run card and Pythia8 CKKW-L merging configuration for
+| # the 0j1j priors are still not in version control. This file records the
+| # environment only. Do not read it as provenance for any existing prior.
+
+# ---------------- END VERBATIM COPY -------------------------------------------
+# (Each line above is prefixed with "| " to mark it as quoted text. Strip the
+# prefix to recover the original file byte-for-byte apart from that prefix.)
+
+
+#=====================================================================
+[recovered from the original toolchain]
+#=====================================================================
+# This is what actually produced the mg5py8_ckkwl_8tev_inclusive_0j1j priors.
+# Recovered 2026-09-05, read-only, from the copy of the original macOS MG5
+# installation at /mnt/hgfs/MG5_aMC_v3_7_0/MG5_aMC_v3_7_0 (call it <OLD_TREE>)
+# and from the shipped prior files' own HDF5 attributes.
+#
+# Every line carries the file it came from. Precedence used throughout:
+# a run banner beats a Cards/ file beats a config default beats a directory name;
+# a directory name is not evidence at all.
+
+[generator]
+mg5_amc                 3.7.0
+# source-verified, two independent places that agree:
+#   <OLD_TREE>/VERSION -> "version = 3.7.0 / date = 2026-01-05"
+#     sha256 d8521e7ace79d59769027ff095a48d6772801b6d264e47960a804d9d39d8fb5e
+#   <MGVersion> block, line 33 of every 0j1j run banner -> "#3.7.0"
+#   and the MG5ProcCard header in the same banners -> "VERSION 3.7.0  2026-01-05"
+# The directory name MG5_aMC_v3_7_0 agreed, but was not treated as evidence.
+# All 14 banners across all seven 0j1j samples report 3.7.0. No disagreement.
+
+[shower]
+pythia8                 8.317
+# source-verified, from the Pythia banner in a log that actually ran, which is
+# better evidence than an installed VERSION file:
+#   <OLD_TREE>/z_mumu_inclusive_0j1j_8tev/Events/production_ckkwl_1m_a/tag_1_pythia8.log
+#   -> "This is PYTHIA version 8.317"
+#   sha256 fd81ec2e428eda48484c87bf732fcde547482cfbc3a3a3b0852f934e1f1d1df7
+# Cross-checked against the shipped prior's own attribute Pythia_version = 8.317
+# (artifact-measured, HDF5 attrs of the 1M reweighted J/psi prior).
+mg5amc_py8_interface    1.3     # <OLD_TREE>/HEPTools/MG5aMC_PY8_interface/VERSION
+hepmc                   2.06.09 # <OLD_TREE>/HEPTools/hepmc/hepmc_install.log ("hepmc2.06.09")
+heptools_installers     168     # <OLD_TREE>/HEPTools/HEPToolsInstallers/VERSION
+shower_driver           HEPTools/pythia8/share/Pythia8/examples/main164
+                        # from Events/*/run_shower.sh, which ran the shower
+                        # standalone with DYLD_LIBRARY_PATH set (macOS)
+
+[pdf]
+lhapdf                  6.5.6
+pdf_set                 NNPDF31_lo_as_0130
+pdf_lhaid               315200
+pdf_member              0
+pdf_set_data_version    1
+# source-verified, and tied to the production run rather than to the tree:
+#   <OLD_TREE>/jpsi_inclusive_0j1j_8tev/SubProcesses/P0_ccx_jpsiv_jpsiv_mupmum/G1/production_600k_log.txt
+#   sha256 293c883278068585ca24ce971a03ce80bdb51c00722db3cc07c9f87ded77c24a
+#   line 1: "==== LHAPDF6 USING DEFAULT-TYPE LHAGLUE INTERFACE ===="
+#   line 2: "LHAPDF 6.5.6 loading .../share/LHAPDF/NNPDF31_lo_as_0130/NNPDF31_lo_as_0130_0000.dat"
+#   line 3: "NNPDF31_lo_as_0130 PDF set, member #0, version 1; LHAPDF ID = 315200"
+# The same three lines appear in all five 0j1j production directories.
+# Independently confirmed by "315200 = lhaid ! NNPDF31_lo_as_0130" in every
+# 0j1j run banner, and by the shipped prior's attribute PDF = NNPDF31_lo_as_0130.
+lhapdf_origin           NOT in HEPTools. It came from a conda environment:
+#   <OLD_TREE>/input/mg5_configuration.txt ->
+#     lhapdf_py3 = /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/lhapdf-config
+#   and Makefile.inc for the Pythia build ->
+#     --with-lhapdf6=/opt/homebrew/Caskroom/miniforge/base/envs/cms
+# Consequence: <OLD_TREE> does NOT contain LHAPDF itself. 6.5.6 above is read
+# out of run logs, which is the stronger evidence anyway.
+
+[mg5_configuration - the whole active content of <OLD_TREE>/input/mg5_configuration.txt]
+# sha256 1051617294a386e190c0cddde843d26e11f9f05b49905e9e027001dad8df26c3
+# Four non-comment lines, quoted in full:
+pythia8_path            /Users/ahrimarin/MG5_aMC_v3_7_0/HEPTools/pythia8
+mg5amc_py8_interface_path /Users/ahrimarin/MG5_aMC_v3_7_0/HEPTools/MG5aMC_PY8_interface
+lhapdf_py3              /opt/homebrew/Caskroom/miniforge/base/envs/cms/bin/lhapdf-config
+mg5_path                /Users/ahrimarin/MG5_aMC_v3_7_0
+fastjet                 ABSENT from the config - no real FastJet was configured.
+#   MG5 fell back to its bundled fjcore. This answers the question the rebuild
+#   prompt asked directly: the 0j1j run cards did NOT need a real FastJet, so the
+#   previous VM's fjcore-only environment was correct on this point.
+run_mode                ABSENT - MG5 default
+nb_core                 ABSENT - MG5 default
+#   Cards/me5_configuration.txt in every process dir has only mg5_path active,
+#   so neither run_mode nor nb_core was ever pinned.
+
+[merging - the CKKW-L question, settled]
+# The family is named "ckkwl". The name is not evidence. The cards are, and they
+# agree: CKKW-L kT (Durham) merging, MLM explicitly NOT used.
+#
+# ME side, every 0j1j production banner (source-verified):
+ickkw                   0        # MLM disabled, with the in-card comment
+                                 # "disable MLM; use Pythia8 CKKW-L below"
+xqcut                   -1.0     # the MLM cut, switched off
+ktdurham                5.0      # the CKKW-L merging scale, in GeV
+ptlund                  -1.0     # pT-Lund merging NOT used
+dparameter              0.4
+pdgs_for_merging_cut    21, 1, 2, 3, 4, 5, 6
+auto_ptj_mjj            True
+#
+# Shower side, the RESOLVED configuration MG5 handed to Pythia
+# (<OLD_TREE>/*/Events/*/tag_1_pythia8.cmd; for the J/psi signal
+#  sha256 9e22251ebc13e974859f48da6e26be9e706b414d9e92bf052c2535c03b0150c0):
+Merging:doKTMerging     on       # explicit, in the resolved cmd file
+Merging:TMS             5.0      # MG5 translated ktdurham=5.0 into this
+Merging:Process         guess
+Merging:nJetMax         1
+Merging:Dparameter      0.4
+Merging:nQuarksMerge    4
+JetMatching:setMad      off      # and the JetMatching:qCut / nJetMax lines are
+                                 # commented out - MLM is off on this side too
+Beams:frameType         4
+Beams:LHEF              unweighted_events.lhe.gz
+TimeShower:pTmaxMatch   1
+SpaceShower:pTmaxMatch  1
+SpaceShower:rapidityOrder off
+# Confirmed independently by the "changes only" settings table printed in
+# tag_1_pythia8.log for the Z and Upsilon runs, which also shows the interface's
+# own additions: Merging:mayRemoveDecayProducts on, StringZ:useOldAExtra on,
+# UncertaintyBands:doVariations on, Check:epTolErr 0.01, JetMatching:etaJetMax 1000.
+#
+# Hand-written pythia8_card.dat sets "Merging:TMS = -1.0" with the comment
+# "MadGraph transfers ktdurham=5 GeV to Merging:TMS". The -1.0 is a placeholder,
+# NOT the merging scale. Read the .cmd file, not the card, for the value.
+#
+# The ONE exception in the whole tree is an abandoned MLM attempt:
+#   upsilon_continuum_matched_0j1j_8tev/Events/smoke_matched_20k
+#   ickkw=1, xqcut=3.0, ptj=3.0, drjl=0.0, and an absurd integrated weight of
+#   2.119e9 pb. It has no Merging:* settings at all. It was superseded by CKKW-L.
+#   This is why the Upsilon directories are named "*_matched_*" while their
+#   production runs are in fact CKKW-L: the name is a leftover, not a description.
+
+[shower physics settings, common to the production runs]
+PartonLevel:ISR         on
+PartonLevel:FSR         on
+PartonLevel:MPI         off      # no underlying event
+HadronLevel:all         off      # no hadronisation, no hadron decays
+TimeShower:QEDshowerByL on       # J/psi and Z cards set this explicitly.
+#   The Upsilon cards do NOT set it - but Pythia's default is already `on`, and
+#   it does not appear in the Upsilon logs' "changes only" table, which confirms
+#   it was on there too. So this is a cosmetic card difference, NOT a physics
+#   difference between the samples. Checked deliberately, because it would have
+#   been an easy false finding.
+# Rationale quoted from the J/psi card itself: "Hadronization and MPI are
+# excluded so the prompt hard-process dimuon is unambiguous."
+
+[models - three of them, not one]
+# All three are UFO directories under <OLD_TREE>/models/, imported with the
+# `-c_mass` restriction. Copied into scripts/mg5_cards/0j1j/models/ with per-file
+# sha256s in SOURCE.md.
+sm_onia-c_mass          J/psi signal only
+sm_mumass-c_mass        J/psi continuum, Z/DY, Upsilon continuum
+sm_upsilon_family-c_mass Upsilon(1S), (2S), (3S) signal
+# A fourth, models/sm_upsilon, exists in the tree but is NOT referenced by any
+# 0j1j banner. Not copied. Presumed superseded by sm_upsilon_family.
+
+[sm_onia parameters - source-verified from models/sm_onia/parameters.py]
+MJPSI                   3.0969      GeV, external, lhablock MASS, lhacode 443
+WJPSI                   0.0000929   GeV = 92.9 keV, external, DECAY 443
+gJpsi                   0.01        internal
+MM (muon mass)          0.10566     <- the MODEL DEFAULT
+# ...but the model default is NOT what ran. restrict_c_mass.dat overrides it:
+MM (effective)          0.105658    GeV
+#   models/sm_onia/restrict_c_mass.dat -> "13 1.056580e-01 # MM"
+#   and the generated Cards/param_card.dat and the banner <slha> block both
+#   carry 1.056580e-01. So the restrict card is the load-bearing file here.
+#   0.105658 is what docs/sm_onia_rebuild.md documents, so the recipe is right;
+#   the 0.10566 in parameters.py is a 5-figure rounding that never reached a run.
+MC                      1.55        GeV  (this is what "-c_mass" means)
+QNUMBERS 443            charge 0, 3 spin states (2S+1 => spin 1), colour singlet,
+                        own antiparticle - i.e. an effective neutral vector
+# Also in the restrict card: Me = 0, ymm = 0 (no Higgs-muon coupling),
+# MZ = 91.188, MH = 125, WZ = 2.441404, WT = 1.4915, aEWM1 = 132.507, Gf = 1.16639e-5.
+
+[sm_upsilon_family parameters - source-verified from its parameters.py]
+# The Upsilon used a DIFFERENT model. This is a separate entry, not a footnote.
+Upsilon(1S)  PDG 553     M 9.46030 GeV   W 5.402e-5 GeV (54.02 keV)  g 0.01
+Upsilon(2S)  PDG 100553  M 10.0234 GeV   W 3.198e-5 GeV (31.98 keV)  g 0.01
+Upsilon(3S)  PDG 200553  M 10.3551 GeV   W 2.032e-5 GeV (20.32 keV)  g 0.01
+# Same effective-vector construction and same coupling value as gJpsi = 0.01.
+
+[sm_mumass]
+# Plain Standard Model with a massive muon; MM = 0.105658 via restrict_c_mass.dat.
+# source-verified: it contains NO onia states (grep for jpsi/upsilon in
+# particles.py returns 0 matches). This is the continuum / Drell-Yan model.
+
+[process definitions - source-verified from the MG5ProcCard block of each banner]
+# J/psi signal     (sm_onia-c_mass)
+#   generate    p p > jpsiv, jpsiv > mu+ mu- @0
+#   add process p p > jpsiv j, jpsiv > mu+ mu- @1
+# J/psi continuum, Z/DY, Upsilon continuum   (sm_mumass-c_mass)
+#   generate    p p > mu+ mu- @0
+#   add process p p > mu+ mu- j @1
+# Upsilon(1S) / (2S) / (3S)   (sm_upsilon_family-c_mass)
+#   generate    p p > upsilonv,  upsilonv  > mu+ mu- @0   (and upsilon2v, upsilon3v)
+#   add process p p > upsilonv j, upsilonv > mu+ mu- @1
+# Multiparticle definitions, identical in every banner:
+#   define p = g u c d s u~ c~ d~ s~
+#   define j = g u c d s u~ c~ d~ s~
+# The original output path was /Users/ahrimarin/MG5_aMC_v3_7_0/<process dir>.
+
+[run-card cuts - IDENTICAL across every 0j1j production run]
+ebeam1 / ebeam2         4000.0 / 4000.0 GeV     # 8 TeV
+lpp1 / lpp2             1 / 1                   # proton / proton
+pdlabel1 / pdlabel2     lhapdf / lhapdf
+ptj                     5.0     # ME parton generation threshold
+etaj                    5.0
+maxjetflavor            4
+dynamical_scale_choice  -1
+fixed_ren_scale         False
+scalefact               1.0
+bwcutoff                15.0
+cut_decays              True
+event_norm              average
+use_syst                False   # with the comment "no event-weight systematics
+                                #  in prior production"
+drll                    0.0
+
+[run-card cuts - these DIFFER per region, and are the settings most likely to
+ have been changed between samples, so they are listed out in full]
+#
+# region              model                     ptl    etal   drjl   mass window (mmll-mmllmax)
+# ------------------  ------------------------  -----  -----  -----  --------------------------
+# J/psi signal        sm_onia-c_mass             3.0    2.5    0.4    2.9  - 3.3   GeV
+# J/psi continuum     sm_mumass-c_mass           3.0    2.5    0.4    2.9  - 3.3   GeV
+# Z / DY->mumu        sm_mumass-c_mass          20.0    2.6    0.0   65.0  - 120.0 GeV
+# Upsilon(1S/2S/3S)   sm_upsilon_family-c_mass   3.0    2.4    0.4    8.5  - 11.5  GeV
+# Upsilon continuum   sm_mumass-c_mass           3.0    2.4    0.4    8.5  - 11.5  GeV
+#
+# Note the Z is the odd one out three times over: ptl 20 not 3, etal 2.6 not
+# 2.4/2.5, and drjl 0.0 not 0.4.
+
+[runs, seeds and event counts - source-verified, one line per run]
+# The seed is read from the BANNER, never from Cards/run_card.dat: MG5 rewrites
+# iseed to 0 in Cards/ once a run finishes. Verified by diffing the two for all
+# seven samples - they are identical except for exactly that field.
+# "PY8 seed" is Random:seed from that run's tag_1_pythia8.cmd.
+#
+# sample / run                          nevents   ME iseed  PY8 seed  sigma [pb]
+# ------------------------------------  --------  --------  --------  ------------------
+# jpsi signal      production_600k        600,000    33002    330102     107.40636
+# jpsi continuum   production_400k        400,000    34002    340102      69.6727414317805
+#   -> 600k + 400k = the 1M J/psi pair. ONE run per component, ONE seed each.
+#
+# z_mumu           production_ckkwl_1m_a  1,000,000   24001    240101     883.139913
+# z_mumu           production_ckkwl_1m_b  1,000,000   24002    240102     882.94432
+# z_mumu           production_ckkwl_1m_c  1,000,000   24003    240103     883.179881
+# z_mumu           production_ckkwl_200k_d  200,000   24004    240104     884.0002489999999
+#   -> FOUR runs, 3.2M events generated. The Z prior is a concatenation, not one
+#      run. (A prior built from four runs with four seeds is a different
+#      provenance record from one built from a single run.)
+#   -> the four cross-sections span 882.94 - 884.00 pb, a 0.12% spread, which is
+#      the run-to-run statistical scatter and is a useful internal consistency check.
+#
+# upsilon1s        production_ckkwl_300k    300,000   13001   (unset)    2794.494
+# upsilon2s        production_ckkwl_100k    100,000   13002   (unset)    4724.0091
+# upsilon3s        production_ckkwl_80k      80,000   13003   (unset)    7425.3753
+# upsilon cont     production_ckkwl_1m_a  1,000,000   13004   (unset)     791.8371264152
+# upsilon cont     production_ckkwl_400k_b  400,000   13304   (unset)     792.1509788390001
+#
+# UNSEEDED SHOWER - source-verified: the Upsilon pythia8_card.dat files contain
+# no Random:setSeed and no Random:seed, and no Random:* line appears in their
+# tag_1_pythia8.cmd or in the "changes only" table of their logs. So the Upsilon
+# showers ran on Pythia's default seed and their shower stage is NOT reproducible
+# even in principle from the recorded cards. The J/psi and Z showers are seeded.
+#
+# Per-run subrun structure (from Main:numberOfEvents in each log): MG5's PY8
+# interface split each run across parallel subruns - Z 4 x 250,000 per 1M chunk,
+# Upsilon(1S) 2 x 150,000, Upsilon continuum 2 x 500,000 for 1m_a and 4 x 100,000
+# for 400k_b, Z 200k_d 4 x 50,000.
+
+[the step from generator output to HDF5 prior - RECOVERED, and it is not what
+ the runbook assumed]
+# artifact-measured 2026-09-05, from the HDF5 attributes of the shipped prior
+# files themselves. The attributes were read out of the raw file (no h5py on this
+# VM); string attributes are stored uncompressed in the HDF5 object header.
+#
+# 1. The J/psi prior was built from HepMC, NOT from LHE.
+#    data/..._3p0369_3p1569_500k.hdf5 carries attributes source_hepmc and
+#    source_hepmc_sha256 naming EIGHT files, four per component:
+#      /Users/ahrimarin/MG5_aMC_v3_7_0/jpsi_inclusive_0j1j_8tev/Events/
+#        production_600k/PY8_parallelization/split_{0,1,2,3}/events.hepmc
+#      /Users/ahrimarin/MG5_aMC_v3_7_0/jpsi_continuum_inclusive_0j1j_8tev/Events/
+#        production_400k/PY8_parallelization/split_{0,1,2,3}/events.hepmc
+#    with a sha256 recorded for each. Its attribute event_level reads
+#    "post-parton-shower stable muons with lepton QED FSR".
+#
+#    Those eight files DO NOT EXIST in <OLD_TREE>. source-verified: there is no
+#    PY8_parallelization directory anywhere in the tree and no file named
+#    events.hepmc under any path. The J/psi Events directories retain only
+#    unweighted_events.lhe.gz, the banner, tag_1_pythia8.cmd and run_shower.sh.
+#
+# 2. The tool that made it is NOT in this repository.
+#    scripts/prior_build/lhe_to_prior_hdf5.py takes --lhe, reads LHE text, and
+#    writes an attribute named lhe_file. The shipped prior has no lhe_file
+#    attribute; it has source_hepmc / source_hepmc_sha256 / component_id_mapping
+#    / component_source_files / composition_source / strict_target_contract.
+#    No file in the repository reads HepMC at all (grep -rli hepmc over *.py
+#    returns nothing). So a HepMC->HDF5 converter existed on the macOS machine
+#    and was never committed. This is a SECOND provenance gap, distinct from the
+#    cards, and it was not previously recorded.
+#
+# 3. Selection recorded in the 500k prior (artifact-measured):
+#    generation-level: {"lepton_abs_eta_max": 2.5, "lepton_pt_min_GeV": 3.0,
+#      "mass_window_GeV": [2.9, 3.3], "pair_pt_min_GeV": 0.0,
+#      "parton_pt_min_GeV": 5.0}   <- matches the run card exactly
+#    fiducial:         {"mass_window_GeV": [3.0369, 3.1569], "muon_abs_eta_max": 2.4,
+#      "muon_pt_min_GeV": 3.0, "strict_target_contract":
+#      "pT > 3 GeV, |eta| < 2.4, 3.0369 < m_mumu < 3.1569 GeV"}
+#    event bookkeeping:
+#      jpsi      processed 581,216 -> 436,815 after fiducial (144,366 rejected,
+#                35 with bad stable-muon multiplicity)
+#      continuum processed 398,845 ->  91,699 after fiducial (307,112 rejected, 34 bad)
+#      436,815 + 91,699 = 528,514, which is the "500k" in the filename.
+#    Note processed < requested (581,216 of 600,000; 398,845 of 400,000): CKKW-L
+#    vetoes events below the merging scale before they are written.
+
+[the reweight_prior.py --ref-cache argument - FOUND]
+# This is the single item runbook section 7 called out as blocking Stage B.
+# artifact-measured, from the HDF5 attributes of
+# data/cms_jpsi_mumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_3p0369_3p1569_1M_reweighted.hdf5
+#
+reference_file          /Users/ahrimarin/Desktop/otus_on_data/outputs/
+                        cms_JpsiDoubleMuons/archive/.plot_cache/
+                        selected_split_0ed04817d72bb34f84ed.npz
+reference_file_sha256   ffb18e03f5af1f2aa527f32abf61caeb76a06d0ca7cd82a9ecf0b833180e19e3
+reference_note          "Requested outputs/cms_Joint/.region_cache/jpsi/
+                        selected_split_319d77365faebcd0ac9a.npz was not present;
+                        used the available full CMS J/psi cache
+                        outputs/cms_JpsiDoubleMuons/archive/.plot_cache/
+                        selected_split_0ed04817d72bb34f84ed.npz, which has the
+                        same 3.0369-3.1569 GeV mass window and muon pT > 3 GeV
+                        after selection."
+source_file             .../data/..._3p0369_3p1569_500k.hdf5
+source_file_sha256      1620f6bbfd9881243d792c7bf2a3db2a71902e3e59ffcaeb06500e8f1d99e1cf
+production_timestamp_utc 2026-08-31T21:58:19.230667+00:00
+component_counts        {"continuum": 150000, "jpsi": 850000}   # an 85/15 mixture
+component_id_mapping    {"continuum": 1, "jpsi": 0}
+artificial_smearing_applied  false
+upsilon_tuning_used     false
+#
+# THE ARGUMENT IS RECOVERED. THE FILE IT NAMES IS NOT.
+# artifact-measured: the directory outputs/cms_JpsiDoubleMuons/archive/.plot_cache/
+# does not exist on the Windows host; only an empty archive/ remains. Every .npz
+# under outputs/ and data/ was hashed - 172 files - and NONE matches
+# ffb18e03f5af1f2aa527f32abf61caeb76a06d0ca7cd82a9ecf0b833180e19e3.
+#
+# The other cache named in the note, selected_split_319d77365faebcd0ac9a.npz,
+# DOES exist now (118,850,382 bytes, sha256
+# 0b85a5d81fad787b3f8b082e681ead59a16e2a6a0917c8fb495be0167c9d1599). It is a
+# valid ref-cache shape - its members are x_train/x_val/x_test/z_train/z_val/z_test -
+# but it is a DIFFERENT FILE from the one used, by hash, and its own JSON sidecar
+# shows why: its fingerprint keys on theory_prior_file =
+# data/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5, the ptj=5 Program B prior, not the
+# 0j1j one. Substituting it would silently produce a different reweighting.
+#
+# AND, independently: reweight_prior.py IS NOT THE TOOL THAT MADE THIS FILE.
+#   the repo's scripts/prior_build/reweight_prior.py is a 1-D reweighter on muon
+#   pT: build_density() histograms log(pT) into 401 bins with gaussian_filter1d
+#   smoothing, and the weight is a product over the two muons of f_ref/f_prior.
+#   It writes attributes feature_names, units, particle_order, source_file,
+#   reweight_target, reweight_max_weight, reweight_seed, reweight_mean_weight,
+#   production_timestamp_utc.
+#   the shipped file instead records:
+reweight_method         "4D histogram density ratio: log10(lead muon pT),
+                        log10(sublead muon pT), log10(pair pT), max |eta|;
+                        per-component; clipped; sampled with replacement"
+reweight_features       ["log10_lead_muon_pt", "log10_sublead_muon_pt",
+                         "log10_pair_pt", "max_abs_muon_eta"]
+reweight_bins           {"lead_pt": 80, "sublead_pt": 60, "pair_pt": 60, "max_eta": 12}
+reweight_stats          continuum: effective_fraction 0.12925698369323335,
+                          max_weight_after_clip 200.0, mean_weight 1.0,
+                          n_out 150000, n_prior 75000, weight_nonzero_fraction 1.0
+                        jpsi:      effective_fraction 0.1361095987085329,
+                          max_weight_after_clip 200.0, mean_weight 1.0000000000000004,
+                          n_out 850000, n_prior 425000, weight_nonzero_fraction 1.0
+#   Four features versus one, per-component versus global, max weight 200 versus
+#   the script's default 20, plus attributes (reference_file_sha256,
+#   reweight_smoothing, reweight_bins) the script never writes. These are two
+#   different programs. The 4-D one is NOT in the repository either - a THIRD
+#   uncommitted tool.
+#
+# Consequence for runbook section 7 Stage B: it is blocked twice over, and the
+# second reason is worse than the first. Even if the missing cache were found,
+# running reweight_prior.py with it would not reproduce the 1M prior, because
+# reweight_prior.py is not what produced it. Stage B as written in the runbook
+# cannot pass, and the runbook's instruction "Run reweight_prior.py with the same
+# --ref-cache the original used" is itself wrong.
+
+[downstream chain, as far as it can now be verified]
+#   4 x events.hepmc per component  [GONE, sha256 recorded]
+#     -> uncommitted HepMC->HDF5 converter
+#       -> ..._3p0369_3p1569_500k.hdf5   sha256 1620f6bb...99e1cf
+#          VERIFIED PRESENT AND UNCHANGED: the file on the Windows host hashes to
+#          exactly the sha256 the 1M prior recorded for its own input.
+#          artifact-measured 2026-09-05.
+#         -> uncommitted 4-D per-component reweighter, --ref-cache ffb18e03... [GONE]
+#           -> ..._3p0369_3p1569_1M_reweighted.hdf5
+#              self-recorded validation: mass mean 3.09550142288208 GeV,
+#              mass std 0.014705080538988113 GeV, muon pT median 12.40745735168457,
+#              pair pT median 26.055429458618164, minimum pair pT 5.2037034034729,
+#              pair pT in 5-10 GeV fraction 0.022954, n_events 1,000,000.
+#              These match the runbook section 7 Stage B reference table exactly,
+#              which confirms the table and the file describe the same object.
+
+
+#=====================================================================
+[deltas]
+#=====================================================================
+# Every field where the three sections above disagree, one line each, in the form
+#   field: this VM = X | original = Y | consequence = ...
+# This block is the point of the file. Merging the sections would destroy it.
+#
+# --- resolved in the original's favour: the previous VM had these WRONG ---
+#
+mg5_amc: this VM = 3.7.0 INSTALLED AND VERIFIED | previous VM = 3.7.3 | original = 3.7.0 | consequence = the 22.04 build targeted the newest release instead of the one that made the priors. 3.7.0 is now confirmed by two independent sources (VERSION file and 14 run banners), so 3.7.0 is the correct pin and the previous VM's 3.7.3 could not have reproduced anything.
+#
+pdf_set: this VM = NNPDF31_lo_as_0130 INSTALLED | previous VM = NNPDF23_lo_as_0130_qed | original = NNPDF31_lo_as_0130 | consequence = WRONG PDF FAMILY on the previous VM - NNPDF2.3 versus NNPDF3.1. This is a physics-level error, not a version nit: it changes the parton luminosities and therefore the cross-section and the pair-pT spectrum, and pair pT is a conditioning feature of the response (memory.md 7.10). The previous VM's 554.8 pb smoke number is not comparable to anything the original produced.
+#
+pdf_lhaid: this VM = 315200 INSTALLED, SetIndex verified in the .info | previous VM = 247000 | original = 315200 | consequence = as above. The prompt's warning not to assume 247000 "just because that is what the previous VM happened to pull" was correct.
+#
+pdf_member: this VM = member 0 of NNPDF31_lo_as_0130, DataVersion 1 | previous VM = member 0 of a 101-member NNPDF23 set | original = member #0, version 1 | consequence = "member 0" means different things in the two sets; only the set+member pair identifies a PDF.
+#
+lhapdf: this VM = 6.5.6 BUILT FROM SOURCE and pointed at | previous VM = 6.5.5 | original = 6.5.6 | consequence = one patch release apart; low risk, but 6.5.6 is the recovered value and is what should be installed. Note the original's LHAPDF came from a conda env, not HEPTools, so "install lhapdf6" through MG5 is already a different arrangement.
+#
+# --- fields where the previous VM was already RIGHT ---
+#
+pythia8: this VM = 8.317 INSTALLED | previous VM = 8.317 | original = 8.317 | consequence = MATCHED. The previous VM's `install pythia8` happened to pull exactly the right version. Confirmed from a log that actually ran, plus the shipped prior's own Pythia_version attribute.
+#
+hepmc: this VM = 2.06.09 INSTALLED | previous VM = 2.06.09 | original = 2.06.09 | consequence = MATCHED.
+#
+mg5amc_py8_interface: this VM = 1.3 INSTALLED | previous VM = 1.3 | original = 1.3 | consequence = MATCHED.
+#
+fastjet: this VM = not installed | previous VM = not installed (bundled fjcore) | original = not configured, bundled fjcore | consequence = MATCHED, and now positively established rather than assumed. input/mg5_configuration.txt has no fastjet line, so no 0j1j run card needed a real FastJet. The previous VM's open question on this point is closed.
+#
+# --- the OS layer moved, and it moved for both builds ---
+#
+os: this VM = Ubuntu 24.04.4 LTS | previous VM = Ubuntu 22.04.5 LTS | original = macOS (arm64, /Users/ahrimarin, /opt/homebrew, DYLD_LIBRARY_PATH, .dylib libraries) | consequence = neither Linux VM can be a byte-level reproduction of the original. The original Fortran was compiled by Apple clang/gfortran on Apple silicon; any Linux rebuild is "same source tree, different build". This is exactly the class of difference that shows up as a few-per-mil shift in a cross-section, so a cross-section comparison is informative, not a gate.
+#
+python: this VM = 3.12.3, and MG5 3.7.0 VERIFIED WORKING ON IT | previous VM = 3.10.12 | original = a conda env `cms` under /opt/homebrew/Caskroom/miniforge | consequence = three different interpreters, but this is NO LONGER A RISK: MG5 3.7.0 runs under Python 3.12.3 (import model sm succeeds, all three recovered models import with correct numbers). The contingency of installing python3.11 alongside was not needed.
+#
+compilers: this VM = gcc/g++/gfortran 13.3.0, make 4.3 | previous VM = 11.4.0 | original = Apple toolchain via /Library/Developer/CommandLineTools | consequence = ANTICIPATED PROBLEM DID NOT MATERIALISE. Both LHAPDF 6.5.6 and Pythia8 8.317 built clean under gfortran 13.3.0; -fallow-argument-mismatch was NOT needed. And the compiler move is measured to be harmless: with the PDF held fixed this build agrees with the 11.4.0 build to 0.4 sigma on the smoke cross-section.
+#
+# --- fields that no VM can supply, because the artifacts are gone ---
+#
+hepmc->hdf5 converter: this VM = absent | previous VM = absent | original = existed, uncommitted | consequence = the step that made the 500k J/psi prior cannot be re-run by any machine until the tool is rewritten. Its inputs (8 events.hepmc files) are also gone, though their sha256s are recorded.
+#
+4-D reweighter: this VM = absent | previous VM = absent | original = existed, uncommitted; repo's reweight_prior.py is a DIFFERENT, 1-D tool | consequence = Stage B of runbook section 7 cannot pass even with the right cache, because the runbook names the wrong program.
+#
+--ref-cache file: this VM = absent | previous VM = absent | original = selected_split_0ed04817d72bb34f84ed.npz, sha256 ffb18e03... | consequence = the argument is now recovered but the file is gone; 172 candidate .npz files were hashed and none matches. Stage B is blocked on a missing input as well as a missing tool.
+#
+Upsilon shower seed: this VM = n/a | previous VM = n/a | original = NOT SET (Pythia default) | consequence = the Upsilon showers are not reproducible even in principle from the recorded cards. The J/psi (330102 / 340102) and Z (240101-240104) showers are seeded and are.
+#
+# --- SUMMARY OF THIS SECTION, after the 2026-09-05 install ---
+#
+# All FOUR components plus the PDF now MATCH the original exactly:
+#   MG5_aMC 3.7.0 | Pythia8 8.317 | LHAPDF 6.5.6 | HepMC 2.06.09
+#   MG5aMC_PY8_interface 1.3 | HEPToolsInstallers 168
+#   NNPDF31_lo_as_0130, lhaid 315200, member 0, DataVersion 1
+#   FastJet absent (bundled fjcore) - as the original
+# There is NO remaining version mismatch against the original toolchain. Every
+# mismatch left in this block is either an OS-layer difference that cannot be
+# removed (os, python, compilers - and the last two are measured harmless), or an
+# artifact that no longer exists anywhere (the two uncommitted tools, the
+# ref-cache file, the Upsilon shower seed).
+#
+smoke_cross_section: this VM = 643.7 +- 4.012 pb at lhaid 315200, and 556.9 +- 3.425 pb at lhaid 247000 | previous VM = 554.8 +- 3.237 pb at lhaid 247000 | original = not comparable (different process) | consequence = the 17.2 sigma gap to the previous VM is entirely the PDF. Held at the same PDF the two builds agree to 0.4 sigma, so the MG5 and compiler changes are measured to be irrelevant at this sample size. This is a toolchain smoke test only.
+
+
+#=====================================================================
+[what this file does not establish]
+#=====================================================================
+# 1. It does not establish that this VM can reproduce any prior. The toolchain
+#    is now installed and every component matches the original, and the smoke
+#    test runs end to end - but a matching toolchain is a necessary condition,
+#    not a sufficient one. See items 2 and 3.
+#
+# 2. It does not close the Stage A reproduction check. The cards are now in
+#    version control (this directory, with SOURCE.md), which was the stated
+#    purpose of the VM, but "done" per runbook section 0 is cards PLUS a sample
+#    that reproduces the prior. No sample has been generated. No physics sample
+#    was generated in this session at all.
+#
+# 3. It does not make Stage B possible. The --ref-cache argument is recovered;
+#    the file is gone and the tool named in the runbook is the wrong tool.
+#
+# 4. (Resolved 2026-09-05: MG5 3.7.0 DOES run under Python 3.12.3. This item
+#    previously said it was untested.)
+#
+# 5. It does not record a snapshot. Runbook section 6.1 requires the VM powered
+#    off, which is a VMware GUI action outside any CLI session. The toolchain has
+#    now verified, so this is the moment the snapshot is actually worth taking.
+#
+# 6. The recovered values describe the ORIGINAL toolchain, read from a read-only
+#    copy on the shared folder. They are evidence about what happened on the
+#    macOS machine. They are not a description of any machine that currently
+#    exists, and they must not be copied into the [this VM] section when the
+#    install finally happens.
+#
+# 7. Nothing here has been committed. The repository has a stale .git/index.lock
+#    and this session ran no git command.
+
+
+#=====================================================================
+[unified prior production - 2026-09-06, this VM]
+#=====================================================================
+# APPENDED, not merged. Written by docs/unified_prior_cli_prompt_autonomous.md
+# Stage 6. The four sections above are unchanged; this one records what the
+# unified J/psi, Z and Upsilon priors in data/priors/ were actually made with.
+# Evidence labels follow CLAUDE.md section 2.
+
+[toolchain - source-verified twice this session, before Stage 4 and at Stage 0]
+mg5_amc                 3.7.0            # ~/MG5_aMC/VERSION -- UNCHANGED
+pythia8                 8.317            # PYTHIA_VERSION in Pythia.h -- UNCHANGED
+lhapdf                  6.5.6            # active lhapdf-config -- UNCHANGED
+hepmc                   2.06.09          # HEPMC_VERSION -- UNCHANGED
+mg5amc_py8_interface    1.3              # UNCHANGED
+pdf_set                 NNPDF31_lo_as_0130 / lhaid 315200 / member 0 -- UNCHANGED
+auto_update             0                # never accepted an update prompt
+# No component of the pinned toolchain was upgraded, reinstalled or repointed.
+
+[analysis environment added this session - NOT part of the generation pin]
+venv                    ~/venv-prior     # python3 -m venv --without-pip, then
+                                         # get-pip.py (python3-venv is absent and
+                                         # sudo needs a password on this VM)
+pip                     26.2.1
+numpy                   2.5.2
+h5py                    3.16.0  (HDF5 2.0.0)
+torch                   2.14.0+cpu       # only because prior_stats.py imports
+                                         # scripts.physics which imports torch
+# None of these touch MG5, Pythia8, LHAPDF or the PDF set.
+
+[recipe - one line per thing that differs from the recovered 0j1j originals]
+truth_variant           bare             # VERIFIED at Stage 3 against the shipped
+                                         # 500k prior: mass KS 1.39 sigma, against
+                                         # born 62.5 sigma and dressed 7.72 sigma
+ptj                     2.5              # was 5.0 (= TMS). Insurance, not a repair:
+                                         # method book 6.1 -- the ptj = TMS hole was
+                                         # looked for and NOT found
+ktdurham                = Merging:TMS    # the Pythia INPUT card carries
+                                         # Merging:TMS = -1.0, so the run card's
+                                         # ktdurham is the single source of the
+                                         # merging scale and the two cannot disagree
+etal                    2.6              # was 2.5 / 2.4 / 2.6 across the originals
+drjl, drll              0.0, 0.0         # were swapped between regions
+ickkw, xqcut            0, -1.0          # UNCHANGED, MLM off
+maxjetflavor            4                # UNCHANGED
+use_syst                False            # UNCHANGED
+shower                  ISR on, FSR on, QEDshowerByL on, MPI off, hadronisation off
+                                         # UNCHANGED and declared deliberately
+components              labelled, UNMIXED, no reweighting, no smearing
+
+[per-region settings - method book v2.1 sections 8 and 12]
+#  region   TMS   ptj   ptl   etal   generation window   analysis pT   legacy window
+   jpsi     10.0  2.5   2.0   2.6    2.787 - 3.407       3.0            3.0369 - 3.1569
+   z        22.8  2.5  15.0   2.6    65.0  - 115.0      25.0           70.0   - 110.0
+   upsilon  10.0  2.5   2.0   2.6    8.4   - 11.6        3.0            8.5    - 11.5
+# The TMS values are the method book RULE values max(10, M/4). They are NOT what
+# an insensitivity scan chose: the scan FAILED in all three regions and the
+# decision rule for this run is to fall back to the rule value and carry the full
+# spread as a systematic. See docs/unified_prior_run_log.md Stage 4.
+
+[production runs - artifact-measured, one line per component]
+# run                     TMS    nevents    seed     sha256 of the converted HDF5
+  prod_z_continuum          22.8    840000  940001   e3a9cd9a553a84b8414219daa51ad7bc63504fa2a9c563153217d31970722e5f
+  prod_upsilon1s            10.0    850000  940005   838ff05c3e1f00d10992cbe1f5f225d1847fb5694c2f558da1d29a748d1b9805
+  prod_upsilon_continuum    10.0    890000  940004   99fb2cde1052bac166d5b24ef116eeb38451e9282ffd9eef16e615d7f95b9f95
+  prod_jpsi_signal          10.0    750000  940003   e4c5fe7a26f62ffd18db58f2f278d6a986ee1b33acacac7b221ffb41aff53879
+  prod_upsilon3s            10.0    770000  940007   fd98a829cde2c4a6bdbd8fd5f42066d6590ba4d9521574e6c2193859ebb17acf
+  prod_jpsi_continuum       10.0   1460000  940002   06689effff9edccd92b61358dd06611a074495d8d358c275225999c007de91d7
+  prod_upsilon2s            10.0    800000  940006   24eaf2acb3e81c861b26133e237fdc545cf435a545bef01de49a91c2d2f51e6d
+
+[shipped priors - artifact-measured sha256 of the files in data/priors/]
+  _compat_probe.hdf5                       d44a85288414db312beb768bccc39b955e8599ac6828491bb28f6dadf677c4b6
+  jpsi_unified_bare_tms10.hdf5             0681f6636c9c2a1bd7497dd21a66711a76df44010c7b82b62c981521b29559db
+  upsilon_unified_bare_tms10.hdf5          d497f60d8fbcf28ed572e010dde67794f384da1079cc646e10d246e010b52db3
+  z_unified_bare_tms22p8.hdf5              328c6d21d72fc0418380000d7ba2d1820d08adb6778cace9f2f16f7eeefaf5bd
+
+[what this section does not establish]
+# 1. It does not establish that the merging scale is under control. The
+#    insensitivity scan FAILED in every region, catastrophically for the J/psi
+#    (pair-pT median spread 92.85% across TMS 5-20). The scale used is a rule
+#    value, not a measured one.
+# 2. It does not establish that these priors describe the CMS pair-pT spectrum.
+#    Gate 5 measured the disagreement and did NOT correct it: J/psi median ratio
+#    0.610 (KS 374 sigma), Upsilon 1.989 (43 sigma), Z 0.941 (20.8 sigma).
+# 3. It does not establish that the priors are trainable. cms_data.load_theory_prior_z
+#    returns z_data[:, :8] and never reads FDL/component_id, so the mixture
+#    fraction cannot yet be applied at load time. That code does not exist.
+# 4. The Upsilon gate-5 reference (experiments/cms_upsilon/data/Ymumu.csv) has
+#    muons down to 0.713 GeV and a pair-pT median of 1.45 GeV, against the
+#    DoubleMuParked J/psi cache's 3.0 GeV floor and 26.0 GeV median. The two CMS
+#    references are NOT the same trigger and the Upsilon number must not be read
+#    as if they were.
+# 5. Nothing here has been committed. git is not installed on this VM and this
+#    session ran no git command.

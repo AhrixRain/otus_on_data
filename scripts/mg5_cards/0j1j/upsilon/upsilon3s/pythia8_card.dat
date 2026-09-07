@@ -1,0 +1,14 @@
+! Pythia8 card for the inclusive Upsilon-region 0/1-parton CKKW-L samples.
+Main:numberOfEvents       = -1
+HEPMCoutput:file          = hepmc.gz
+
+! MadGraph transfers ktdurham=5 GeV to Merging:TMS.
+Merging:TMS               = -1.0
+Merging:Process           = guess
+Merging:nJetMax           = 1
+
+! The requested prior is ME+parton shower. Avoid hadron decays and underlying
+! event muons, which would make prompt hard-process dimuon identification
+! ambiguous in the showered event record.
+PartonLevel:MPI           = off
+HadronLevel:all           = off

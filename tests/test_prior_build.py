@@ -106,7 +106,9 @@ class TestMixing(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             sig = tmp / "sig.hdf5"
-            con = tmp / "con.hdf5"
+            # NOT "con.hdf5": CON is a reserved Windows device name, so h5py
+            # cannot create that file and the test errors with EINVAL there.
+            con = tmp / "continuum.hdf5"
             out = tmp / "mixed.hdf5"
             self._write(sig, 1000)
             self._write(con, 5000)

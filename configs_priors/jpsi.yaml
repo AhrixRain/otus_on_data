@@ -1,0 +1,17 @@
+# J/psi region
+# Every number below is PDG or derived by the rule in _common.yaml.
+extends: _common.yaml
+region: jpsi
+label: "J/psi region"
+
+states:
+  - name: jpsi
+    pdg_id: 443
+    mass_gev: 3.096900
+    width_gev: 9.26e-5
+    br_mumu: 0.05961
+
+components:
+  # Generated in the same fiducial region, stored side by side, never mixed.
+  - {id: 0, kind: signal, states: [jpsi]}
+  - {id: 3, kind: continuum, model: sm_mumass}

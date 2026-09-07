@@ -1,0 +1,53 @@
+# Settings shared by every region. A number belongs here only if it is the same
+# for all four regions; anything region-specific lives in the region spec, and
+# anything fitted to data lives in neither (see docs/prior_generation_method.md).
+schema_version: 1
+
+beams:
+  ebeam1_gev: 4000.0
+  ebeam2_gev: 4000.0
+  order: LO
+
+pdf:
+  # Recorded, not chosen per region. Fill from the generation VM's versions.txt
+  # and never vary it between regions.
+  set_name: null          # e.g. NNPDF31_lo_as_0130
+  lhaid: null             # e.g. 315200
+  member: 0
+
+process:
+  # One process for every region. Merged, not 2->1 and not 1-jet-with-a-cut.
+  jets: "g u c d s u~ c~ d~ s~"
+  born: "p p > mu+ mu-"
+  real: "p p > mu+ mu- j"
+  merging: CKKWL
+  # Starting point for the insensitivity scan, NOT a result.
+  # tms = max(tms_floor_gev, mass_gev / tms_mass_divisor)
+  tms_floor_gev: 10.0
+  tms_mass_divisor: 4.0
+  tms_scan_factors: [0.5, 1.0, 2.0]
+
+fiducial:
+  # CMS muon acceptance, identical in every region.
+  muon_pt_min_gev: 3.0
+  muon_abs_eta_max: 2.4
+  # window = M +- max(width_sigmas * Gamma, resolution_sigmas * sigma_res)
+  # sigma_res = relative_resolution * M; 1% is the published CMS dimuon figure
+  # and matches our own measurements (0.97% at J/psi, 0.89% at Upsilon(1S)).
+  window_rule:
+    width_sigmas: 3.0
+    resolution_sigmas: 5.0
+    relative_resolution: 0.01
+
+postprocessing:
+  # Both are deliberately off. See method note sections 3 and 6.
+  smear: false
+  reweight_to_data: false
+  mix_components: false     # components are shipped labelled, never premixed
+
+acceptance:
+  # A signal component wider than this means something smeared it. This is the
+  # check that would have rejected the current Upsilon prior (110-192 MeV).
+  max_signal_robust_width_mev: 1.0
+  require_merging_scale_scan: true
+  require_pair_pt_comparison: true

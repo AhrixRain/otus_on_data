@@ -244,7 +244,7 @@ def main() -> int:
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     config = resolve_joint_config(load_config(args.config))
-    arrays, _, _ = load_joint_regions(config, num_samples=None, use_cache=True)
+    arrays, _, _, _ = load_joint_regions(config, num_samples=None, use_cache=True)
     device = select_device(args.device)
     model = build_joint_autoencoder(
         config["model"],

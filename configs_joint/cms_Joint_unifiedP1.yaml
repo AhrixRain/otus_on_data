@@ -1,0 +1,185 @@
+# cms_Joint unifiedP1: the Session 29 unified priors, decoder-first selection.
+#
+# Controlled change against Run E: the J/psi and Z priors are replaced by the
+# unified-method files (docs/unified_prior_method.md v2.1), and checkpoint
+# selection moves to a 35% encoder / 65% decoder weighting of the *_vs_identity
+# gauges. Model, losses, schedules, CMS data selection and the sampler are
+# inherited from Run E unchanged.
+#
+# THIS RUN IS A DECLARED BASELINE, NOT AN ATTEMPT AT A RESULT.
+# Recorded expectation (memory.md section 11, hypothesis): on honest narrow
+# priors the Z region closes and the J/psi does not, and the identity map -
+# which passed every strict latent target on the smeared prior - now fails.
+# Basis: A/B narrow arm 0/35, M1 0/35 with latent gauge minimum 0.972 against
+# the 0.898 benchmark, and the section 7.6 structural diagnosis.
+#
+# PROVISIONAL: the J/psi prior is at Merging:TMS = 10.0. Its merging scan FAILED
+# (pair-pT median spread 92.85%, acceptance spread 48.69%) and
+# docs/prior_to_training_workflow.md Phase 2 may replace it with a TMS = 5.0 or
+# a 1-jet-only sample. This run therefore cannot be the final J/psi number.
+#
+# Addressed as `--run unifiedP1`.
+extends: cms_Joint_runE.yaml
+
+run_label: unifiedP1
+run_name: unifiedP1
+
+comparison:
+  baseline_run: Run_E
+  controlled_change: unified_priors_plus_35_65_decoder_first_selection
+  note: >-
+    Two variables move together: the priors and the selection policy. Both
+    scores are recorded per validation in history.json so the run can be read
+    under either policy. This is a baseline, so the dual record is the control.
+
+regions:
+  jpsi:
+    paths:
+      # Session 29 unified prior. Resolved against paths.data_root - confirm in
+      # --dry-run that this lands on <repo>/data/priors/.
+      theory_prior_file: priors/jpsi_unified_bare_tms10.hdf5
+    # The unified priors are loose-generated; the analysis window is an offline
+    # choice. These are the LEGACY windows, chosen so the only controlled
+    # change against Run E is the prior's provenance and shape - not the cut.
+    # Gate 4 (legacy containment) confirmed they are recoverable with margin.
+    theory_prior_selection:
+      mass_min: 3.0369
+      mass_max: 3.1569
+      muon_pt_min: 3
+      muon_abs_eta_max: 2.4
+  z:
+    paths:
+      theory_prior_file: priors/z_unified_bare_tms22p8.hdf5
+    theory_prior_selection:
+      mass_min: 70
+      mass_max: 110
+      muon_pt_min: 25
+      muon_abs_eta_max: 2.4
+
+# ---------------------------------------------------------------------------
+# KEYS BELOW REQUIRE CODE THAT DOES NOT EXIST YET.
+# They are inert until docs/joint_unifiedP1_cli_prompt.md sections 1, 2 and 4
+# land. --dry-run must FAIL LOUDLY on any of them that is unimplemented rather
+# than ignoring it silently.
+# ---------------------------------------------------------------------------
+
+prior_components:
+  # cms_data.load_theory_prior_z returns z_data[:, :8] and reads neither
+  # FDL/component_id nor FDL/weight. Without this block the run would train on
+  # the union of signal and continuum at whatever ratio the file happens to
+  # carry (J/psi: 737262 signal / 999089 continuum) with the CKKW-L weights
+  # dropped. Both would be wrong and neither would raise.
+  enabled: true
+  weights:
+    # FDL/weight holds CKKW-L Sudakov weights: a legitimate generator weight
+    # that MUST be applied. This is NOT the deleted 4-D data reweighting.
+    policy: resample_if_ess_ge_0p5
+    resample_seed: 20260906
+    stop_if_ess_below: 0.5
+  jpsi:
+    # Declared analysis parameter, never in the file. Set to the legacy prior's
+    # own effective signal fraction so composition is not a second variable.
+    # null = measure it from the legacy file's component_id at load, log it.
+    signal_fraction: null
+    signal_fraction_source: legacy_prior_effective
+  z:
+    # gamma*/Z is one interfering amplitude: one component, no fraction to fit.
+    # This is why Z is the closure test for the recipe.
+    signal_fraction: null
+    signal_fraction_source: single_component
+
+selection:
+  # Gates stay computed and logged, and stop blocking. Their thresholds were
+  # calibrated on the smeared prior and are stale; the per-region
+  # selection.gates / selection.targets blocks inherited from Run A are kept for
+  # the record and must no longer halt a run or drive checkpoint choice.
+  gates_blocking: false
+  # Identity and floor references are KEPT and reported. CLAUDE.md section 4:
+  # a raw KS carries no claim without them. On these priors they become
+  # informative for the first time - the J/psi signal component's robust width
+  # is 0.161 MeV against ~30 MeV of resolution, so z~ = x cannot pass.
+  identity_references: true
+  score:
+    # Weights apply to the dimensionless *_vs_identity gauges, NOT to raw
+    # metrics. memory.md open question 3: the old score
+    # 1.0*x_sim + 1.0*z_prior + 0.5*x_reco was dominated by z_prior at ~9.2 of
+    # ~10.5 in standardized units, so its nominal weights controlled nothing.
+    basis: vs_identity
+    encoder_weight: 0.35   # x -> z, unfolding
+    decoder_weight: 0.65   # z -> x, simulation
+    cycle_in_score: false  # no identity reference by design; reported only
+    also_record_legacy_score: true
+
+# ---------------------------------------------------------------------------
+# TWO INHERITED KEYS THAT CONTRADICT THE BLOCKS ABOVE. Both are overridden here;
+# the implementation must honour these, not the inherited values.
+# ---------------------------------------------------------------------------
+
+checkpoint_selection:
+  # Inherited from Run A: hard_gates true with gate_fail_penalty 1e6. On these
+  # priors the J/psi gates are expected to fail at EVERY validation (A/B narrow
+  # arm 0/35, M1 0/35), so a 1e6 penalty would dominate the objective and the
+  # 35/65 score would never operate - selection would be driven by the penalty
+  # alone. Gates are diagnostics here, not selectors.
+  hard_gates: false
+  gate_fail_penalty: 0
+  # Composition order: compute the 35/65 vs_identity score PER REGION, then
+  # combine across regions with the inherited worst_region_rms reduction.
+  mode: worst_region_rms
+  region_reduction: rms
+
+loss:
+  # The legacy score lives at loss.selection_score and is NOT deleted - it is
+  # what `also_record_legacy_score` writes to history.json for comparability
+  # with Run E. But `selection.score` above is AUTHORITATIVE for checkpoint
+  # choice. Two selection-score definitions now coexist in one config; the
+  # implementation must not silently pick this one.
+  selection_score:
+    x_sim: 1
+    z_prior: 1
+    x_reco: 0.1
+    cycle: 0
+
+metrics:
+  # Fraction of events within +-5 MeV of the peak, with identity and floor
+  # references. memory.md 7.6: prior 0.809, CMS data and identity map both
+  # 0.133. It is the number that separates a mixture from a hump.
+  latent_mass_core_fraction:
+    enabled: true
+    half_width_gev: 0.005
+
+# Upsilon stays out of region_order (inherited). It is opened only by
+# scripts_joint/upsilon_transfer_test.py after training, and any result is a
+# POST-UNBLINDING HELD-OUT TRANSFER TEST - never described as zero-shot.
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Do not load, train on, tune against, or select unifiedP1 checkpoints with
+    Upsilon. Upsilon was unblinded before this run was specified, so any
+    Upsilon evaluation is a post-unblinding held-out transfer test.
+
+    Evaluate TWO rows, which answer different questions:
+      (a) the OLD prior data/cms_upsilon_mumu_mg5py8_ckkwl_8tev_inclusive_0j1j_
+          fiducial_8p5_11p5_1M.hdf5 - directly comparable to the Run D/E and
+          A/B transfer numbers, since only the TRAINING prior then differs;
+      (b) a materialised evaluation file derived from
+          data/priors/upsilon_unified_bare_tms10.hdf5 - the fully method-
+          consistent number.
+
+    Row (b) CANNOT use the raw unified file. scripts_joint/upsilon/decode_prior.py
+    reads FDL/zData directly: it applies no analysis selection, ignores
+    FDL/weight, and applies no mixture fraction. The unified Upsilon prior is
+    loose-generated (8.4-11.6, ptl 2.0, etal 2.6), so decoding it raw would feed
+    in events outside the window and muons down to 2 GeV that the CMS trigger
+    never delivers. Materialise the evaluation array with the Phase 3 loader
+    first - selection 8.5-11.5 / pT > 3 / |eta| < 2.4, weights resampled away,
+    declared fraction applied, components still labelled - and point --prior at
+    that file. Do not teach decode_prior.py the policy; keep it in one place.
+
+    Report both rows differentially in bins of pair pT: the Upsilon prior is 99%
+    hard against CMS in pair pT and the J/psi prior is 39% soft, so
+    marginal-only numbers mislead by construction.
+
+    Upsilon never enters region_order. It is not trained on, and applying the
+    new prior to unifiedP1 is an evaluation-time act only - nothing in the
+    training configuration changes.

@@ -1,0 +1,12 @@
+Main:numberOfEvents       = -1
+HEPMCoutput:file          = hepmc.gz
+Merging:TMS               = -1.0
+Merging:Process           = guess
+Merging:nJetMax           = 1
+PartonLevel:ISR           = on
+PartonLevel:FSR           = on
+TimeShower:QEDshowerByL   = on
+PartonLevel:MPI           = off
+HadronLevel:all           = off
+Random:setSeed            = on
+Random:seed               = 240104

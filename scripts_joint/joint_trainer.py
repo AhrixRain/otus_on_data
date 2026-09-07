@@ -448,8 +448,15 @@ def _checkpoint(
         "joint_selection": selection,
         "joint_contract_sha256": config.get("_joint_contract_sha256"),
         "noise_multipliers": {
+            # "core"/"tail" stay for backward compatibility with checkpoints
+            # and readers that predate the encoder/decoder split; they carry
+            # the ENCODER values, which is what ``first_step`` has always been.
             "core": float(first_step.core_noise_multiplier),
             "tail": float(first_step.tail_noise_multiplier),
+            "encoder_core": float(model.encoder.steps[0].core_noise_multiplier),
+            "encoder_tail": float(model.encoder.steps[0].tail_noise_multiplier),
+            "decoder_core": float(model.decoder.steps[0].core_noise_multiplier),
+            "decoder_tail": float(model.decoder.steps[0].tail_noise_multiplier),
         },
     }
 
@@ -457,8 +464,15 @@ def _checkpoint(
 def restore_joint_checkpoint(model, checkpoint: dict[str, Any]) -> None:
     model.load_state_dict(checkpoint["model_state_dict"])
     noise = checkpoint.get("noise_multipliers") or {}
-    model.set_noise_multipliers(
-        float(noise.get("core", 1.0)), float(noise.get("tail", 1.0))
+    shared_core = float(noise.get("core", 1.0))
+    shared_tail = float(noise.get("tail", 1.0))
+    # Checkpoints written before the encoder/decoder split carry only the
+    # shared pair; restoring them must reproduce the old behaviour exactly.
+    model.set_component_noise_multipliers(
+        encoder_core=float(noise.get("encoder_core", shared_core)),
+        encoder_tail=float(noise.get("encoder_tail", shared_tail)),
+        decoder_core=float(noise.get("decoder_core", shared_core)),
+        decoder_tail=float(noise.get("decoder_tail", shared_tail)),
     )
 
 
@@ -490,11 +504,18 @@ def run_joint_training(
     if resume:
         history = [row for row in history if int(row.get("global_epoch", 0)) <= global_epoch]
 
+    hard_gates = bool(config.get("checkpoint_selection", {}).get("hard_gates", True))
     global_best_score = math.inf
     global_best_path = output_dir / "best_model.pt"
-    for row in history:
-        selection = row.get("joint_selection") or {}
-        if selection.get("all_gates_passed"):
+    # Only trust a historical score when the checkpoint it refers to is still on
+    # disk; otherwise the first improvement of this run must be free to write it.
+    if global_best_path.exists():
+        for row in history:
+            selection = row.get("joint_selection") or {}
+            if not selection:
+                continue
+            if hard_gates and not selection.get("all_gates_passed"):
+                continue
             global_best_score = min(
                 global_best_score, float(selection.get("selection_score", math.inf))
             )
@@ -511,7 +532,18 @@ def run_joint_training(
             reached_resume_stage = True
         start_epoch = resume_local + 1 if name == resume_stage else 1
         if start_epoch > int(stage["epochs"]):
+            # This stage finished before the interruption. The non-resume path
+            # restores the stage-best weights here, so the resume path must too.
+            completed_best = output_dir / f"best_{name}.pt"
+            if completed_best.exists():
+                restore_joint_checkpoint(
+                    model,
+                    torch.load(completed_best, map_location="cpu", weights_only=False),
+                )
+                print(f"Resume: restored {name} stage-best weights before continuing")
             resume_stage = ""
+            resume_local = 0
+            resume_optimizer = None
             continue
 
         _set_trainable(model, stage)
@@ -527,6 +559,22 @@ def run_joint_training(
         scheduler = _build_scheduler(optimizer, stage, start_epoch)
         stage_best_score = math.inf
         stage_best_path = output_dir / f"best_{name}.pt"
+        if stage_best_path.exists() and start_epoch > 1:
+            # Resuming inside a stage: recover the score the saved stage-best
+            # actually represents, otherwise any later epoch overwrites it.
+            for row in history:
+                if str(row.get("stage", "")) != name:
+                    continue
+                selection = row.get("joint_selection") or {}
+                if not selection:
+                    continue
+                stage_best_score = min(
+                    stage_best_score, float(selection.get("selection_score", math.inf))
+                )
+            if math.isfinite(stage_best_score):
+                print(
+                    f"Resume: {name} stage-best score restored as {stage_best_score:.6g}"
+                )
 
         for local_epoch in range(start_epoch, int(stage["epochs"]) + 1):
             global_epoch += 1
@@ -537,6 +585,10 @@ def run_joint_training(
             stage_resolved.update(
                 make_stage_loss_config(stage, local_epoch, int(stage["epochs"]))
             )
+            # Shared defaults, then optional per-component overrides. A stage
+            # that names only ``core_noise_multiplier`` / ``tail_noise_``
+            # behaves exactly as it did before the split, so every existing
+            # config and every completed run is reproducible unchanged.
             core = _scheduled_value(
                 stage.get("core_noise_multiplier", 1.0),
                 local_epoch,
@@ -547,7 +599,18 @@ def run_joint_training(
                 local_epoch,
                 int(stage["epochs"]),
             )
-            model.set_noise_multipliers(core, tail)
+            component_noise = {}
+            for component in ("encoder", "decoder"):
+                for kind, shared in (("core", core), ("tail", tail)):
+                    key = f"{component}_{kind}_noise_multiplier"
+                    component_noise[f"{component}_{kind}"] = (
+                        _scheduled_value(
+                            stage[key], local_epoch, int(stage["epochs"])
+                        )
+                        if key in stage
+                        else shared
+                    )
+            model.set_component_noise_multipliers(**component_noise)
             for factory in loss_factories.values():
                 factory.set_num_slices(int(stage_resolved["num_slices"]))
             train = train_joint_epoch(
@@ -570,6 +633,10 @@ def run_joint_training(
                 "lr": float(optimizer.param_groups[0]["lr"]),
                 "core_noise_multiplier": core,
                 "tail_noise_multiplier": tail,
+                "encoder_core_noise_multiplier": component_noise["encoder_core"],
+                "encoder_tail_noise_multiplier": component_noise["encoder_tail"],
+                "decoder_core_noise_multiplier": component_noise["decoder_core"],
+                "decoder_tail_noise_multiplier": component_noise["decoder_tail"],
                 "seconds": time.time() - started,
                 "train": train,
             }
@@ -604,8 +671,7 @@ def run_joint_training(
                 if score < stage_best_score:
                     stage_best_score = score
                     torch.save(payload, stage_best_path)
-                hard = bool(config.get("checkpoint_selection", {}).get("hard_gates", True))
-                eligible = selection["all_gates_passed"] or not hard
+                eligible = selection["all_gates_passed"] or not hard_gates
                 if eligible and score < global_best_score:
                     global_best_score = score
                     torch.save(payload, global_best_path)

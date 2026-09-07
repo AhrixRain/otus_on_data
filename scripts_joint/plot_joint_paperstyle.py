@@ -316,7 +316,7 @@ def main() -> int:
     )
     density = not args.counts
     config = resolve_joint_config(load_config(config_path))
-    arrays, _, _ = load_joint_regions(config, num_samples=None, use_cache=True)
+    arrays, _, _, _ = load_joint_regions(config, num_samples=None, use_cache=True)
     device = select_device(args.device)
     model = build_joint_autoencoder(
         config["model"],
