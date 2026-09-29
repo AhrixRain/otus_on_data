@@ -1,0 +1,23 @@
+# cms_Joint Run E short: shortened epoch budget for future/production runs.
+#
+# Run E full-pass schedule: 72 + 120 + 144 + 96 = 432 epochs.
+# This short schedule keeps the same stage/noise/loss design but lowers the
+# budget to 60 + 100 + 120 + 80 = 360 epochs.
+extends: cms_Joint_runE.yaml
+
+run_label: Run E short 360
+run_name: Run_E_short
+
+comparison:
+  baseline_run: Run_E
+  controlled_change: shortened 360-epoch schedule, all other settings unchanged
+
+stages:
+  - name: runA_stage1_deterministic_identity
+    epochs: 60
+  - name: runA_stage2_gaussian_response
+    epochs: 100
+  - name: runA_stage3_stochastic_joint
+    epochs: 120
+  - name: runA_stage4_tail_polish
+    epochs: 80

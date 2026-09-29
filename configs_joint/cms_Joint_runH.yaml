@@ -1,0 +1,122 @@
+# cms_Joint Run H: the pT-sliced conditional-mass fix.
+#
+# Diagnosis (2026-09-10, `scripts_joint/slice_resolved_diagnostic.py`): the Run F
+# model matches the global mass marginals but NOT the conditional mass
+# distribution at fixed pair-pT.  Per equal-count pair-pT quartile the
+# standardized mass W1 is 3.5-17x its finite-sample floor (J/psi 0.066-0.087 vs
+# floor 0.005-0.019; Z 0.035-0.137 vs floor 0.008-0.014).  That conditional
+# error, convolved with the right-skewed pair-pT spectrum, is the asymmetric
+# decoded peak.
+#
+# Fix: replace the weak 5-D joint `mass_kin_swd` (0.5) with a pT-sliced
+# conditional mass W1 at the same coupling weight.  Slices are equal-count
+# pair-pT quartiles of the truth, with a per-slice floor guard.
+#
+# Floor budget (artifact-measured, per-slice floor at the real per-update
+# cardinality): 4 slices -> J/psi 0.048, Z 0.052; the added floor at
+# coefficient 0.5 is ~0.025, about 17% of the ~0.15 learnable excess.  5 slices
+# would be ~0.035 (23%) and is rejected.  Hence 4 slices, min 512 events/slice.
+#
+# Controlled change versus Run G:
+#   * hidden_dims [128]*4 -> [256]*4
+#   * stages 20 + 60 + 60 -> 20 + 80 + 80
+#   * num_slices 256 in every stage
+#   * loss: mass_kin_swd 0.5 -> 0.0, sliced_mass_w1 0.0 -> 0.5 (+ slices/floor)
+# Everything else inherited: min_events_per_update 4096, shared encoder=decoder
+# constant noise, beta=lamb=tau=1, nu_e=nu_d=0.
+extends: cms_Joint_runG.yaml
+
+run_label: Run H pT-sliced conditional mass
+run_name: Run_H
+
+replace_keys: [stages]
+
+comparison:
+  baseline_run: Run_G
+  controlled_change: >-
+    Same three-stage mechanism contract, but 4x256 with 20 + 80 + 80 epochs,
+    num_slices 256 in every stage, and the weak 5-D mass_kin_swd replaced by a
+    pT-sliced conditional mass W1 (4 equal-count pair-pT slices, min 512
+    events/slice) at the same 0.5 coupling weight.
+
+model:
+  hidden_dims: [256, 256, 256, 256]
+
+loss:
+  # Move the mass-kinematics coupling from the weak joint SWD to the sliced
+  # conditional term. Keep the total weight at 0.5 to avoid double counting.
+  mass_kin_swd: 0.0
+  sliced_mass_w1: 0.5
+  sliced_mass_w1_slices: 4
+  sliced_mass_w1_min_events: 512
+
+stages:
+  - name: runH_stage1_deterministic_warmup
+    enabled: true
+    epochs: 20
+    optimizer: adamw
+    lr: 0.0002
+    lr_schedule: cosine
+    lr_min_factor: 0.1
+    lr_warmup_epochs: 2
+    lr_warmup_start_factor: 0.2
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 1.0
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 256
+    core_noise_multiplier: 0
+    tail_noise_multiplier: 0
+    eval_every: 5
+
+  - name: runH_stage2_stochastic_core
+    enabled: true
+    epochs: 80
+    optimizer: adamw
+    lr: 0.0001
+    lr_schedule: none
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 0.5
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 256
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+    eval_every: 5
+
+  - name: runH_stage3_stochastic_tail
+    enabled: true
+    epochs: 80
+    optimizer: adamw
+    lr: 0.0001
+    lr_schedule: none
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 0.5
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 256
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.5
+    eval_every: 5
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Upsilon remains excluded from training, tuning, checkpoint selection and
+    metric design. Any Upsilon evaluation of Run H is post-unblinding
+    held-out transfer, exactly as for Run E/F/G.

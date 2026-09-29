@@ -21,9 +21,9 @@
 #
 # Read-out
 # --------
-# Primary: regions.jpsi.gates.latent_mass_ks_vs_identity in each validation.
+# Primary: regions.jpsi.latent_mass_ks_vs_identity in each validation.
 #   < 1.0  the encoder is doing something the input alone does not do
-#   <= 0.5 the gate threshold set below
+#   <= 0.5 the target used by checkpoint selection below
 #   0.0    the finite-sample floor
 # The completed narrow arm sits at or above 1.0 at every single validation, so
 # any sustained excursion below 1.0 is the signal. Secondary: the raw
@@ -124,25 +124,17 @@ stages:
       schedule: cosine
     tail_noise_multiplier: 0.0
 
-# Gates and targets on the identity gauge. Thresholds are not guesses: the Z
-# region of the completed A/B reaches 0.001-0.03 (so a working map clears 0.5
-# by more than an order of magnitude), the smeared J/psi arm sits at 0.19-1.72,
-# and the narrow J/psi arm never goes below 1.0. A 0.5 gate therefore separates
-# "did real work" from "did what the input already did" on measured evidence.
+# Targets on the identity gauge. Thresholds are not guesses: the Z region of
+# the completed A/B reaches 0.001-0.03, the smeared J/psi arm sits at 0.19-1.72,
+# and the narrow J/psi arm never goes below 1.0.
 regions:
   jpsi:
     selection:
-      gates:
-        latent_mass_ks_vs_identity: 0.5
-        latent_mass_w1_gev_vs_identity: 0.5
       targets:
         latent_mass_ks_vs_identity: 0.25
         latent_mass_w1_gev_vs_identity: 0.25
   z:
     selection:
-      gates:
-        latent_mass_ks_vs_identity: 0.5
-        latent_mass_w1_gev_vs_identity: 0.5
       targets:
         latent_mass_ks_vs_identity: 0.25
         latent_mass_w1_gev_vs_identity: 0.25

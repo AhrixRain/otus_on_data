@@ -91,7 +91,7 @@ def maybe_ks(a: np.ndarray, b: np.ndarray) -> float | None:
     b = finite(b)
     if len(a) == 0 or len(b) == 0:
         return None
-    return float(ks_2samp(a, b).statistic)
+    return float(ks_2samp(a, b, method="asymp").statistic)
 
 
 def pair_pt(pairs: np.ndarray) -> np.ndarray:

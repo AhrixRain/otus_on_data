@@ -118,6 +118,48 @@ class JointResidualFlowMap(CylindricalResidualFlowMap):
         return (features - self.condition_mean) / self.condition_std
 
 
+_NOISE_OVERRIDE_KEYS = frozenset(
+    {
+        "core_sigma_floors",
+        "tail_sigma_floors",
+        "core_sigma_scales",
+        "tail_sigma_scales",
+        # A2.3 physics kernel: an eta-binned amplitude floor and the option to
+        # freeze the amplitude entirely (train the mean map only).
+        "core_sigma_floor_spec",
+        "freeze_noise_amplitude",
+    }
+)
+
+
+def _resolve_noise_overrides(model_config: dict[str, Any], component: str) -> dict[str, Any]:
+    """Merge a per-map noise override block into the shared model config.
+
+    The encoder and decoder play opposite roles: the encoder removes detector
+    resolution (its posterior may be narrow), the decoder adds it (its floor
+    must be wide enough for the physical resolution). The override blocks let a
+    config set different floors/scales per map without forking the model code.
+    Only the four noise keys are overridable; anything else is a typo.
+    """
+    key = f"{component}_noise_overrides"
+    overrides = model_config.get(key)
+    if overrides is None:
+        return model_config
+    if not isinstance(overrides, dict):
+        raise ValueError(f"model.{key} must be a mapping")
+    unknown = sorted(set(overrides) - _NOISE_OVERRIDE_KEYS)
+    if unknown:
+        raise ValueError(
+            f"model.{key} has unsupported keys {unknown}; allowed: "
+            f"{sorted(_NOISE_OVERRIDE_KEYS)}"
+        )
+    if not overrides:
+        return model_config
+    merged = dict(model_config)
+    merged.update(overrides)
+    return merged
+
+
 class JointDimuonAutoencoder(nn.Module):
     """One encoder and one decoder shared by every configured mass region."""
 
@@ -134,7 +176,7 @@ class JointDimuonAutoencoder(nn.Module):
         self.encoder = JointResidualFlowMap(
             *x_stats,
             condition_indices,
-            model_config,
+            _resolve_noise_overrides(model_config, "encoder"),
             muon_mass,
             daughter_masses,
             mass_from_energy=False,
@@ -142,7 +184,7 @@ class JointDimuonAutoencoder(nn.Module):
         self.decoder = JointResidualFlowMap(
             *z_stats,
             condition_indices,
-            model_config,
+            _resolve_noise_overrides(model_config, "decoder"),
             muon_mass,
             daughter_masses,
             mass_from_energy=True,

@@ -109,7 +109,11 @@ def _w1(a: np.ndarray, b: np.ndarray) -> float:
 
 def _ks(a: np.ndarray, b: np.ndarray) -> float:
     if _HAS_SCIPY:
-        return float(ks_2samp(a, b).statistic)
+        # The KS statistic is method-independent.  Use the asymptotic branch
+        # explicitly: with validation-sized samples SciPy's ``method="auto"``
+        # tries the exact calculation, fails, and emits a RuntimeWarning before
+        # falling back to the same asymptotic result.
+        return float(ks_2samp(a, b, method="asymp").statistic)
     grid = np.sort(np.concatenate([a, b]))
     return float(
         np.max(

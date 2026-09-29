@@ -2,8 +2,6 @@
 {
   "checkpoint_selection": {
     "base_loss_weight": 0,
-    "gate_fail_penalty": 1000000,
-    "hard_gates": true,
     "mode": "worst_region_direction"
   },
   "cuda_memory_limit_gb": 11,
@@ -173,22 +171,10 @@
       },
       "paths": {
         "cms_root_file": "Run2012BC_DoubleMuParked_Muons.root",
-        "theory_prior_file": "cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5"
+        "theory_prior_file": "legacy/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5"
       },
       "seed": 1701,
       "selection": {
-        "gates": {
-          "cycle_mass_ks": 0.15,
-          "cycle_mass_w1_gev": 0.015,
-          "direct_mass_ks": 0.12,
-          "direct_mass_w1_gev": 0.015,
-          "direct_mass_width_rel_error": 0.5,
-          "direct_pair_pt_ks": 0.15,
-          "latent_mass_ks": 0.12,
-          "latent_mass_w1_gev": 0.015,
-          "latent_mass_width_rel_error": 0.5,
-          "latent_pair_pt_ks": 0.15
-        },
         "targets": {
           "cycle_mass_ks": 0.04,
           "cycle_mass_w1_gev": 0.0025,
@@ -231,22 +217,10 @@
       },
       "paths": {
         "cms_root_file": "Run2012BC_DoubleMuParked_Muons.root",
-        "theory_prior_file": "cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5"
+        "theory_prior_file": "legacy/cms_dyee_mg5_8tev_dy1j_ptj5_fiducial_70_110.hdf5"
       },
       "seed": 1801,
       "selection": {
-        "gates": {
-          "cycle_mass_ks": 0.15,
-          "cycle_mass_w1_gev": 3,
-          "direct_mass_ks": 0.15,
-          "direct_mass_w1_gev": 3,
-          "direct_mass_width_rel_error": 0.5,
-          "direct_pair_pt_ks": 0.2,
-          "latent_mass_ks": 0.15,
-          "latent_mass_w1_gev": 3,
-          "latent_mass_width_rel_error": 0.5,
-          "latent_pair_pt_ks": 0.2
-        },
         "targets": {
           "cycle_mass_ks": 0.04,
           "cycle_mass_w1_gev": 0.5,
@@ -268,14 +242,13 @@
       }
     }
   },
-  "require_stage_gate_pass": false,
   "run_label": "Run A",
   "run_name": "Run_A",
   "seed": 1701,
   "series": "cms_Joint",
   "stages": [
     {
-      "adam_eps": 1e-7,
+      "adam_eps": "1e-7",
       "beta": 1,
       "core_noise_multiplier": 0,
       "enabled": true,
@@ -296,10 +269,10 @@
       "rho": 0,
       "tail_noise_multiplier": 0,
       "tau": 0.25,
-      "weight_decay": 0.00001
+      "weight_decay": 1e-05
     },
     {
-      "adam_eps": 1e-7,
+      "adam_eps": "1e-7",
       "beta": 1,
       "core_noise_multiplier": {
         "end": 1,
@@ -319,15 +292,15 @@
       "name": "runA_stage2_gaussian_response",
       "nu_d": 0.1,
       "nu_e": 0.1,
-      "num_slices": 384,
+      "num_slices": 256,
       "optimizer": "adamw",
       "rho": 0,
       "tail_noise_multiplier": 0,
       "tau": 1,
-      "weight_decay": 0.00001
+      "weight_decay": 1e-05
     },
     {
-      "adam_eps": 1e-7,
+      "adam_eps": "1e-7",
       "beta": 1,
       "core_noise_multiplier": 1,
       "enabled": true,
@@ -335,7 +308,7 @@
       "eval_every": 5,
       "gradient_clip_norm": 0.5,
       "lamb": 1,
-      "lr": 0.00003,
+      "lr": 3e-05,
       "lr_min_factor": 0.1,
       "lr_schedule": "cosine",
       "lr_warmup_epochs": 2,
@@ -343,7 +316,7 @@
       "name": "runA_stage3_stochastic_joint",
       "nu_d": 0,
       "nu_e": 0,
-      "num_slices": 512,
+      "num_slices": 256,
       "optimizer": "adamw",
       "rho": 0,
       "tail_noise_multiplier": {
@@ -352,10 +325,10 @@
         "start": 0
       },
       "tau": 1,
-      "weight_decay": 0.00001
+      "weight_decay": 1e-05
     },
     {
-      "adam_eps": 1e-7,
+      "adam_eps": "1e-7",
       "beta": 1,
       "core_noise_multiplier": 1,
       "enabled": true,
@@ -363,7 +336,7 @@
       "eval_every": 5,
       "gradient_clip_norm": 0.5,
       "lamb": 0.75,
-      "lr": 0.00001,
+      "lr": 1e-05,
       "lr_min_factor": 0.1,
       "lr_schedule": "cosine",
       "lr_warmup_epochs": 2,
@@ -371,7 +344,7 @@
       "name": "runA_stage4_tail_polish",
       "nu_d": 0,
       "nu_e": 0,
-      "num_slices": 512,
+      "num_slices": 256,
       "optimizer": "adamw",
       "rho": 0,
       "tail_noise_multiplier": {
@@ -380,7 +353,7 @@
         "start": 0.25
       },
       "tau": 1.25,
-      "weight_decay": 0.00001
+      "weight_decay": 1e-05
     }
   ]
 }

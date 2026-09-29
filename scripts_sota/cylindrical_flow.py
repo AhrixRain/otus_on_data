@@ -86,6 +86,151 @@ def condition_stats_np(train_p4: np.ndarray, daughter_masses) -> tuple[np.ndarra
     return mean, std
 
 
+_SIGMA_FLOOR_SPEC_KEYS = frozenset(
+    {
+        "schema_version",
+        "eta_bins",
+        "logpt_a",
+        "logpt_b",
+        "power_c",
+        "power_alpha",
+        "power_pivot_gev",
+        "linear_offset",
+        "linear_slope",
+        "sigma_cap",
+        "pt_max_gev",
+        "phi_a",
+        "phi_b",
+        "eta_a",
+        "eta_b",
+        "tail_ratio",
+        "scale",
+        "units",
+        "form",
+        "mode",
+        "provenance",
+    }
+)
+
+
+def _validate_sigma_floor_spec(spec: dict) -> dict:
+    """Validate a physics resolution kernel spec and normalize defaults.
+
+    The spec is a small eta-binned parameterisation of the per-muon noise
+    amplitude in the model's cylindrical coordinates. Two forms are supported:
+
+    * ``logpt_a`` / ``logpt_b``: ``sigma = scale * sqrt(a(eta)^2 + (b(eta)/pT)^2)``
+      (a resolution that falls with pT), and
+    * ``power_c`` / ``power_alpha``: ``sigma = scale * c(eta) * (pT/pivot)^alpha(eta)``
+      (calibrated on CMS: the per-muon log-pT amplitude *increases* with pT).
+
+    The spec is stored as plain Python attributes (never buffers) so that
+    checkpoints written without a kernel keep an unchanged state dict.
+    """
+    if not isinstance(spec, dict):
+        raise ValueError("core_sigma_floor_spec must be a mapping")
+    unknown = sorted(set(spec) - _SIGMA_FLOOR_SPEC_KEYS)
+    if unknown:
+        raise ValueError(
+            f"core_sigma_floor_spec has unsupported keys {unknown}; allowed: "
+            f"{sorted(_SIGMA_FLOOR_SPEC_KEYS)}"
+        )
+    eta_bins = [float(value) for value in spec.get("eta_bins", [])]
+    if len(eta_bins) < 2:
+        raise ValueError("core_sigma_floor_spec.eta_bins needs at least two edges")
+    if any(b <= a for a, b in zip(eta_bins, eta_bins[1:])):
+        raise ValueError("core_sigma_floor_spec.eta_bins must be strictly increasing")
+    n_bins = len(eta_bins) - 1
+    normalized: dict = {
+        "eta_bins": eta_bins,
+        "tail_ratio": float(spec.get("tail_ratio", 0.0)),
+        "scale": float(spec.get("scale", 1.0)),
+        "sigma_cap": float(spec.get("sigma_cap", 0.25)),
+        "pt_max_gev": float(spec.get("pt_max_gev", 200.0)),
+    }
+    if normalized["tail_ratio"] < 0.0:
+        raise ValueError("core_sigma_floor_spec.tail_ratio must be non-negative")
+    if not normalized["scale"] > 0.0:
+        raise ValueError("core_sigma_floor_spec.scale must be positive")
+    if not normalized["sigma_cap"] > 0.0:
+        raise ValueError("core_sigma_floor_spec.sigma_cap must be positive")
+    if not normalized["pt_max_gev"] > 0.0:
+        raise ValueError("core_sigma_floor_spec.pt_max_gev must be positive")
+    power_mode = "power_c" in spec or "power_alpha" in spec
+    linear_mode = "linear_offset" in spec or "linear_slope" in spec
+    if power_mode and linear_mode:
+        raise ValueError(
+            "core_sigma_floor_spec: use only one of power_c/power_alpha or "
+            "linear_offset/linear_slope"
+        )
+    if linear_mode:
+        if "linear_offset" not in spec or "linear_slope" not in spec:
+            raise ValueError(
+                "core_sigma_floor_spec.linear_offset and linear_slope must be "
+                "provided together"
+            )
+        if "logpt_a" in spec or "logpt_b" in spec:
+            raise ValueError(
+                "core_sigma_floor_spec: use either logpt_a/logpt_b or the "
+                "linear_offset/linear_slope form, not both"
+            )
+        for key in ("linear_offset", "linear_slope"):
+            values = [float(value) for value in spec[key]]
+            if len(values) != n_bins:
+                raise ValueError(
+                    f"core_sigma_floor_spec.{key} must have {n_bins} values"
+                )
+            if not bool(np.isfinite(values).all()):
+                raise ValueError(f"core_sigma_floor_spec.{key} must be finite")
+            if any(value < 0.0 for value in values):
+                raise ValueError(f"core_sigma_floor_spec.{key} must be non-negative")
+            normalized[key] = values
+        normalized["mode"] = "linear"
+    elif power_mode:
+        if "power_c" not in spec or "power_alpha" not in spec:
+            raise ValueError(
+                "core_sigma_floor_spec.power_c and power_alpha must be provided together"
+            )
+        if "logpt_a" in spec or "logpt_b" in spec:
+            raise ValueError(
+                "core_sigma_floor_spec: use either logpt_a/logpt_b or "
+                "power_c/power_alpha, not both"
+            )
+        for key in ("power_c", "power_alpha"):
+            values = [float(value) for value in spec[key]]
+            if len(values) != n_bins:
+                raise ValueError(
+                    f"core_sigma_floor_spec.{key} must have {n_bins} values"
+                )
+            if not bool(np.isfinite(values).all()):
+                raise ValueError(f"core_sigma_floor_spec.{key} must be finite")
+            if key == "power_c" and any(value < 0.0 for value in values):
+                raise ValueError("core_sigma_floor_spec.power_c must be non-negative")
+            normalized[key] = values
+        pivot = float(spec.get("power_pivot_gev", 10.0))
+        if not pivot > 0.0:
+            raise ValueError("core_sigma_floor_spec.power_pivot_gev must be positive")
+        normalized["power_pivot_gev"] = pivot
+        normalized["mode"] = "power_law"
+    else:
+        for key in ("logpt_a", "logpt_b"):
+            values = [float(value) for value in spec.get(key, [])]
+            if len(values) != n_bins:
+                raise ValueError(f"core_sigma_floor_spec.{key} must have {n_bins} values")
+            if any(value < 0.0 for value in values):
+                raise ValueError(f"core_sigma_floor_spec.{key} must be non-negative")
+            normalized[key] = values
+        normalized["mode"] = "sqrt"
+    for key in ("phi_a", "phi_b", "eta_a", "eta_b"):
+        values = [float(value) for value in spec.get(key, [0.0] * n_bins)]
+        if len(values) != n_bins:
+            raise ValueError(f"core_sigma_floor_spec.{key} must have {n_bins} values")
+        if any(value < 0.0 for value in values):
+            raise ValueError(f"core_sigma_floor_spec.{key} must be non-negative")
+        normalized[key] = values
+    return normalized
+
+
 class CylindricalFlowStep(nn.Module):
     """One conditional stochastic residual transform on cylindrical coords."""
 
@@ -113,11 +258,39 @@ class CylindricalFlowStep(nn.Module):
             values = torch.as_tensor(model_config[name], dtype=torch.float32)
             if values.numel() != _CYLINDRICAL_DIM:
                 raise ValueError(f"{name} must contain six coordinate values")
+            if name.endswith("floors") and bool((values < 0).any()):
+                raise ValueError(f"{name} must be non-negative")
             self.register_buffer(name, values)
+        # Optional tail floor, default OFF so every checkpoint written before
+        # 2026-09-23 loads with an unchanged state dict. When enabled it is a
+        # registered buffer and part of the checkpoint; when absent the
+        # attribute is None and the forward pass adds nothing.
+        tail_floors = model_config.get("tail_sigma_floors")
+        if tail_floors is None:
+            self.tail_sigma_floors = None
+        else:
+            values = torch.as_tensor(tail_floors, dtype=torch.float32)
+            if values.numel() != _CYLINDRICAL_DIM:
+                raise ValueError("tail_sigma_floors must contain six coordinate values")
+            if bool((values < 0).any()):
+                raise ValueError("tail_sigma_floors must be non-negative")
+            self.register_buffer("tail_sigma_floors", values)
         self.student_t_df = float(model_config["student_t_degrees_of_freedom"])
         self.maximum_heavy_noise = float(model_config["maximum_heavy_noise"])
         if self.student_t_df <= 2.0:
             raise ValueError("Student-t degrees of freedom must exceed two")
+        # Optional physics resolution kernel (A2.3). Default OFF; stored as
+        # plain attributes so checkpoints written without it are unchanged.
+        self.sigma_floor_spec = None
+        self.freeze_noise_amplitude = bool(model_config.get("freeze_noise_amplitude", False))
+        floor_spec = model_config.get("core_sigma_floor_spec")
+        if floor_spec is not None:
+            self.sigma_floor_spec = _validate_sigma_floor_spec(floor_spec)
+        if self.freeze_noise_amplitude and self.sigma_floor_spec is None:
+            raise ValueError(
+                "freeze_noise_amplitude requires core_sigma_floor_spec "
+                "(there is nothing to freeze otherwise)"
+            )
         self.core_noise_multiplier = 1.0
         self.tail_noise_multiplier = 1.0
 
@@ -125,12 +298,103 @@ class CylindricalFlowStep(nn.Module):
         self.core_noise_multiplier = float(core)
         self.tail_noise_multiplier = float(tail)
 
+    def _sigma_floor(self, coordinates: torch.Tensor) -> torch.Tensor:
+        """Per-coordinate physics noise floor, (N, 6), from the kernel spec.
+
+        Coordinates are [log pT-, eta-, phi-, log pT+, eta+, phi+]. The log-pT
+        channel is either ``scale * sqrt(a(eta)^2 + (b(eta)/pT)^2)`` or, in
+        power-law mode, ``scale * c(eta) * (pT / pivot)^alpha(eta)``. Tails
+        outside the eta table clamp to the last bin so an extrapolated event is
+        still bounded.
+        """
+        spec = self.sigma_floor_spec
+        edges = torch.as_tensor(
+            spec["eta_bins"], dtype=coordinates.dtype, device=coordinates.device
+        )
+        scale = float(spec["scale"])
+        mode = spec.get("mode", "sqrt")
+
+        def table(name: str, index: torch.Tensor) -> torch.Tensor:
+            values = torch.as_tensor(
+                spec[name], dtype=coordinates.dtype, device=coordinates.device
+            )
+            return values[index]
+
+        columns = []
+        sigma_cap = float(spec["sigma_cap"])
+        pt_max = float(spec["pt_max_gev"])
+        for start in (0, 3):
+            eta = coordinates[:, start + 1]
+            logpt = torch.clamp(coordinates[:, start], min=-7.0, max=9.0)
+            # Clamp pT before evaluating the kernel: the amplitude laws grow
+            # without bound, and an unclamped high-pT tail event would get an
+            # arbitrarily large noise amplitude and blow up the loss.
+            pt = torch.clamp(torch.exp(logpt), max=pt_max)
+            if mode == "power_law":
+                n_bins = len(spec["power_c"])
+            elif mode == "linear":
+                n_bins = len(spec["linear_offset"])
+            else:
+                n_bins = len(spec["logpt_a"])
+            index = torch.clamp(
+                torch.bucketize(eta.abs(), edges, right=False) - 1,
+                min=0,
+                max=n_bins - 1,
+            )
+            if mode == "power_law":
+                c = table("power_c", index)
+                alpha = table("power_alpha", index)
+                sigma = scale * c * (pt / float(spec["power_pivot_gev"])) ** alpha
+            elif mode == "linear":
+                offset = table("linear_offset", index)
+                slope = table("linear_slope", index)
+                sigma = scale * (offset + slope * pt)
+            else:
+                a = table("logpt_a", index)
+                b = table("logpt_b", index)
+                sigma = scale * torch.sqrt(
+                    torch.clamp(a * a + (b / pt) ** 2, min=1e-12)
+                )
+            columns.append(torch.clamp(sigma, max=sigma_cap))
+            eta_a = table("eta_a", index)
+            eta_b = table("eta_b", index)
+            columns.append(
+                torch.clamp(
+                    scale
+                    * torch.sqrt(
+                        torch.clamp(eta_a * eta_a + (eta_b / pt) ** 2, min=1e-12)
+                    ),
+                    max=sigma_cap,
+                )
+            )
+            phi_a = table("phi_a", index)
+            phi_b = table("phi_b", index)
+            columns.append(
+                torch.clamp(
+                    scale
+                    * torch.sqrt(
+                        torch.clamp(phi_a * phi_a + (phi_b / pt) ** 2, min=1e-12)
+                    ),
+                    max=sigma_cap,
+                )
+            )
+        return torch.stack(columns, dim=1)
+
     def forward(self, coordinates: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
         response = self.head(self.backbone(condition))
         mean_raw, core_raw, tail_raw = response.split(6, dim=1)
         mean_delta = torch.tanh(mean_raw) * self.mean_residual_limits
         core_sigma = self.core_sigma_floors + F.softplus(core_raw) * self.core_sigma_scales
         tail_sigma = F.softplus(tail_raw) * self.tail_sigma_scales
+        if self.tail_sigma_floors is not None:
+            tail_sigma = tail_sigma + self.tail_sigma_floors
+        if self.sigma_floor_spec is not None:
+            physics_floor = self._sigma_floor(coordinates)
+            if self.freeze_noise_amplitude:
+                core_sigma = physics_floor
+                tail_sigma = self.sigma_floor_spec["tail_ratio"] * physics_floor
+            else:
+                core_sigma = torch.maximum(core_sigma, physics_floor)
 
         core_noise = torch.randn_like(core_sigma)
         concentration = core_sigma.new_tensor(self.student_t_df / 2.0)

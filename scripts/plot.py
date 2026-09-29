@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import warnings
 from typing import Any
 
 
@@ -298,7 +299,17 @@ def w2_1d_in_histogram_range_np(a: np.ndarray, b: np.ndarray, bins: np.ndarray) 
 def maybe_ks(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
     if not HAS_SCIPY:
         return float("nan"), float("nan")
-    result = ks_2samp(np.asarray(a), np.asarray(b))
+    # ``method="auto"`` can try an exact calculation that overflows for large
+    # samples, then emit a RuntimeWarning before falling back to ``asymp``.
+    # The fallback result is the one we want; suppress only that warning so the
+    # exact branch is still used whenever it succeeds.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="ks_2samp: Exact calculation unsuccessful.*",
+            category=RuntimeWarning,
+        )
+        result = ks_2samp(np.asarray(a), np.asarray(b))
     return float(result.statistic), float(result.pvalue)
 
 

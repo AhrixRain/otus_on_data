@@ -1,0 +1,56 @@
+# cms_Joint Run E constant-noise arm (meeting point 1 + point 4).
+#
+# Controlled change versus Run E: the per-epoch noise ramps in stages 2-4 are
+# replaced by ONE constant schedule, identical for the encoder and the decoder.
+# Everything else is inherited unchanged: stage-1 deterministic warmup,
+# stage lengths, loss coefficients, LR schedule, model, data.
+#
+# Why this is the right single knob to test:
+#   source-verified, 2026-09-09: every loss coefficient (beta, lamb, tau,
+#   nu_e, nu_d) is already a scalar in the Run A-E configs, so there is no
+#   variable loss weighting to remove. The only coefficients that change from
+#   epoch to epoch are the noise multipliers (joint_trainer.py resolves them
+#   through _scheduled_value) and the LR. This arm removes the noise ramp.
+#
+# Shared schedule for both maps (meeting point 1):
+#   Only the shared `core_noise_multiplier` / `tail_noise_multiplier` keys are
+#   set. joint_trainer.py applies those to both the encoder and the decoder
+#   when no `encoder_*` / `decoder_*` override is present, so stages 2-4 give
+#   both maps exactly the same constant multipliers. Do not add per-component
+#   keys here; tests/test_joint_runa.py::ConstantNoiseArmContract asserts it.
+#
+# Stage 1 is deliberately left deterministic (0/0) as the warm start, per the
+# 2026-09-09 decision. Stages 2-4 all run at core=1.0, tail=0.25, the Run E
+# stage-3 terminal regime.
+extends: cms_Joint_runE.yaml
+
+run_label: Run E constant shared noise
+run_name: Run_E_constNoise
+
+comparison:
+  baseline_run: Run_E
+  controlled_change: >-
+    Original 432 epochs and stage-1 deterministic warmup. Stages 2-4 replace
+    the core/tail noise ramps with one constant shared schedule
+    (encoder = decoder = core 1.0, tail 0.25). Loss coefficients, LR schedule,
+    model, data and stage lengths are unchanged.
+
+stages:
+  - name: runA_stage1_deterministic_identity
+    # Inherited: core 0 -> tail 0. Deterministic warmup kept by decision.
+  - name: runA_stage2_gaussian_response
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+  - name: runA_stage3_stochastic_joint
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+  - name: runA_stage4_tail_polish
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+
+holdout:
+  policy: >-
+    Upsilon remains excluded from training, tuning, checkpoint selection and
+    metric design. The constant-noise arm exists to test whether the Run E
+    stage-3/4 decomposition is schedule-driven; any Upsilon number from it is
+    post-unblinding held-out transfer, exactly as for Run E.

@@ -51,6 +51,7 @@ signal components (Upsilon 1S/2S/3S).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -132,6 +133,8 @@ def kish_ess(weights: np.ndarray) -> float:
 def unweight_accept_reject(weights: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Keep event i with probability w_i / w_max. No duplicated rows, ever."""
     w = np.asarray(weights, dtype=np.float64)
+    if w.ndim != 1 or not len(w) or not np.isfinite(w).all():
+        raise ValueError("generator weights must be a nonempty finite 1-D array")
     if np.any(w < 0):
         raise ValueError(
             "negative generator weights present; accept-reject cannot unweight "
@@ -146,6 +149,98 @@ def unweight_accept_reject(weights: np.ndarray, rng: np.random.Generator) -> np.
 # --------------------------------------------------------------------------
 # mixture fraction
 # --------------------------------------------------------------------------
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def measure_component_fractions(path: Path, selection: dict) -> dict[str, float]:
+    """Read the declared reference mixture after selection, matching by name.
+
+    A weighted reference must be materialized first: row counts in such a file
+    are not its mixture. This mode is intended for the existing legacy prior.
+    """
+    import h5py
+    with h5py.File(path, "r") as handle:
+        if "FDL/weight" in handle:
+            raise ValueError("materialize the reference weights before measuring its fractions")
+        z = np.asarray(handle["FDL/zData"])[:, :8]
+        cid = np.asarray(handle["FDL/component_id"])
+        mapping = json.loads(handle.attrs["component_id_mapping"])
+    cid = cid[_selection_mask(z, selection)]
+    if not len(cid) or len(set(mapping.values())) != len(mapping):
+        raise ValueError("empty reference selection or ambiguous component mapping")
+    if not np.isin(cid, list(mapping.values())).all():
+        raise ValueError("reference contains unlabelled components")
+    return {name: float(np.mean(cid == ident)) for name, ident in mapping.items()}
+
+
+def materialize_component_mixture(cid, weight, mapping, fractions, rng, min_ess_ratio=0.5):
+    """Apply generator shapes within components, then a declared full mixture.
+
+    p(event i | component c) is proportional to w_i / sum(w_c). Absolute
+    generator normalization must not decide the declared state fractions.
+    Accept-reject uses a separate maximum per component, without clipping;
+    uniform subsampling then realizes the requested mixture without repeats.
+    """
+    cid, weight = np.asarray(cid), np.asarray(weight, dtype=np.float64)
+    if cid.ndim != 1 or cid.shape != weight.shape or not len(cid):
+        raise ValueError("component labels and weights must be aligned nonempty vectors")
+    if not np.isfinite(weight).all() or np.any(weight < 0):
+        raise ValueError("generator weights must be finite and nonnegative")
+    if set(mapping) != set(fractions) or len(set(mapping.values())) != len(mapping):
+        raise ValueError("reference and source component names must match uniquely")
+    if not np.isin(cid, list(mapping.values())).all():
+        raise ValueError("source contains unlabelled components")
+    names = sorted(mapping)
+    targets = np.array([fractions[name] for name in names], dtype=float)
+    if (not np.isfinite(targets).all() or np.any(targets < 0)
+            or not np.isclose(targets.sum(), 1., rtol=0, atol=1e-10)):
+        raise ValueError("component fractions must be nonnegative and sum to one")
+    pools, details = {}, {}
+    for name, target in zip(names, targets):
+        idx = np.flatnonzero(cid == mapping[name])
+        w = weight[idx]
+        if target == 0:
+            pools[name] = np.array([], dtype=int)
+            continue
+        if not len(w) or w.sum() <= 0:
+            raise ValueError(f"component {name} has no positive-weight events")
+        ess = kish_ess(w)
+        if ess / len(w) < min_ess_ratio:
+            raise ValueError(f"component {name} ESS/N={ess / len(w):.6f} below {min_ess_ratio}")
+        accepted = idx[unweight_accept_reject(w, rng)]
+        if not len(accepted):
+            raise ValueError(f"component {name} has no accepted events")
+        pools[name] = accepted
+        details[name] = {
+            "selected_events": len(idx), "sum_generator_weights": float(w.sum()),
+            "generator_weight_max": float(w.max()), "kish_ess": ess,
+            "kish_ess_ratio": ess / len(w), "expected_efficiency": float(w.mean() / w.max()),
+            "accepted_events": len(accepted), "requested_fraction": float(target),
+        }
+    n = int(np.floor(min(len(pools[name]) / f for name, f in zip(names, targets) if f > 0)))
+    if n < 1:
+        raise ValueError("no mixture can be formed from the accepted events")
+    counts = np.floor(n * targets).astype(int)
+    # Largest-remainder allocation keeps every target within one event.
+    order = np.argsort(-(n * targets - counts), kind="stable")
+    for i in order[:n - int(counts.sum())]:
+        counts[i] += 1
+    chosen = []
+    for name, count in zip(names, counts):
+        if count > len(pools[name]):
+            raise AssertionError("mixture allocation exceeded a component's capacity")
+        chosen.append(rng.choice(pools[name], int(count), replace=False))
+        details.setdefault(name, {})["output_events"] = int(count)
+        details[name]["achieved_fraction"] = float(count / n)
+    idx = np.sort(np.concatenate(chosen))
+    return idx, details
+
+
 def measure_signal_fraction(path: Path, selection: dict) -> float:
     """Effective signal fraction of a reference prior, after the same cut."""
     import h5py
@@ -253,6 +348,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--signal-fraction-from", type=Path, default=None,
                    help="Measure the fraction from this reference prior, after "
                         "the same selection.")
+    p.add_argument("--component-fractions-from", type=Path, default=None,
+                   help="Match every named reference component after selection. Applies "
+                        "uncapped generator weights within each component before mixing; "
+                        "mutually exclusive with signal-fraction options.")
     p.add_argument("--min-events", type=int, default=50_000)
     p.add_argument("--seed", type=int, default=20260906)
     p.add_argument("--overwrite", action="store_true")
@@ -266,10 +365,16 @@ def main(argv=None) -> int:
     import h5py
 
     args = parse_args(argv)
+    if args.component_fractions_from is not None and (
+        args.signal_fraction is not None or args.signal_fraction_from is not None
+        or args.unweight != "accept_reject" or args.weight_cap_quantile is not None
+    ):
+        raise SystemExit("full component fractions require uncapped accept-reject and no signal-fraction option")
     if args.out_file.exists() and not args.overwrite:
         raise SystemExit(f"{args.out_file} exists; pass --overwrite")
     rng = np.random.default_rng(args.seed)
     report: dict = {"schema_version": SCHEMA, "source": str(args.in_file)}
+    report["source_sha256"] = file_sha256(args.in_file)
 
     with h5py.File(args.in_file, "r") as handle:
         if "FDL/zData" not in handle:
@@ -341,11 +446,34 @@ def main(argv=None) -> int:
     if not args.skip_cms_data_check:
         verify_against_cms_data(z, selection, keep)
     z, cid = z[keep], (cid[keep] if cid is not None else None)
+    source_rows = np.flatnonzero(keep)
     weight = weight[keep] if weight is not None else None
     report["n_after_selection"] = int(len(z))
 
     # ---- weights ---------------------------------------------------------
-    if weight is None:
+    mapping = attr("component_id_mapping")
+    mapping = json.loads(mapping) if isinstance(mapping, str) else (mapping or {})
+    component_mode = args.component_fractions_from is not None
+    if component_mode:
+        if cid is None or not mapping or weight is None:
+            raise ValueError("full component weighting requires labels, mapping and FDL/weight")
+        fractions = measure_component_fractions(args.component_fractions_from, selection)
+        idx, details = materialize_component_mixture(
+            cid, weight, mapping, fractions, rng, args.min_ess_ratio)
+        z, cid, source_rows = z[idx], cid[idx], source_rows[idx]
+        weight = None
+        report.update(
+            unweighting="accept_reject_per_component", duplicated_rows=0,
+            component_weighting=details, component_target_fractions=fractions,
+            component_fractions_source=str(args.component_fractions_from),
+            component_fractions_source_sha256=file_sha256(args.component_fractions_from),
+            n_after_unweighting=sum(d.get("accepted_events", 0) for d in details.values()),
+            n_after_fraction=len(z),
+            weighting_policy="Within each named component apply generator weights; "
+                "independently set all component fractions from the selected reference. "
+                "No weight clipping, data shape fitting, or duplicate source events.",
+        )
+    elif weight is None:
         report["unweighting"] = "no FDL/weight in source"
     elif args.unweight == "none":
         report["unweighting"] = "none - weights carried through unapplied"
@@ -395,12 +523,11 @@ def main(argv=None) -> int:
         report["accept_reject_efficiency_achieved"] = float(mask.mean())
         report["duplicated_rows"] = 0
         z, cid = z[mask], (cid[mask] if cid is not None else None)
+        source_rows = source_rows[mask]
         weight = None
         report["n_after_unweighting"] = int(len(z))
 
     # ---- mixture fraction ------------------------------------------------
-    mapping = attr("component_id_mapping")
-    mapping = json.loads(mapping) if isinstance(mapping, str) else (mapping or {})
     continuum_ids = {int(v) for k, v in mapping.items() if "continuum" in str(k).lower()}
     target = args.signal_fraction
     if args.signal_fraction_from is not None:
@@ -408,7 +535,9 @@ def main(argv=None) -> int:
             raise SystemExit("pass only one of --signal-fraction / --signal-fraction-from")
         target = measure_signal_fraction(args.signal_fraction_from, selection)
         report["signal_fraction_source"] = str(args.signal_fraction_from)
-    if target is None or cid is None or not continuum_ids:
+    if component_mode:
+        report["signal_fraction_applied"] = float(np.isin(cid, list(continuum_ids), invert=True).mean())
+    elif target is None or cid is None or not continuum_ids:
         report["signal_fraction_applied"] = None
         report["signal_fraction_note"] = (
             "no fraction applied - single-component region, or none requested"
@@ -416,6 +545,7 @@ def main(argv=None) -> int:
     else:
         idx = apply_signal_fraction(cid, continuum_ids, target, rng)
         z, cid = z[idx], cid[idx]
+        source_rows = source_rows[idx]
         weight = weight[idx] if weight is not None else None
         achieved = float(np.isin(cid, list(continuum_ids), invert=True).mean())
         report["signal_fraction_requested"] = float(target)
@@ -450,6 +580,7 @@ def main(argv=None) -> int:
     with h5py.File(args.out_file, "w") as out:
         group = out.create_group("FDL")
         group.create_dataset("zData", data=z.astype(np.float32), compression="gzip")
+        group.create_dataset("source_row", data=source_rows, compression="gzip")
         if cid is not None:
             group.create_dataset("component_id", data=cid.astype(np.int8),
                                  compression="gzip")
@@ -465,7 +596,12 @@ def main(argv=None) -> int:
         # source_* remains an immutable record of the generated input.
         out.attrs["component_id_mapping"] = json.dumps(mapping)
         out.attrs["component_counts"] = json.dumps(report.get("component_counts_out", {}))
-        out.attrs["composition_scope"] = "declared evaluation mixture; see signal_fraction_source"
+        out.attrs["composition_scope"] = (
+            "legacy-reference component fractions; not a zero-shot mixture prediction"
+            if component_mode else "declared evaluation mixture; see signal_fraction_source")
+        out.attrs["composition_source"] = str(args.component_fractions_from or args.signal_fraction_from or "declared")
+        out.attrs["weights_stored_but_not_applied"] = weight is not None
+        out.attrs["generator_weights_applied"] = weight is None and attr("weights_stored_but_not_applied", False) not in (False, "false")
         out.attrs["derived_by"] = "scripts/prior_build/materialize_eval_prior.py"
         out.attrs["selection_baked_in"] = True
         out.attrs["ready_for_decode_prior"] = weight is None

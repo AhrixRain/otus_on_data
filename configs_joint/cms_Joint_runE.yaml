@@ -16,6 +16,25 @@ loaders:
   sampling: cycling_without_replacement
   epoch_definition: full_pass
   steps_per_epoch: null
+  # Validation and checkpoint selection score the deterministic map. Scoring
+  # at the stage's training noise level made stage scores incomparable and hid
+  # the Run E stage-3/4 deterministic-map degeneration. Override only for an
+  # explicit noisy diagnostic.
+  validation_noise_multipliers:
+    encoder_core: 0.0
+    encoder_tail: 0.0
+    decoder_core: 0.0
+    decoder_tail: 0.0
+
+final_evaluation:
+  # The final report must score the same deterministic map that selection used,
+  # not the selected checkpoint's training noise. See
+  # loaders.validation_noise_multipliers.
+  noise_multipliers:
+    encoder_core: 0.0
+    encoder_tail: 0.0
+    decoder_core: 0.0
+    decoder_tail: 0.0
 
 holdout:
   status: excluded_post_unblinding

@@ -25,8 +25,9 @@ cross-scale transfer and make an Upsilon failure ambiguous.
 |---|---|
 | `run_joint.py` | The single training entry point. `--run <ID>` resolves `configs_joint/cms_Joint_<ID>.yaml` (`--run E`, `--run C_fullScale`, `--run abNarrow`); `--config <path>` still works. |
 | `joint_model.py` | Shared encoder/decoder with the auditable condition mask. |
-| `joint_trainer.py` | Stage schedule, validation, gated checkpoint selection, resume. |
-| `joint_data.py`, `joint_metrics.py` | Region loading / split contract, and the gate metrics. |
+| `joint_trainer.py` | Stage schedule, validation, loss-based console output, checkpoint selection by normalized target score, resume. |
+| `joint_train_utils.py` | Shared coverage, batch, optimizer, scheduler, and trainability helpers used by `joint_trainer.py`. |
+| `joint_data.py`, `joint_metrics.py` | Region loading / split contract, and the validation metrics. |
 | `make_plots.py` | Loss curves, per-region diagnostics, paper-style density plots for one run. |
 | `dashboard.py` | Live training dashboard for one run directory. |
 | `upsilon_transfer_test.py` | Post-training held-out Upsilon transfer test. |
@@ -38,19 +39,15 @@ cross-scale transfer and make an Upsilon failure ambiguous.
 | `paired_data.py` | Loader for the paired benchmarks: reads paired, splits UNPAIRED for training, and records the withheld pairing in the split manifest for scoring only. |
 | `score_paired_closure.py` | Drives the whole per-event score for a finished run: rebuilds the withheld pairs, runs the frozen encoder, writes the report. `--run-dir outputs/cms_Joint/<run>`. |
 | `paired_leakage_audit.py` | Read-only audit of a paired run for pairing leakage: the three checks a `residual_rms_vs_identity` below 1.0 has to survive. |
-| `_retired_launchers/` | The old per-run `run_a.py` .. `run_f.py` shims. Superseded by `--run`; safe to delete. |
 
-The per-run launchers used to be seven near-identical files that differed only
-in a config path. They are kept in `_retired_launchers/` only until you confirm
-nothing external calls them.
+## Reading a metric with identity/floor references
 
-## Reading a gate number (added 2026-09-04)
-
-No raw gate metric means anything on its own. On the smeared arm of the
-prior-width A/B the map `z~ = x` -- no model at all -- scores latent mass
-KS 0.0359, W1 0.00219 and width relative error 0.071 against strict targets of
-0.04, 0.003 and 0.1, so it passes every one. Every validation therefore now
-also records, per direction:
+Raw marginal metrics need a reference before they can support a claim. On the
+smeared arm of the prior-width A/B, the identity map `z~ = x` -- no model at
+all -- scores latent mass KS 0.0359, W1 0.00219 and width relative error 0.071
+against strict targets of 0.04, 0.003 and 0.1, so it passes every one. Every
+validation therefore records identity and finite-sample references per
+direction:
 
 | key | meaning |
 |---|---|
@@ -59,15 +56,12 @@ also records, per direction:
 | `latent_mass_ks_vs_identity` | `(model - floor) / (identity - floor)`: 1.0 = no better than the input, 0.0 = at the floor, > 1 = worse than doing nothing |
 | `latent_mass_ks_headroom` | `(identity - floor) / floor`: how much separation the comparison can resolve at all |
 
-`*_vs_identity` is lower-is-better and non-negative, so it can be added to any
-region's `selection.gates` / `selection.targets` with no code change.
-`cms_Joint_abNarrowSplit.yaml` gates on it at 0.5. Measured reference points
-for that threshold: the Z region of the completed A/B reaches 0.001-0.03, the
-smeared J/psi arm sits at 0.19-1.72 and the narrow J/psi arm never falls below
-1.0.
+`*_vs_identity` is lower-is-better and non-negative. It is used as a diagnostic
+and as the normalized basis for checkpoint selection targets, not as a binary
+pass/fail mechanism.
 
 There is deliberately no cycle gauge: the identity cycle is `x -> x`, whose
-metrics are identically zero, so cycle gates have no power against a no-op.
+metrics are identically zero, so a gauge there would divide by zero.
 
 Re-score a finished run with:
 
@@ -133,16 +127,13 @@ excluded from `x` because `z` carries no MET partner to score it against.
 four-vectors, while this entire pipeline is `[N, 8]` two-body. See the joint
 README note in `memory.md` section 11, Session 30.
 
-### The `--smoke` limitation
+### The `--smoke` behaviour
 
-Any config that gates a `*_vs_identity` metric cannot complete `--smoke` at the
-default 1000 events. The smoke's 100-event validation pool puts the
-finite-sample floor at or above the identity value, `gauge()` returns `+inf` by
-design, and the trainer's `score < stage_best_score` then never fires, so the
-stage saves no checkpoint and the run dies with `Stage ... produced no
-validation checkpoint`. This is pre-existing and not specific to ppzee:
-artifact-measured 2026-09-07, `--run abNarrowSplit --smoke` fails identically.
-Use `--smoke --num-samples 20000`.
+Smoke runs use very small validation pools, so some `*_vs_identity` gauges can
+still be `+inf`. The trainer now saves the first validation checkpoint even if
+its selection score is non-finite, so `--smoke` completes instead of failing
+with `Stage ... produced no validation checkpoint`. For a more representative
+smoke, use `--smoke --num-samples 20000`.
 
 ## Prior-width A/B (diagnostic)
 
@@ -174,8 +165,7 @@ python scripts_joint/run_joint.py --run abNarrow  --device cuda
 python scripts_joint/run_joint.py --run abSmeared --device cuda
 ```
 
-Read the result from `joint_selection.regions.jpsi.gates.latent_mass_ks` in
-each run's `history.json`. If the smeared arm passes and the narrow arm does
+Read the result from `region_validation.jpsi.latent_mass_ks` (or the historical `joint_selection.regions.jpsi.gates.latent_mass_ks` in old runs) in each run's `history.json`. If the smeared arm passes and the narrow arm does
 not, the Run D/E mass results were carried by the pre-smeared prior and the
 latent-width failure is the real finding, not a tuning problem.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 import matplotlib
@@ -73,7 +74,16 @@ def residual_metrics(
     ks_pvalue = None
     w1_distance = None
     if HAS_SCIPY:
-        ks = ks_2samp(truth_mass, pred_mass)
+        # SciPy's ``auto`` method can fail to compute the exact p-value for
+        # large samples and then warns before using the asymptotic fallback.
+        # Suppress only that fallback warning; keep exact when it works.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="ks_2samp: Exact calculation unsuccessful.*",
+                category=RuntimeWarning,
+            )
+            ks = ks_2samp(truth_mass, pred_mass)
         ks_statistic = float(ks.statistic)
         ks_pvalue = float(ks.pvalue)
         w1_distance = float(wasserstein_distance(truth_mass, pred_mass))

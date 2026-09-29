@@ -1,0 +1,34 @@
+# A1: decouple the cycle term from the decoder's injected noise.
+#
+# Controlled change versus Run H: one top-level key, `cycle_decoder_noise: zero`.
+# The cycle loss `x_reco = decode(encode(x))` is then computed with the decoder
+# noise multipliers temporarily set to zero, so the reconstruction term
+# constrains the deterministic mean map only and stops pushing sigma toward its
+# floor. The encoder keeps its own (shared) noise; the direct z->x and latent
+# x->z terms keep their normal noise; both directions stay stochastic in the
+# stages.
+#
+# Why: artifact-measured 2026-09-23 (A0), the decoder injects 10-14 MeV of
+# Upsilon mass noise against the 84 MeV resolution while the mean map carries
+# ~99% of the decoded mass variance; the cycle term is the structural reason.
+#
+# The `loaders.validation_noise_budget` block is a PASSIVE A0.3 diagnostic: it
+# logs the fixed-z noise budget during validation and never enters the
+# selection targets. Do not read it as a second controlled change.
+#
+# Readout if trained: the `noise_budget_*` keys in history.json, the oldest
+# checkpoint meeting sigma_noise_only >= 50 MeV on Upsilon, the fixed-z width
+# vs the resolution, the in-domain score (must stay <= 0.839) and Z unchanged.
+# NOT trained here.
+extends: cms_Joint_runH.yaml
+
+run_label: Run H + A1 cycle without decoder noise
+run_name: Run_H_cycleNoNoise
+
+cycle_decoder_noise: zero
+
+loaders:
+  validation_noise_budget:
+    enabled: true
+    draws: 8
+    max_events: 1024

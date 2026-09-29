@@ -38,10 +38,29 @@ def load_config(path: Path) -> dict[str, Any]:
     if not isinstance(config, dict):
         raise ValueError(f"Config must be a mapping: {path}")
     parent_ref = config.pop("extends", None)
+    # ``replace_keys`` opts a child config out of the named-list merge for
+    # specific top-level keys. It exists for configs that must replace the
+    # inherited ``stages`` list wholesale (a two-stage Run F validating the
+    # flat-loss mechanism) instead of appending new named stages to it.
+    replace_keys = config.pop("replace_keys", None)
+    if replace_keys is not None and (
+        not isinstance(replace_keys, (list, tuple))
+        or not all(isinstance(key, str) for key in replace_keys)
+    ):
+        raise ValueError(f"replace_keys must be a list of key names: {path}")
     if parent_ref:
         parent_path = (path.parent / str(parent_ref)).expanduser().resolve()
         parent = load_config(parent_path)
-        config = _deep_merge(parent, config)
+        merged = _deep_merge(parent, config)
+        for key in replace_keys or ():
+            if key not in config:
+                raise ValueError(
+                    f"replace_keys names {key!r} but the child config does not set it: {path}"
+                )
+            merged[key] = deepcopy(config[key])
+        config = merged
+    elif replace_keys:
+        raise ValueError(f"replace_keys requires an extends parent: {path}")
     config["_config_path"] = str(path)
     return config
 
@@ -544,6 +563,10 @@ def data_cache_metadata(config: dict[str, Any], num_samples: int | None) -> dict
     else:
         metadata["theory_prior_file"] = file_fingerprint(paths["theory_prior_file"])
     metadata["theory_prior_selection"] = config.get("theory_prior_selection")
+    # The component spec changes the selected z rows, so it must be part of the
+    # cache identity even when the prior file and analysis window are unchanged.
+    if config.get("prior_components"):
+        metadata["prior_components"] = deepcopy(config["prior_components"])
     return metadata
 
 
@@ -695,7 +718,7 @@ def load_and_split_cached(
     """
     if not use_cache:
         log("Data cache disabled; loading selected CMS and MG5 rows from source files.")
-        return load_and_split(config, num_samples=num_samples), {
+        return load_and_split(config, num_samples=num_samples, log=log), {
             "enabled": False,
             "hit": False,
             "status": "disabled",
@@ -757,7 +780,7 @@ def load_and_split_cached(
         invalid_reason = "no cache entry"
 
     log(f"Data cache {status} ({invalid_reason}); reading ROOT/HDF5 inputs and applying selection.")
-    arrays = load_and_split(config, num_samples=num_samples)
+    arrays = load_and_split(config, num_samples=num_samples, log=log)
     log(f"Writing selected/split data cache: {cache_path}")
     _write_cache_entry(cache_path, metadata_path, metadata, arrays)
     return arrays, {
@@ -788,6 +811,30 @@ def filter_theory_prior(
     """
     if not selection:
         return z_data
+    keep = theory_prior_keep_mask(z_data, selection)
+    filtered = z_data[keep]
+    if len(filtered) == 0:
+        raise ValueError(
+            "theory_prior_selection removed every prior event; relax the prior "
+            "selection or check the prior file."
+        )
+    return filtered
+
+
+def theory_prior_keep_mask(
+    z_data: np.ndarray,
+    selection: dict[str, Any] | None,
+) -> np.ndarray:
+    """Boolean row mask for the theory-prior analysis selection.
+
+    Split out of :func:`filter_theory_prior` so the component-aware loader can
+    apply the same selection to ``zData``, ``component_id`` and ``weight``
+    before building the mixture; the realised signal fraction must be a
+    post-selection quantity (the legacy prior records its target as
+    ``frac_signal_post_filter``).
+    """
+    if not selection:
+        return np.ones(len(z_data), dtype=bool)
     z = np.asarray(z_data, dtype=np.float64)
     if z.ndim != 2 or z.shape[1] != 8 or len(z) == 0:
         raise ValueError(f"theory prior must be [N, 8], got {z.shape}")
@@ -818,14 +865,563 @@ def filter_theory_prior(
     mass_max = selection.get("mass_max")
     if mass_min is not None and mass_max is not None:
         keep &= (mass > float(mass_min)) & (mass < float(mass_max))
+    return keep
 
-    filtered = z_data[keep]
-    if len(filtered) == 0:
+
+# ---------------------------------------------------------------------------
+# Component-aware prior loading (unified priors)
+# ---------------------------------------------------------------------------
+
+# The unified priors ship components labelled and UNMIXED, with CKKW-L
+# per-event generator weights stored but not applied.  The `prior_components`
+# config block declares (a) which components to load, (b) the target signal
+# fraction of the mixed sample, and (c) the weight policy.  The loader applies
+# the analysis selection first, then builds the mixture, then applies the
+# weights by resampling, so the realised fraction is a post-selection quantity
+# (the legacy prior records its target as `frac_signal_post_filter`).
+
+PRIOR_COMPONENT_TOP_LEVEL_KEYS = frozenset(
+    {"enabled", "weights", "jpsi", "z", "upsilon"}
+)
+PRIOR_COMPONENT_REGION_KEYS = frozenset(
+    {
+        "signal_fraction",
+        "signal_fraction_source",
+        "components",
+        "signal_components",
+        "legacy_prior_file",
+    }
+)
+PRIOR_COMPONENT_WEIGHT_KEYS = frozenset(
+    {"policy", "resample_seed", "stop_if_ess_below"}
+)
+PRIOR_COMPONENT_WEIGHT_POLICIES = {"resample_if_ess_ge_0p5": 0.5}
+PRIOR_COMPONENT_SIGNAL_SOURCES = frozenset(
+    {"legacy_prior_effective", "single_component", "explicit"}
+)
+LEGACY_JPSI_PRIOR_RELATIVE = Path("legacy/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5")
+
+
+def _reject_unknown_prior_component_keys(mapping, allowed, context):
+    unknown = sorted(set(mapping) - set(allowed))
+    if unknown:
+        raise ValueError(
+            f"Unknown/unimplemented {context} key(s): {', '.join(unknown)}. "
+            f"Implemented keys: {', '.join(sorted(allowed))}"
+        )
+
+
+def _prior_component_id_list(values, context):
+    if not isinstance(values, (list, tuple)) or not values:
+        raise ValueError(f"{context} must be a non-empty list of component ids")
+    out = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+            raise ValueError(
+                f"{context} must contain integer component ids, got {value!r}"
+            )
+        out.append(int(value))
+    if len(set(out)) != len(out):
+        raise ValueError(f"{context} contains duplicate component ids")
+    return out
+
+
+def _prior_component_name_map(attrs, available_ids):
+    raw_mapping = attrs.get("component_id_mapping")
+    if raw_mapping is not None:
+        parsed = (
+            json.loads(raw_mapping)
+            if isinstance(raw_mapping, (str, bytes))
+            else raw_mapping
+        )
+        if isinstance(parsed, dict) and parsed:
+            return {int(cid): str(name) for name, cid in parsed.items()}
+    raw_names = attrs.get("component_names")
+    if raw_names is not None:
+        parsed = (
+            json.loads(raw_names) if isinstance(raw_names, (str, bytes)) else raw_names
+        )
+        ordered_ids = sorted({int(value) for value in available_ids})
+        if isinstance(parsed, (list, tuple)) and len(parsed) == len(ordered_ids):
+            return {cid: str(name) for cid, name in zip(ordered_ids, parsed)}
+    return {}
+
+
+def _infer_signal_components(name_map, region_name, available_ids):
+    if name_map:
+        if region_name == "jpsi":
+            hit = {cid for cid, name in name_map.items() if "jpsi" in name.lower()}
+        elif region_name == "upsilon":
+            hit = {
+                cid
+                for cid, name in name_map.items()
+                if name.lower().startswith("upsilon")
+            }
+        else:
+            hit = set()
+        if region_name in {"jpsi", "upsilon"} and not hit:
+            raise ValueError(
+                f"could not infer the signal component for region {region_name!r} "
+                f"from component_names {sorted(name_map.values())}"
+            )
+        return hit
+    if region_name in {"jpsi", "upsilon"}:
+        if 0 not in {int(value) for value in available_ids}:
+            raise ValueError(
+                f"region {region_name!r} has no component_names metadata and no "
+                "component id 0 to use as the signal"
+            )
+        return {0}
+    return set()
+
+
+def read_prior_component_arrays(theory_prior_file: Path):
+    """Read ``zData`` + ``component_id`` + ``weight`` + ``FDL`` attrs."""
+    import h5py
+
+    theory_prior_file = Path(theory_prior_file)
+    if not theory_prior_file.exists():
+        raise FileNotFoundError(f"MG5 HDF5 prior file not found: {theory_prior_file}")
+    with h5py.File(theory_prior_file, "r") as f:
+        if "FDL" in f and isinstance(f["FDL"], h5py.Group) and "zData" in f["FDL"]:
+            group = f["FDL"]
+        elif "zData" in f:
+            group = f
+        else:
+            raise KeyError("Could not find z prior. Expected FDL/zData or zData.")
+        z_data = np.asarray(group["zData"])
+        if "component_id" not in group:
+            raise KeyError(
+                "prior_components.enabled requires FDL/component_id in "
+                f"{theory_prior_file}; the file carries only zData and cannot be "
+                "mixed component-aware."
+            )
+        component_id = np.asarray(group["component_id"]).reshape(-1).astype(np.int64)
+        if "weight" in group:
+            weights = np.asarray(group["weight"], dtype=np.float64).reshape(-1)
+            has_weight_dataset = True
+        else:
+            weights = np.ones(len(z_data), dtype=np.float64)
+            has_weight_dataset = False
+        attrs = dict(group.attrs)
+    if z_data.ndim != 2 or z_data.shape[1] < 8:
+        raise ValueError(f"prior zData must be [N, >=8], got {z_data.shape}")
+    if len(component_id) != len(z_data):
+        raise ValueError(
+            f"component_id has {len(component_id)} rows but zData has {len(z_data)}"
+        )
+    if len(weights) != len(z_data):
+        raise ValueError(f"weight has {len(weights)} rows but zData has {len(z_data)}")
+    if not np.all(np.isfinite(weights)):
+        raise ValueError("FDL/weight contains non-finite values")
+    if np.any(weights < 0.0):
+        raise ValueError("FDL/weight contains negative values")
+    if float(weights.sum()) <= 0.0:
+        raise ValueError("FDL/weight sums to zero")
+    return z_data[:, :8], component_id, weights, attrs, has_weight_dataset
+
+
+def legacy_jpsi_effective_fraction(legacy_prior_file: Path):
+    """Measure the legacy J/psi prior's effective signal fraction.
+
+    The legacy mixed prior records its composition in the ``FDL`` attributes
+    (``n_signal`` / ``n_continuum`` and ``frac_signal_post_filter``); it does
+    not carry a per-row ``component_id``.  A file that does carry one falls
+    back to signal component 0.  The measured fraction is the post-selection
+    target for the unified prior.
+    """
+    import h5py
+
+    legacy_prior_file = Path(legacy_prior_file)
+    if not legacy_prior_file.exists():
+        raise FileNotFoundError(
+            "legacy J/psi prior for signal_fraction_source="
+            f"legacy_prior_effective not found: {legacy_prior_file}"
+        )
+    with h5py.File(legacy_prior_file, "r") as f:
+        if "FDL" in f and isinstance(f["FDL"], h5py.Group):
+            group = f["FDL"]
+        else:
+            group = f
+        attrs = dict(group.attrs)
+        component_id = None
+        if "component_id" in group:
+            component_id = np.asarray(group["component_id"]).reshape(-1).astype(np.int64)
+    report = {
+        "legacy_prior_file": str(legacy_prior_file),
+        "n_signal": None if attrs.get("n_signal") is None else int(attrs["n_signal"]),
+        "n_continuum": (
+            None if attrs.get("n_continuum") is None else int(attrs["n_continuum"])
+        ),
+        "frac_signal_post_filter": (
+            None
+            if attrs.get("frac_signal_post_filter") is None
+            else float(attrs["frac_signal_post_filter"])
+        ),
+    }
+    n_signal = attrs.get("n_signal")
+    n_continuum = attrs.get("n_continuum")
+    if n_signal is not None or n_continuum is not None:
+        n_signal = 0.0 if n_signal is None else float(n_signal)
+        n_continuum = 0.0 if n_continuum is None else float(n_continuum)
+        total = n_signal + n_continuum
+        if total <= 0.0:
+            raise ValueError(
+                f"legacy prior {legacy_prior_file} records non-positive event counts"
+            )
+        fraction = n_signal / total
+        declared = attrs.get("frac_signal_post_filter")
+        if declared is not None and abs(float(declared) - fraction) > 1e-6:
+            raise ValueError(
+                f"legacy prior {legacy_prior_file} records inconsistent signal "
+                f"fractions: n_signal/(n_signal+n_continuum)={fraction:.6f} vs "
+                f"frac_signal_post_filter={float(declared):.6f}"
+            )
+        report["measured_from"] = "FDL attribute n_signal/n_continuum"
+    elif component_id is not None and len(component_id) > 0:
+        fraction = float(np.mean(component_id == 0))
+        report["measured_from"] = "FDL/component_id == 0"
+    else:
+        declared = attrs.get("frac_signal_post_filter")
+        if declared is None:
+            raise ValueError(
+                f"legacy prior {legacy_prior_file} carries neither "
+                "n_signal/n_continuum, component_id, nor frac_signal_post_filter"
+            )
+        fraction = float(declared)
+        report["measured_from"] = "FDL attribute frac_signal_post_filter"
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError(
+            f"legacy prior {legacy_prior_file} measured signal fraction "
+            f"{fraction} is outside [0, 1]"
+        )
+    report["measured_signal_fraction"] = float(fraction)
+    return float(fraction), report
+
+
+def _component_counts(ids):
+    unique, counts = np.unique(ids, return_counts=True)
+    return {int(cid): int(count) for cid, count in zip(unique, counts)}
+
+
+def _weight_ess_over_n(weights):
+    weights = np.asarray(weights, dtype=np.float64)
+    total = float(weights.sum())
+    if total <= 0.0:
+        raise ValueError("prior component weights sum to zero")
+    ess = total * total / float(np.sum(weights * weights))
+    return float(ess), float(ess / len(weights))
+
+
+def mix_prior_components(
+    z_data,
+    component_id,
+    weights,
+    spec,
+    *,
+    region_name,
+    attrs,
+    data_root,
+    raw_component_id=None,
+    has_weight_dataset=True,
+):
+    """Build the weighted mixture declared by a per-region spec."""
+    _reject_unknown_prior_component_keys(
+        {key: value for key, value in spec.items() if key not in {"enabled", "weights"}},
+        PRIOR_COMPONENT_REGION_KEYS,
+        f"prior_components.{region_name}",
+    )
+    available_ids = sorted(int(value) for value in np.unique(component_id))
+    if "components" in spec:
+        components = _prior_component_id_list(
+            spec["components"], "prior_components.components"
+        )
+    else:
+        components = available_ids
+    missing = sorted(set(components) - set(available_ids))
+    if missing:
+        raise ValueError(
+            f"prior_components.components names absent component id(s) {missing}; "
+            f"file has {available_ids}"
+        )
+    name_map = _prior_component_name_map(attrs, available_ids)
+
+    source = spec.get("signal_fraction_source")
+    declared_fraction = spec.get("signal_fraction", None)
+    if source is not None and source not in PRIOR_COMPONENT_SIGNAL_SOURCES:
+        raise ValueError(
+            f"Unknown signal_fraction_source {source!r}; implemented: "
+            f"{sorted(PRIOR_COMPONENT_SIGNAL_SOURCES)}"
+        )
+    if declared_fraction is not None:
+        if source not in (None, "explicit"):
+            raise ValueError(
+                "prior_components.signal_fraction must be null unless "
+                "signal_fraction_source is 'explicit'"
+            )
+        fraction = float(declared_fraction)
+        effective_source = "explicit"
+        legacy_report = None
+    elif source == "single_component":
+        if len(components) != 1:
+            raise ValueError(
+                "signal_fraction_source 'single_component' requires exactly one "
+                f"component; got {components}"
+            )
+        fraction = 0.0
+        effective_source = "single_component"
+        legacy_report = None
+    elif source == "legacy_prior_effective":
+        legacy_path = Path(spec.get("legacy_prior_file", LEGACY_JPSI_PRIOR_RELATIVE))
+        if not legacy_path.is_absolute():
+            legacy_path = Path(data_root) / legacy_path
+        fraction, legacy_report = legacy_jpsi_effective_fraction(legacy_path)
+        effective_source = "legacy_prior_effective"
+    elif source is None:
+        raise ValueError(
+            "prior_components.signal_fraction is null but signal_fraction_source "
+            "is missing"
+        )
+    else:
+        raise ValueError(
+            "signal_fraction_source 'explicit' requires a numeric signal_fraction"
+        )
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError(f"target signal fraction {fraction} is outside [0, 1]")
+
+    if "signal_components" in spec:
+        signal_components = _prior_component_id_list(
+            spec["signal_components"], "prior_components.signal_components"
+        )
+    elif effective_source == "single_component":
+        signal_components = []
+    else:
+        signal_components = sorted(
+            _infer_signal_components(name_map, region_name, available_ids)
+        )
+    if not set(signal_components).issubset(set(components)):
+        raise ValueError(
+            "prior_components.signal_components must be a subset of "
+            f"prior_components.components; got {signal_components} vs {components}"
+        )
+    if effective_source == "single_component" and signal_components:
+        raise ValueError(
+            "signal_fraction_source 'single_component' does not accept "
+            f"signal_components {signal_components}"
+        )
+
+    selected_mask = np.isin(component_id, components)
+    z_selected = np.asarray(z_data)[selected_mask]
+    id_selected = np.asarray(component_id)[selected_mask]
+    w_selected = np.asarray(weights, dtype=np.float64)[selected_mask]
+    total = len(z_selected)
+    if total < 2:
+        raise ValueError(
+            f"prior_components selected only {total} rows from components {components}"
+        )
+    signal_mask = np.isin(id_selected, signal_components)
+    signal_available = int(np.sum(signal_mask))
+    background_available = int(np.sum(~signal_mask))
+    if signal_components and signal_available == 0:
+        raise ValueError(
+            f"component(s) {signal_components} have no rows after the analysis selection"
+        )
+    n_signal_out = int(round(fraction * total)) if signal_components else 0
+    n_signal_out = max(0, min(n_signal_out, total))
+    n_background_out = total - n_signal_out
+    if n_background_out > 0 and background_available == 0:
+        raise ValueError(
+            f"target signal fraction {fraction} leaves {n_background_out} "
+            "background rows but no background component is present"
+        )
+
+    weights_spec = spec.get("weights", {})
+    if weights_spec is None:
+        weights_spec = {}
+    if not isinstance(weights_spec, dict):
+        raise ValueError("prior_components.weights must be a mapping")
+    _reject_unknown_prior_component_keys(
+        weights_spec, PRIOR_COMPONENT_WEIGHT_KEYS, "prior_components.weights"
+    )
+    policy = weights_spec.get("policy", "resample_if_ess_ge_0p5")
+    if policy not in PRIOR_COMPONENT_WEIGHT_POLICIES:
+        raise ValueError(
+            f"Unimplemented prior_components.weights.policy {policy!r}; "
+            f"implemented: {sorted(PRIOR_COMPONENT_WEIGHT_POLICIES)}"
+        )
+    threshold = float(PRIOR_COMPONENT_WEIGHT_POLICIES[policy])
+    declared_threshold = weights_spec.get("stop_if_ess_below", threshold)
+    if abs(float(declared_threshold) - threshold) > 1e-12:
+        raise ValueError(
+            f"prior_components.weights.stop_if_ess_below={declared_threshold} "
+            f"does not match policy {policy!r} threshold {threshold}"
+        )
+    resample_seed = int(weights_spec.get("resample_seed", 0))
+
+    groups = []
+    ess_report = {}
+    for label, mask, count in (
+        ("signal", signal_mask, n_signal_out),
+        ("background", ~signal_mask, n_background_out),
+    ):
+        if count <= 0:
+            continue
+        group_weights = w_selected[mask]
+        ess, ess_over_n = _weight_ess_over_n(group_weights)
+        ess_report[label] = {
+            "n_available": int(np.sum(mask)),
+            "n_output": int(count),
+            "ess": ess,
+            "ess_over_n": ess_over_n,
+        }
+        if ess_over_n + 1e-12 < threshold:
+            raise ValueError(
+                f"prior_components weight policy {policy!r} stopped: the {label} "
+                f"component has ESS/N={ess_over_n:.6f} < {threshold} after the "
+                "analysis selection. The stored generator weights are too "
+                "degenerate to resample; relax the selection, declare a different "
+                "mixture, or implement a different policy."
+            )
+        groups.append((label, np.flatnonzero(mask), group_weights, count))
+
+    rng = np.random.default_rng(resample_seed)
+    chosen = []
+    for _label, indices, group_weights, count in groups:
+        probabilities = group_weights / group_weights.sum()
+        chosen.append(
+            rng.choice(indices, size=int(count), replace=True, p=probabilities)
+        )
+    order = np.concatenate(chosen) if chosen else np.array([], dtype=np.int64)
+    rng.shuffle(order)
+    z_out = z_selected[order]
+
+    realized = (
+        float(np.mean(np.isin(id_selected[order], signal_components)))
+        if signal_components
+        else 0.0
+    )
+    report = {
+        "enabled": True,
+        "region": region_name,
+        "weight_policy": policy,
+        "weight_ess_threshold": threshold,
+        "resample_seed": resample_seed,
+        "has_weight_dataset": bool(has_weight_dataset),
+        "components": components,
+        "signal_components": signal_components,
+        "signal_fraction_source": effective_source,
+        "target_signal_fraction": float(fraction),
+        "realized_signal_fraction": realized,
+        "legacy_prior_measurement": legacy_report,
+        "raw_component_counts": _component_counts(
+            raw_component_id if raw_component_id is not None else component_id
+        ),
+        "selected_component_counts": _component_counts(id_selected),
+        "output_component_counts": _component_counts(id_selected[order]),
+        "rows": {
+            "raw": int(len(component_id)),
+            "selected": int(total),
+            "output": int(len(order)),
+        },
+        "ess": ess_report,
+        "minimum_ess_over_n": min(
+            (value["ess_over_n"] for value in ess_report.values()), default=None
+        ),
+    }
+    return z_out, report
+
+
+def format_prior_components_report(report) -> str:
+    counts = ", ".join(
+        f"{key}: {value}" for key, value in sorted(report["raw_component_counts"].items())
+    )
+    selected = ", ".join(
+        f"{key}: {value}"
+        for key, value in sorted(report["selected_component_counts"].items())
+    )
+    output = ", ".join(
+        f"{key}: {value}"
+        for key, value in sorted(report["output_component_counts"].items())
+    )
+    ess = ", ".join(
+        f"{label} {value['ess_over_n']:.4f}"
+        for label, value in sorted(report["ess"].items())
+    )
+    return (
+        f"[prior_components] {report['region']}: raw {{{counts}}}; selection "
+        f"{{{selected}}}; target signal fraction "
+        f"{report['target_signal_fraction']:.6f} "
+        f"({report['signal_fraction_source']}); realised "
+        f"{report['realized_signal_fraction']:.6f}; output {{{output}}}; "
+        f"ESS/N {ess} (threshold {report['weight_ess_threshold']}); policy "
+        f"{report['weight_policy']}, seed {report['resample_seed']}"
+    )
+
+
+def load_theory_prior_z_components(
+    theory_prior_file: Path,
+    selection,
+    spec,
+    *,
+    region_name,
+    data_root,
+):
+    """Component-aware unified-prior loader used when prior_components is enabled."""
+    if not isinstance(spec, dict) or not spec.get("enabled"):
+        raise ValueError("load_theory_prior_z_components requires an enabled spec")
+    z_data, component_id, weights, attrs, has_weight_dataset = (
+        read_prior_component_arrays(theory_prior_file)
+    )
+    keep = theory_prior_keep_mask(z_data, selection)
+    if not np.any(keep):
         raise ValueError(
             "theory_prior_selection removed every prior event; relax the prior "
             "selection or check the prior file."
         )
-    return filtered
+    return mix_prior_components(
+        z_data[keep],
+        component_id[keep],
+        weights[keep],
+        spec,
+        region_name=region_name,
+        attrs=attrs,
+        data_root=data_root,
+        raw_component_id=component_id,
+        has_weight_dataset=has_weight_dataset,
+    )
+
+
+def resolve_prior_component_spec(block, region_name):
+    """Project the joint-level prior_components block into one region spec.
+
+    Returns ``None`` when the block is absent or disabled (historical
+    behaviour).  Raises on unknown top-level keys or a missing per-region
+    sub-block, so an enabled declaration can never be silently ignored.
+    """
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise ValueError("prior_components must be a mapping")
+    if not block.get("enabled"):
+        return None
+    _reject_unknown_prior_component_keys(
+        block, PRIOR_COMPONENT_TOP_LEVEL_KEYS, "prior_components"
+    )
+    weights = block.get("weights", {})
+    if not isinstance(weights, dict):
+        raise ValueError("prior_components.weights must be a mapping")
+    region_block = block.get(region_name)
+    if region_block is None:
+        configured = sorted(set(block) - {"enabled", "weights"})
+        raise ValueError(
+            f"prior_components.enabled but there is no {region_name!r} sub-block; "
+            f"configured regions: {configured}"
+        )
+    if not isinstance(region_block, dict):
+        raise ValueError(f"prior_components.{region_name} must be a mapping")
+    spec = {"enabled": True, "weights": deepcopy(weights)}
+    spec.update(deepcopy(region_block))
+    return spec
 
 
 def load_theory_prior_z(theory_prior_file: Path) -> np.ndarray:
@@ -915,7 +1511,11 @@ def split_unpaired(
     )
 
 
-def load_and_split(config: dict[str, Any], num_samples: int | None = None) -> dict[str, np.ndarray]:
+def load_and_split(
+    config: dict[str, Any],
+    num_samples: int | None = None,
+    log=print,
+) -> dict[str, np.ndarray]:
     paths = config["paths"]
     data_config = config.get("data", {})
     channel = str(data_config.get("channel", "electron"))
@@ -935,15 +1535,38 @@ def load_and_split(config: dict[str, Any], num_samples: int | None = None) -> di
         max_selected=num_samples,
         step_size=data_config.get("root_step_size", "100 MB"),
     )
-    if paths.get("theory_prior_files"):
+    prior_components = config.get("prior_components") or {}
+    if prior_components.get("enabled"):
+        if paths.get("theory_prior_files"):
+            raise ValueError(
+                "prior_components cannot be combined with theory_prior_files; "
+                "declare one mixture mechanism"
+            )
+        region_name = config.get("region_name")
+        if region_name is None:
+            raise ValueError(
+                "prior_components.enabled requires region_name in the region "
+                "config; build it through joint_data.region_data_config"
+            )
+        z_data, component_report = load_theory_prior_z_components(
+            Path(paths["theory_prior_file"]),
+            config.get("theory_prior_selection"),
+            prior_components,
+            region_name=str(region_name),
+            data_root=Path(paths.get("data_root", ".")),
+        )
+        if log is not None:
+            log(format_prior_components_report(component_report))
+    elif paths.get("theory_prior_files"):
         z_data = load_theory_prior_z_mixture(
             paths["theory_prior_files"],
             paths.get("theory_prior_weights"),
             seed=int(config.get("seed", 0)) + 17,
         )
+        z_data = filter_theory_prior(z_data, config.get("theory_prior_selection"))
     else:
         z_data = load_theory_prior_z(Path(paths["theory_prior_file"]))
-    z_data = filter_theory_prior(z_data, config.get("theory_prior_selection"))
+        z_data = filter_theory_prior(z_data, config.get("theory_prior_selection"))
 
     x_data = apply_num_samples(x_data, num_samples)
     z_data = apply_num_samples(z_data, num_samples)

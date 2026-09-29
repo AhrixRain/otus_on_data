@@ -1,28 +1,115 @@
-# cms_Joint Run F: CMS-matched inclusive 0j+1j priors for both J/psi and Z.
+# cms_Joint Run F: flat-loss mechanism validation.
 #
-# Run F inherits Run E's full-pass epoch semantics and Run D's showered
-# inclusive 0j+1j Z prior, and adds the new CMS-reweighted inclusive 0j+1j
-# J/psi prior. Upsilon remains excluded from training, tuning, and checkpoint
-# selection.
+# This reuses the Run F name for the 2026-09-10 mechanism fix. The previous
+# Run F contract (CMS-matched inclusive 0j1j J/psi prior) is preserved verbatim
+# as configs_joint/cms_Joint_runF_priorCKKWL.yaml. Do not conflate the two:
+# this Run F changes the training mechanism, not the physics prior.
+#
+# Diagnosis this run tests. The 2026-09-10 audit measured that at Run E's real
+# per-update cardinalities the distributional loss terms are dominated by an
+# irreducible finite-sample floor, and that floor is inflated ~3.2x by the
+# full-pass batch imbalance (J/psi prior 417 events/update against 16,858 CMS
+# events/update). At those cardinalities a perfect J/psi model still reports
+# L_z ~ 0.344 and L_x ~ 0.353, and the Z region sits within 5% of its floor
+# from ~epoch 60 onward -- so ~75% of the logged train loss cannot descend.
+#
+# Three mechanism fixes, all in one validation run (documented as such, not a
+# clean one-variable attribution):
+#   1. loaders.min_events_per_update: 4096 -- pad the small stream with
+#      replacement so the J/psi floor drops from ~0.344 toward ~0.12. Unique
+#      rows visited per epoch are unchanged.
+#   2. One constant shared encoder=decoder noise level in stage 2 -- removes the
+#      per-epoch noise ramp, so the reconstruction floor stops rising while the
+#      model is asked to descend it.
+#   3. Two stages instead of four, with identical loss coefficients in both --
+#      removes the stage-boundary rewind/fresh-optimizer/loss-jump and makes the
+#      plotted objective one function instead of four.
+#   Anchors are switched off (nu_e = nu_d = 0); they measured ~3e-7 and only
+#   add two dead terms to the objective.
+#
+# Network: [256, 256, 256, 256] (4x256) instead of [512]*6, as the cheap
+# validation arm. Switch to 4x512 by changing model.hidden_dims to
+# [512, 512, 512, 512]; nothing else needs to change.
+#
+# NOT included, deliberately: the absolute mass-scale anchor (resonance_mass_w1)
+# and the per-event inverse objective (M2). Those are separate hypotheses; this
+# run isolates the floor/stationarity fixes.
 extends: cms_Joint_runE.yaml
 
-run_label: Run F
+run_label: Run F flat-loss mechanism validation
 run_name: Run_F
+
+# Replace Run E's four stages wholesale instead of merging named stages into
+# them. See cms_data.load_config.
+replace_keys: [stages]
 
 comparison:
   baseline_run: Run_E
   controlled_change: >-
-    CMS-matched inclusive 0j1j J/psi prior added to Run E's full-pass training;
-    both training priors now have low-pair-pT support.
+    Flat-loss mechanism fixes plus a smaller network: per-update batch floor
+    (min_events_per_update 4096), one constant shared encoder=decoder noise
+    level, two stages with identical loss coefficients, anchors off, and
+    hidden_dims [256]*4 instead of [512]*6. Data, priors and region definition
+    are inherited from Run E unchanged.
 
-regions:
-  jpsi:
-    paths:
-      theory_prior_file: cms_jpsi_mumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_3p0369_3p1569_1M_reweighted.hdf5
+model:
+  hidden_dims: [256, 256, 256, 256]
+
+loaders:
+  min_events_per_update: 4096
+
+stages:
+  - name: runF_stage1_deterministic_warmup
+    enabled: true
+    epochs: 20
+    optimizer: adamw
+    lr: 0.0002
+    lr_schedule: cosine
+    lr_min_factor: 0.1
+    lr_warmup_epochs: 2
+    lr_warmup_start_factor: 0.2
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 1.0
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 256
+    core_noise_multiplier: 0
+    tail_noise_multiplier: 0
+    eval_every: 5
+
+  - name: runF_stage2_stochastic_constant
+    enabled: true
+    epochs: 80
+    optimizer: adamw
+    lr: 0.0001
+    # Constant LR on purpose: the diagnosed problem is a non-stationary
+    # objective, so this arm removes the cosine decay as a confound.
+    lr_schedule: none
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 0.5
+    # Same coefficients as stage 1: the objective does not change across the
+    # stage boundary, only the noise level does.
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 256
+    # Shared by the encoder and the decoder: no encoder_*/decoder_* keys.
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+    eval_every: 5
 
 holdout:
   status: excluded_post_unblinding
   policy: >-
-    Do not load, train on, tune against, or select Run F checkpoints with Upsilon.
-    Run F follows the original Run C Upsilon first look; any later Upsilon
-    evaluation is a post-unblinding held-out transfer test.
+    Upsilon remains excluded from training, tuning, checkpoint selection and
+    metric design. Any Upsilon evaluation of Run F is post-unblinding
+    held-out transfer, exactly as for Run E.

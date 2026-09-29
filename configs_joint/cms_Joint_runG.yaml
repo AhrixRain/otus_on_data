@@ -1,0 +1,107 @@
+# cms_Joint Run G: three-stage, 4x128 version of the Run F mechanism contract.
+#
+# Controlled change versus Run F:
+#   * stage list changed to 20 + 60 + 60 (was 20 + 80);
+#   * new stage 3 at core 1.0 / tail 0.5;
+#   * hidden_dims changed from [256, 256, 256, 256] to [128, 128, 128, 128].
+# Everything else is inherited from Run F unchanged --
+#   loaders.min_events_per_update 4096
+#   loss coefficients          beta = lamb = tau = 1, nu_e = nu_d = rho = 0
+#   num_slices                 256 in every stage
+#   shared encoder = decoder noise, constant within each stage
+#   data / priors / region definition inherited from Run E via Run F
+#
+# Stage schedule:
+#   stage 1  20 epochs   deterministic warmup        core 0    / tail 0
+#   stage 2  60 epochs   constant shared stochastic  core 1.0  / tail 0.25
+#   stage 3  60 epochs   constant shared stochastic  core 1.0  / tail 0.5
+extends: cms_Joint_runF.yaml
+
+run_label: Run G three-stage 4x128 validation
+run_name: Run_G
+
+# Replace Run F's two stages wholesale. See cms_data.load_config.
+replace_keys: [stages]
+
+comparison:
+  baseline_run: Run_F
+  controlled_change: >-
+    Same Run F mechanism contract (per-update batch floor 4096, constant shared
+    encoder=decoder noise, identical loss coefficients, constant LR), but the
+    stage list is 20 + 60 + 60 with a new stage 3 at core 1.0 / tail 0.5, and
+    the network width is halved to hidden_dims [128, 128, 128, 128].
+
+model:
+  hidden_dims: [128, 128, 128, 128]
+
+stages:
+  - name: runG_stage1_deterministic_warmup
+    enabled: true
+    epochs: 20
+    optimizer: adamw
+    lr: 0.0002
+    lr_schedule: cosine
+    lr_min_factor: 0.1
+    lr_warmup_epochs: 2
+    lr_warmup_start_factor: 0.2
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 1.0
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 128
+    core_noise_multiplier: 0
+    tail_noise_multiplier: 0
+    eval_every: 5
+
+  - name: runG_stage2_stochastic_core
+    enabled: true
+    epochs: 60
+    optimizer: adamw
+    lr: 0.0001
+    lr_schedule: none
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 0.5
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 192
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+    eval_every: 5
+
+  - name: runG_stage3_stochastic_tail
+    enabled: true
+    epochs: 60
+    optimizer: adamw
+    lr: 0.0001
+    lr_schedule: none
+    weight_decay: 1e-05
+    adam_eps: 1e-7
+    gradient_clip_norm: 0.5
+    beta: 1
+    lamb: 1
+    tau: 1
+    nu_e: 0
+    nu_d: 0
+    rho: 0
+    num_slices: 256
+    # The new variable: heavier Student-t tail at the same core noise.
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.5
+    eval_every: 5
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Upsilon remains excluded from training, tuning, checkpoint selection and
+    metric design. Any Upsilon evaluation of Run G is post-unblinding
+    held-out transfer, exactly as for Run E and Run F.

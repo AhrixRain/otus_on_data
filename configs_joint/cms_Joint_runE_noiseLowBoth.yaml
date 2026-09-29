@@ -1,0 +1,44 @@
+# cms_Joint Run E noise control: lower m_core AND lower m_tail.
+#
+# Comparison arm against Run E. Epoch numbers stay at the original
+# 432-epoch schedule so the only controlled changes are the noise ceilings.
+#
+# Stage 1 remains deterministic.
+# m_core: stage2 ramp 0.1 -> 0.5; stages3-4 core 0.5.
+# m_tail: stage3 tail end 0.25 -> 0.125; stage4 tail 0.25 -> 1 becomes
+#         0.125 -> 0.5.
+extends: cms_Joint_runE.yaml
+
+run_label: Run E noise control low m_core and low m_tail
+run_name: Run_E_noiseLowBoth
+
+comparison:
+  baseline_run: Run_E
+  controlled_change: >-
+    Original 432 epochs. Lower m_core from stage2 and lower m_tail from stage3.
+
+paths:
+  # Put run outputs under Run_E/ while still reusing the shared top-level data cache.
+  output_root: outputs/cms_Joint/Run_E
+  cache_root: outputs/cms_Joint
+
+stages:
+  - name: runA_stage1_deterministic_identity
+    enabled: false
+  - name: runA_stage2_gaussian_response
+    core_noise_multiplier:
+      start: 0.1
+      end: 0.5
+      schedule: cosine
+  - name: runA_stage3_stochastic_joint
+    core_noise_multiplier: 0.5
+    tail_noise_multiplier:
+      start: 0
+      end: 0.125
+      schedule: linear
+  - name: runA_stage4_tail_polish
+    core_noise_multiplier: 0.5
+    tail_noise_multiplier:
+      start: 0.125
+      end: 0.5
+      schedule: cosine

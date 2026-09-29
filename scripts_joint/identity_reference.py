@@ -5,9 +5,9 @@ Why this module exists
 The 2026-09-04/05 prior-width A/B (memory.md section 7.2) measured this: on the
 smeared J/psi prior the trivial map ``z~ = x`` -- no model at all -- scores
 latent mass KS 0.0359, W1 0.00219 and width relative error 0.071 against
-strict targets of 0.04, 0.003 and 0.1. It passes all three. A gate that a
-no-op passes cannot certify that any unfolding happened, so every gate number
-has to be published next to two references:
+strict targets of 0.04, 0.003 and 0.1. It passes all three. A reference that a
+no-op passes cannot certify that any unfolding happened, so every metric is
+published next to two references:
 
 ``identity``
     what the metric reads when the map is the identity (the model output is
@@ -17,7 +17,7 @@ has to be published next to two references:
     distribution at the sample size actually used. This is the best score any
     map can achieve; it is pure finite-sample noise.
 
-and one gauge that turns the three numbers into a decision:
+and one gauge that turns the three numbers into a useful diagnostic:
 
     vs_identity = (model - floor) / (identity - floor)
 
@@ -25,9 +25,8 @@ and one gauge that turns the three numbers into a decision:
     0.0  the model reached the finite-sample floor (perfect, given n)
     >1   the model is worse than doing nothing
 
-``vs_identity`` is lower-is-better and non-negative, so it drops into the
-existing ``abs(value) <= threshold`` gate machinery in
-``joint_metrics.score_joint_metrics`` with no change to the selection logic.
+``vs_identity`` is lower-is-better and non-negative, so it can be used directly
+as a normalized checkpoint-selection target.
 
     headroom = (identity - floor) / floor
 
@@ -129,9 +128,8 @@ def gauge(model: float, identity: float, floor: float) -> float:
 
     Returns +inf when the identity map is already at or below the floor. That
     is not a failure of the model, it is a failure of the COMPARISON: there is
-    nothing left to detect, so nothing can be certified. Reporting +inf makes a
-    gate on this metric refuse to pass rather than pass for free; read it
-    together with ``headroom``, which says why.
+    nothing left to detect, so nothing can be certified. Read it together with
+    ``headroom``, which says why.
     """
     if not (math.isfinite(model) and math.isfinite(identity) and math.isfinite(floor)):
         return float("inf")
@@ -199,7 +197,7 @@ def reference_block(
                         for the floor. Pass the full split array; the function
                         takes disjoint draws from it.
     ``model_metrics``   the already-computed ``{prefix}_*`` metrics, so the
-                        gauge divides exactly the numbers that are gated.
+                        gauge is computed from the same numbers being compared.
 
     Every returned value is a float, including the flags, so downstream code
     that iterates the metrics dict never meets a non-numeric entry.

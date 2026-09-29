@@ -73,7 +73,7 @@ def w1(a, b):
 def ks(a, b):
     try:
         from scipy.stats import ks_2samp
-        return float(ks_2samp(a, b).statistic)
+        return float(ks_2samp(a, b, method="asymp").statistic)
     except Exception:
         x = np.sort(np.concatenate([a, b]))
         ca = np.searchsorted(np.sort(a), x, side="right") / len(a)

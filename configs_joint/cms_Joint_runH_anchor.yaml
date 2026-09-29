@@ -1,0 +1,56 @@
+# cms_Joint Run H + frozen mean-map anchor (single controlled change vs Run H).
+#
+# Diagnosis (2026-09-11, `outputs/cms_Joint/Run_H/tail_audit/DIAGNOSIS_AND_FIX.md`):
+# the Run H stage-3 checkpoint puts all three Upsilon medians ~-1.4% low, and the
+# shift is present with every noise multiplier at zero: it lives in the learned
+# deterministic mean map, not in the sampled noise. The same audit measured that
+# the model collapsed its stochastic channel (`core_sigma` on the 1e-3 floor,
+# `tail_sigma` x1/5.7), so the marginal objective lets the mean map absorb the
+# resolution and then drift.
+#
+# Fix: the invariant-mass guard forbids the physical mass from being an anchor.
+# This is the complementary contract -- the *deterministic map* captured at the
+# end of the noiseless stage 1 is frozen, and stages 2-3 are penalised for
+# moving it. The anchor is evaluated with all noise multipliers temporarily
+# zero, on a fixed evenly spaced reference batch, with a per-coordinate
+# variance-normalised MSE.
+#
+# The encoder noise is deliberately KEPT (the model stays stochastic in both
+# directions); the anchor only touches the mean. `run_joint.py` enforces this:
+# `assert_mean_map_anchor_contract` rejects an anchored stage that switches
+# either component's noise off.
+#
+# Controlled change versus Run H: add `mean_map_anchor` + a nonzero
+# `mean_map_anchor_weight` on stages 2 and 3. Nothing else changes.
+
+extends: cms_Joint_runH.yaml
+
+run_label: Run H pT-sliced conditional mass + frozen mean-map anchor
+run_name: Run_H_anchor
+
+comparison:
+  baseline_run: Run_H
+  controlled_change: >-
+    Identical 4x256 / 20+80+80 / num_slices 256 / mass_kin_swd 0 ->
+    sliced_mass_w1 0.5 contract and identical shared stochastic schedule.
+    The only change is a frozen mean-map anchor (weight 0.5) on stages 2-3,
+    taken from the stage-1 deterministic warmup. Encoder and decoder noise are
+    untouched and stay on.
+
+mean_map_anchor:
+  enabled: true
+  reference_stage: runH_stage1_deterministic_warmup
+  events_per_region: 256
+
+stages:
+  - name: runH_stage2_stochastic_core
+    mean_map_anchor_weight: 0.5
+  - name: runH_stage3_stochastic_tail
+    mean_map_anchor_weight: 0.5
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Upsilon remains excluded from training, tuning, checkpoint selection and
+    metric design. The anchor reference batch contains only J/psi and Z training
+    events. Any Upsilon evaluation is post-unblinding held-out transfer.

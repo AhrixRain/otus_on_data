@@ -1,0 +1,69 @@
+# A2.3 floor: the physics kernel is a lower bound, the head may learn above it.
+#
+# Identical to cms_Joint_runH_A2frozen.yaml except
+# `freeze_noise_amplitude: false`: the decoder's noise amplitude is
+# `max(learned_sigma, physics_kernel)`, so the channel cannot collapse below
+# the calibrated resolution but may grow a learned correction on top. This is
+# the A2.2 conditional-floor variant; the difference between the two configs is
+# the single freeze flag.
+#
+# Kernel validation at scale 1 (frozen): achieved/target = 1.21 (J/psi physical
+# 28.1 MeV), 0.86 (Upsilon 1S 84 MeV), 0.83 (Z 2.50 GeV). The floor arm keeps
+# the same lower bound.
+#
+# NOT trained here.
+extends: cms_Joint_runH_cycleNoNoise.yaml
+
+run_label: Run H A2.3 physics kernel floor + learned correction
+run_name: Run_H_A2floor
+
+comparison:
+  baseline_run: Run_H_A2frozen
+  controlled_change: learned_noise_correction_above_the_physics_floor
+  note: >-
+    Same priors, schedule and kernel as Run_H_A2frozen; only
+    freeze_noise_amplitude differs (false here), so the amplitude is floored at
+    the calibrated resolution instead of being fixed.
+
+model:
+  decoder_noise_overrides:
+    core_sigma_floor_spec:
+      eta_bins: [0.0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4]
+      linear_offset: [0.00595074, 0.00675931, 0.00802552, 0.00881325, 0.00917026, 0.00880492]
+      linear_slope: [0.000390620, 0.000443697, 0.000526813, 0.000578522, 0.000601956, 0.000577975]
+      tail_ratio: 0.25
+      sigma_cap: 0.25
+      pt_max_gev: 200.0
+      units:
+        logpt: "log(pT/GeV)"
+        linear_offset: "log-pT sigma"
+        linear_slope: "per GeV"
+      form: "sigma_logpT = scale * shape(eta) * (offset(eta) + slope(eta) * pT)"
+      provenance:
+        source: outputs/cms_Joint/Run_H_cycleNoNoise/kernel_fit_linear/kernel_spec_fitted.json
+        base: outputs/cms_Joint/resolution_kernel/kernel_spec_recommended.json
+        checkpoint: outputs/cms_Joint/Run_H_cycleNoNoise/best_RunHcycleNoNoise_stage2_stochastic_core.pt
+        targets_gev: {jpsi: 0.0281, upsilon1s: 0.084, z: 2.50188}
+        validation_ratio: {jpsi: 1.21, upsilon1s: 0.86, z: 0.83}
+    freeze_noise_amplitude: false
+
+regions:
+  jpsi:
+    paths:
+      theory_prior_file: legacy/priors/jpsi_unified_bare_tms10.hdf5
+  z:
+    paths:
+      theory_prior_file: legacy/priors/z_unified_bare_tms22p8.hdf5
+
+prior_components:
+  enabled: true
+  weights:
+    policy: resample_if_ess_ge_0p5
+    resample_seed: 20260906
+    stop_if_ess_below: 0.5
+  jpsi:
+    signal_fraction: null
+    signal_fraction_source: legacy_prior_effective
+  z:
+    signal_fraction: null
+    signal_fraction_source: single_component

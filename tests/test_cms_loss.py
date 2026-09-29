@@ -515,7 +515,10 @@ class CmsLossSmokeTest(unittest.TestCase):
         new_components = factory.x_space.distribution_components(truth, pred)
         torch.manual_seed(0)
         ref_components = reference_distribution_components(factory.x_space, truth, pred)
-        self.assertEqual(set(new_components.keys()), set(ref_components.keys()) | {"mmd"})
+        self.assertEqual(
+            set(new_components.keys()),
+            set(ref_components.keys()) | {"mmd", "sliced_mass_w1"},
+        )
         for key in ref_components:
             self.assertTrue(
                 torch.allclose(new_components[key], ref_components[key], atol=1e-4, rtol=1e-3),

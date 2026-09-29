@@ -224,7 +224,7 @@ def pooled_bins(
 
 def observable_metric(real: np.ndarray, fake: np.ndarray) -> dict[str, float]:
     return {
-        "ks": float(ks_2samp(real, fake).statistic),
+        "ks": float(ks_2samp(real, fake, method="asymp").statistic),
         "w1": float(wasserstein_distance(real, fake)),
         "cms_mean": float(np.mean(real)),
         "decoded_mean": float(np.mean(fake)),

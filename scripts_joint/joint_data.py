@@ -19,6 +19,7 @@ from cms_data import (
     data_cache_metadata,
     load_and_split_cached,
     resolve_path,
+    resolve_prior_component_spec,
 )
 from g0_contract import array_fingerprint
 from paired_data import (
@@ -45,9 +46,13 @@ def resolve_joint_config(config: dict[str, Any]) -> dict[str, Any]:
     repo_root = resolve_path(paths.get("repo_root", "."))
     data_root = resolve_path(paths.get("data_root", "data"), repo_root)
     output_root = resolve_path(paths.get("output_root", "outputs/cms_Joint"), repo_root)
+    cache_root = resolve_path(
+        paths.get("cache_root", output_root / ".region_cache"), repo_root
+    )
     paths["repo_root"] = str(repo_root)
     paths["data_root"] = str(data_root)
     paths["output_root"] = str(output_root)
+    paths["cache_root"] = str(cache_root)
     if paths.get("cms_root_file") is not None:
         paths["cms_root_file"] = str(resolve_path(paths["cms_root_file"], data_root))
 
@@ -139,7 +144,7 @@ def region_data_config(joint_config: dict[str, Any], region_name: str) -> dict[s
         if key in region_paths:
             paths[key] = deepcopy(region_paths[key])
     seed = int(region.get("seed", int(joint_config.get("seed", 0))))
-    return {
+    projected = {
         "paths": paths,
         "data": deepcopy(region.get("data", {"channel": "muon"})),
         "data_split": deepcopy(region["data_split"]),
@@ -156,6 +161,16 @@ def region_data_config(joint_config: dict[str, Any], region_name: str) -> dict[s
             )
         },
     }
+    # An enabled prior_components declaration must reach the loader; an absent
+    # or disabled one leaves the region config byte-identical to before, so
+    # existing cache keys are unchanged.
+    prior_component_spec = resolve_prior_component_spec(
+        joint_config.get("prior_components"), region_name
+    )
+    if prior_component_spec is not None:
+        projected["prior_components"] = prior_component_spec
+        projected["region_name"] = region_name
+    return projected
 
 
 def load_joint_regions(
@@ -182,7 +197,10 @@ def load_joint_regions(
     cache_info: dict[str, dict] = {}
     region_configs: dict[str, dict] = {}
     pair_indices: dict[str, dict] = {}
-    cache_root = Path(joint_config["paths"]["output_root"]) / ".region_cache"
+    cache_root = Path(
+        joint_config["paths"].get("cache_root")
+        or (Path(joint_config["paths"]["output_root"]) / ".region_cache")
+    )
     for name in joint_config["region_order"]:
         config = region_data_config(joint_config, name)
         region_log = lambda message, region=name: log(f"[{region}] {message}")

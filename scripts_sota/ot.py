@@ -88,7 +88,18 @@ def cylindrical_physics_features(
         mass2 = pair[:, 3] ** 2 - (
             pair[:, 0] ** 2 + pair[:, 1] ** 2 + pair[:, 2] ** 2
         )
-        mass = torch.sqrt(torch.clamp(mass2, min=0.0))
+        # Positive floor, never zero. The naive ``E**2 - p**2`` difference
+        # cancels in float32 for a boosted, nearly collinear pair, so mass2 can
+        # reach exactly 0; ``SqrtBackward0`` is then infinite and NaN-poisons
+        # the whole backward pass. This is the same trap already fixed in
+        # ``physics.invariant_mass_torch``; it was still open here, on the
+        # decoder's condition path (Run_H_A2frozen stage 2, 2026-09-25).
+        # ``sqrt(0.25 * eps**2) == eps / 2`` is below the mass floor used by the
+        # log feature below, so the degenerate branch keeps exactly the same
+        # finite feature value (``log(eps)``) it had with ``min=0.0`` -- only the
+        # sqrt derivative changes, from infinite to finite, and the downstream
+        # clamp then zeroes it instead of producing NaN.
+        mass = torch.sqrt(torch.clamp(mass2, min=0.25 * eps * eps))
     else:
         mass = invariant_mass_torch(values, daughter_masses=masses, eps=eps)
     return torch.cat(

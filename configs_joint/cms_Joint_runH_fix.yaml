@@ -1,0 +1,65 @@
+# cms_Joint Run H full drift-control arm.
+#
+# Applies all four levers from the 2026-09-11 audit in one run. This is a
+# multi-variable arm on purpose (the combined fix); `Run_H_anchor` is the
+# single-variable attribution arm (anchor only) and should be read alongside it.
+#
+#   1. constrain the direction : frozen mean-map anchor (weight 0.5, stages 2-3)
+#   2. regularize the path     : cosine LR decay to 5% + weight decay 1e-4
+#   3. fix the boundary        : tail multiplier ramps 0.25 -> 0.5 inside stage 3
+#                                and the optimizer state is carried across stages
+#   4. keep it stochastic      : encoder AND decoder noise stay on (ramped for
+#                                the tail, constant core 1.0)
+#
+# The anchor keeps the deterministic map from moving; the ramp removes the
+# ep-100/101 noise jump that put stage 3 into a worse basin; the LR decay stops
+# the constant-LR random walk between ep 115 and ep 180; the weight EMA keeps
+# the reported/selected map away from the single-epoch oscillation (the
+# validation is deterministic, so adjacent-epoch score swings are real weight
+# oscillation, not sampling noise).
+
+extends: cms_Joint_runH_anchor.yaml
+
+run_label: Run H + mean-map anchor + path regularization
+run_name: Run_H_fix
+
+loaders:
+  ema_decay: 0.999
+
+comparison:
+  baseline_run: Run_H
+  controlled_change: >-
+    Run H + (a) frozen mean-map anchor 0.5 on stages 2-3, (b) cosine LR decay to
+    5% and weight_decay 1e-4 in stages 2-3, (c) stage-3 tail ramp 0.25 -> 0.5
+    instead of the 0.25/0.5 step, (d) optimizer state carried across stages.
+    Encoder and decoder noise both stay on; the model remains stochastic in both
+    directions.
+
+stages:
+  - name: runH_stage2_stochastic_core
+    lr_schedule: cosine
+    lr_min_factor: 0.05
+    lr_warmup_epochs: 0
+    weight_decay: 0.0001
+    carry_optimizer_state: true
+    mean_map_anchor_weight: 0.5
+
+  - name: runH_stage3_stochastic_tail
+    lr_schedule: cosine
+    lr_min_factor: 0.05
+    lr_warmup_epochs: 0
+    weight_decay: 0.0001
+    carry_optimizer_state: true
+    mean_map_anchor_weight: 0.5
+    # Continuous at the stage-2/3 boundary: both stages start the tail at 0.25.
+    tail_noise_multiplier:
+      start: 0.25
+      end: 0.5
+      schedule: linear
+
+holdout:
+  status: excluded_post_unblinding
+  policy: >-
+    Upsilon remains excluded from training, tuning, checkpoint selection and
+    metric design. The anchor reference batch contains only J/psi and Z training
+    events. Any Upsilon evaluation is post-unblinding held-out transfer.

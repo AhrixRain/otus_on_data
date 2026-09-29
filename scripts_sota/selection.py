@@ -60,7 +60,9 @@ def _w1_quantile(a: np.ndarray, b: np.ndarray, n_quantiles: int = 4097) -> float
 
 def _ks(a: np.ndarray, b: np.ndarray) -> float:
     if HAS_SCIPY:
-        return float(ks_2samp(a, b).statistic)
+        # Only the statistic is used; ``asymp`` avoids SciPy's exact-calculation
+        # fallback warning on large validation samples.
+        return float(ks_2samp(a, b, method="asymp").statistic)
     a_sorted = np.sort(a)
     b_sorted = np.sort(b)
     cdf_a = np.searchsorted(a_sorted, np.concatenate([a_sorted, b_sorted]), side="right") / len(a)

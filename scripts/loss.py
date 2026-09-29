@@ -42,6 +42,7 @@ DEFAULT_SPACE_WEIGHTS = {
     "tail_w1": 0.15,
     "pair_mass_w1": 2.0,
     "pair_pt_w1": 2.0,
+    "sliced_mass_w1": 0.0,
     "lepton_pt_w1": 1.0,
     "delta_phi_w1": 0.5,
     "delta_eta_w1": 0.5,
@@ -79,6 +80,8 @@ KNOWN_LOSS_SETTINGS = frozenset(
         "pair_y_std_floor",
         "cycle_mass_huber_weight",
         "cycle_mass_huber_delta",
+        "sliced_mass_w1_slices",
+        "sliced_mass_w1_min_events",
     }
 )
 KNOWN_LOSS_KEYS = frozenset(DEFAULT_SPACE_WEIGHTS) | KNOWN_LOSS_SETTINGS
@@ -179,6 +182,18 @@ def validate_loss_config(loss_config: dict[str, Any]) -> None:
             value = loss_config[key]
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"loss.{key} must be a positive integer, got {value!r}")
+    if "sliced_mass_w1_slices" in loss_config:
+        value = loss_config["sliced_mass_w1_slices"]
+        if isinstance(value, bool) or not isinstance(value, int) or not 2 <= value <= 16:
+            raise ValueError(
+                f"loss.sliced_mass_w1_slices must be an integer in [2, 16], got {value!r}"
+            )
+    if "sliced_mass_w1_min_events" in loss_config:
+        value = loss_config["sliced_mass_w1_min_events"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 2:
+            raise ValueError(
+                f"loss.sliced_mass_w1_min_events must be an integer >= 2, got {value!r}"
+            )
     if "eps" in loss_config:
         value = float(loss_config["eps"])
         if not np.isfinite(value) or value <= 0.0:
@@ -373,6 +388,11 @@ def _safe_torch_std(values: torch.Tensor, eps: float) -> torch.Tensor:
     )
 
 
+def _pair_pt(values: torch.Tensor) -> torch.Tensor:
+    """Pair transverse momentum from an [N, 8] charge-ordered p4 block."""
+    return torch.hypot(values[:, 0] + values[:, 4], values[:, 1] + values[:, 5])
+
+
 def _empirical_quantile_difference(
     first: torch.Tensor,
     second: torch.Tensor,
@@ -483,6 +503,15 @@ class SpaceFeatureOTLoss:
         # by default. Set `standardize_raw_matching: false` for a raw-GeV control.
         self.standardize_raw_matching = bool(
             loss_config.get("standardize_raw_matching", True)
+        )
+        # pT-sliced conditional mass W1 (Run H, 2026-09-10). The mass W1 is
+        # computed inside equal-count pair-pT slices of the truth sample, so a
+        # model cannot match the global mass marginal while getting the
+        # conditional response wrong. Weight defaults to 0 (inactive), so every
+        # pre-Run-H config is byte-for-byte unchanged.
+        self.sliced_mass_slices = int(loss_config.get("sliced_mass_w1_slices", 4))
+        self.sliced_mass_min_events = int(
+            loss_config.get("sliced_mass_w1_min_events", 256)
         )
 
         # Optional scale-aware pair-level sliced-Wasserstein term. The feature
@@ -907,6 +936,51 @@ class SpaceFeatureOTLoss:
             loss = loss - 2.0 * torch.exp(-gamma * dxy).mean()
         return loss / max(1, len(self.mmd_scales))
 
+    def sliced_mass_w1(self, truth: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
+        """Conditional mass W1: mean over equal-count pair-pT slices of the truth.
+
+        Slice edges are the truth sample's pair-pT quantiles; the standardized
+        invariant-mass W1 is evaluated inside each slice. This is the Run H
+        fix for the pT-dependent response: a model can match the global mass
+        marginal while getting the mass distribution at fixed pair-pT wrong,
+        which is exactly the observed asymmetric-peak failure. Slices thinner
+        than ``sliced_mass_w1_min_events`` (either side) are skipped, and the
+        term returns zero when nothing usable remains, so thin or OOD batches
+        cannot dominate the objective.
+        """
+        if self.weights.get("sliced_mass_w1", 0.0) <= 0.0:
+            return truth.new_tensor(0.0)
+        min_events = max(2, int(self.sliced_mass_min_events))
+        if truth.shape[0] < min_events or pred.shape[0] < min_events:
+            return truth.new_tensor(0.0)
+        truth_pt = _pair_pt(truth)
+        pred_pt = _pair_pt(pred)
+        quantiles = np.linspace(0.0, 1.0, int(self.sliced_mass_slices) + 1)
+        edges = np.quantile(truth_pt.detach().cpu().numpy(), quantiles)
+        edges[0] -= 1e-6
+        edges[-1] += 1e-6
+        truth_mass = self.standardize_mass(self.invariant_mass(truth))
+        pred_mass = self.standardize_mass(self.invariant_mass(pred))
+        total = truth.new_tensor(0.0)
+        used = 0
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+                continue
+            slice_truth = (truth_pt >= lo) & (truth_pt < hi)
+            slice_pred = (pred_pt >= lo) & (pred_pt < hi)
+            if (
+                int(slice_truth.sum()) < min_events
+                or int(slice_pred.sum()) < min_events
+            ):
+                continue
+            total = total + self.wasserstein_1d_sorted(
+                truth_mass[slice_truth], pred_mass[slice_pred]
+            )
+            used += 1
+        if used == 0:
+            return truth.new_tensor(0.0)
+        return total / used
+
     def distribution_components(self, truth: torch.Tensor, pred: torch.Tensor) -> dict[str, torch.Tensor]:
         """Differentiable distribution-level OT components between two batches.
 
@@ -1030,6 +1104,7 @@ class SpaceFeatureOTLoss:
             ),
             "tail_w1": self._tail_w1_std(truth_std, pred_std),
             "pair_mass_w1": self.wasserstein_1d_sorted(truth_mass_std, pred_mass_std),
+            "sliced_mass_w1": self.sliced_mass_w1(truth, pred),
             "pair_pt_w1": self.wasserstein_1d_sorted(
                 truth_features_std[:, 5],
                 pred_features_std[:, 5],

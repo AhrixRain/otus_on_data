@@ -1,0 +1,46 @@
+# A2: per-map noise floors and an optional tail floor (mechanism + proposal).
+#
+# Controlled change versus Run H: the model gains per-map noise overrides.
+#   * encoder_noise_overrides: a much smaller core floor, so the encoder's
+#     posterior is allowed to be narrow. The shared floor is 1e-3 in log pT,
+#     ~2.19 MeV on the J/psi mass, 14x the honest 0.16 MeV core (M1).
+#   * decoder_noise_overrides: keep the current core floor and add a small tail
+#     floor, so the heavy-tail channel cannot collapse below the configured
+#     scale.
+#
+# CALIBRATION CAVEAT (artifact-measured, A0 2026-09-23): the required
+# per-coordinate log-pT sigma spans ~0.001 (J/psi), ~0.008 (Upsilon, 84 MeV)
+# and ~0.03 (Z, 2.85 GeV). A single global floor cannot span that range: a
+# floor sized for Upsilon would over-smear J/psi by roughly 7x. This config
+# therefore exercises the mechanism with a conservative tail floor only; the
+# real A2.2 decision is between (a) a condition-dependent floor and (b)
+# freezing the amplitude from the measured resolution - both are training-side
+# decisions that need sign-off.
+#
+# The `loaders.validation_noise_budget` block is a PASSIVE A0.3 diagnostic.
+#
+# Warm-start caveat: `core_sigma_floors` / `tail_sigma_floors` are registered
+# buffers, so `--resume` / `--init-checkpoint` restores the checkpoint's own
+# floor values over the config's. This arm is meant to start fresh (or resume
+# its own A2 checkpoints); do not warm-start it from a pre-2026-09-23 run and
+# expect the new floors to take effect.
+#
+# NOT trained here.
+extends: cms_Joint_runH.yaml
+
+run_label: Run H + A2 noise floors (mechanism demo)
+run_name: Run_H_noiseFloor
+
+model:
+  encoder_noise_overrides:
+    core_sigma_floors: [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
+    tail_sigma_floors: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  decoder_noise_overrides:
+    core_sigma_floors: [0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+    tail_sigma_floors: [0.0015, 0.0015, 0.001, 0.0015, 0.0015, 0.001]
+
+loaders:
+  validation_noise_budget:
+    enabled: true
+    draws: 8
+    max_events: 1024

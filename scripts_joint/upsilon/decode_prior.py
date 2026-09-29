@@ -40,6 +40,7 @@ from joint_trainer import restore_joint_checkpoint  # noqa: E402
 DEFAULT_PRIOR = (
     REPO_ROOT
     / "data"
+    / "legacy"
     / "cms_upsilon_mumu_mg5_8tev_inclusive_3S_continuum_ptj5_fiducial_8p5_11p5_1M.hdf5"
 )
 DEFAULT_RUN_DIR = REPO_ROOT / "outputs" / "cms_Joint" / "Run_C_fullScale"

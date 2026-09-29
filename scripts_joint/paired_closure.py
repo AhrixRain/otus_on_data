@@ -217,7 +217,7 @@ def print_report(label: str, report: dict[str, Any]) -> None:
         ))
     else:
         print("  no identity reference for this direction (see paired_closure docs)")
-    print("marginal mass (what the pipeline gates on today)")
+    print("marginal mass (what the pipeline's marginal metrics report)")
     print(f"  model    KS {marginal['model_ks']:.4f}   W1 {marginal['model_w1_gev']:.4f}"
           f"   std {marginal['model_std_gev']:.4f}   (truth std {marginal['truth_std_gev']:.4f})")
     if report["has_identity_reference"]:

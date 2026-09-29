@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import glob
 import json
+import math
 import sys
 import tempfile
 import unittest
@@ -24,8 +25,10 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+SOTA_DIR = REPO_ROOT / "scripts_sota"
+for _directory in (SCRIPTS_DIR, SOTA_DIR):
+    if str(_directory) not in sys.path:
+        sys.path.insert(0, str(_directory))
 
 import cms_data  # noqa: E402
 from cms_data import (  # noqa: E402
@@ -47,6 +50,7 @@ from loss import (  # noqa: E402
     sliced_wasserstein,
     validate_loss_config,
 )
+from ot import cylindrical_physics_features  # noqa: E402
 from physics import (  # noqa: E402
     ELECTRON_MASS_GEV,
     MUON_MASS_GEV,
@@ -190,6 +194,102 @@ class TestSharedInvariantMass(unittest.TestCase):
             rtol=1e-3,
             atol=1e-3,
         )
+
+    def test_torch_degenerate_pairs_have_finite_gradients(self) -> None:
+        # Zero-pT and exactly collinear massless muons used to give
+        # sqrt(0) -> inf -> NaN in the backward pass.
+        zero_pt = torch.zeros(1, 8, dtype=torch.float32, requires_grad=True)
+        mass = invariant_mass_torch(zero_pt, daughter_masses=None)
+        self.assertTrue(torch.isfinite(mass).all())
+        mass.sum().backward()
+        self.assertTrue(torch.isfinite(zero_pt.grad).all())
+
+        collinear = torch.zeros(1, 8, dtype=torch.float32, requires_grad=True)
+        with torch.no_grad():
+            collinear[0, 0] = 1.0  # muon- px
+            collinear[0, 3] = 1.0  # muon- E (massless)
+            collinear[0, 4] = 1.0  # muon+ px
+            collinear[0, 7] = 1.0  # muon+ E (massless, collinear)
+        mass = invariant_mass_torch(collinear, daughter_masses=None)
+        self.assertTrue(torch.isfinite(mass).all())
+        mass.sum().backward()
+        self.assertTrue(torch.isfinite(collinear.grad).all())
+
+    def test_cylindrical_features_degenerate_mass_has_finite_gradients(self) -> None:
+        # ``cylindrical_physics_features(mass_from_energy=True)`` -- the
+        # decoder's condition -- used ``sqrt(clamp(E**2 - p**2, min=0.0))``.
+        # A pair whose float32 mass2 cancels to exactly zero gave
+        # ``SqrtBackward0`` = inf and NaN gradients for the whole model
+        # (Run_H_A2frozen stage 2, 2026-09-25). Two identical massless muons
+        # give mass2 == 0 exactly.
+        degenerate = torch.tensor(
+            [[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0]], dtype=torch.float32
+        )
+        pair = degenerate[:, 0:4] + degenerate[:, 4:8]
+        mass2 = pair[0, 3] ** 2 - (
+            pair[0, 0] ** 2 + pair[0, 1] ** 2 + pair[0, 2] ** 2
+        )
+        self.assertEqual(float(mass2.detach()), 0.0)
+
+        values = degenerate.clone().requires_grad_(True)
+        features = cylindrical_physics_features(
+            values,
+            daughter_masses=None,
+            mass_from_energy=True,
+            eps=1e-8,
+        )
+        self.assertTrue(torch.isfinite(features).all())
+        # The degenerate branch still reports the same finite feature value it
+        # did before (log of the mass floor); only the gradient changed.
+        self.assertAlmostEqual(
+            float(features[0, 8].detach()), math.log(1e-8), places=5
+        )
+        features.sum().backward()
+        self.assertTrue(torch.isfinite(values.grad).all())
+
+        # A boosted, nearly collinear float32 pair is the physically reachable
+        # version of the same degeneracy: the E**2 - p**2 difference cancels
+        # away and the direct mass is swallowed whole.
+        boosted = torch.tensor(
+            [
+                [
+                    400.0, 0.0, 0.0, 400.00001397,
+                    400.001, 0.4, 0.4, 400.00101397,
+                ]
+            ],
+            dtype=torch.float32,
+            requires_grad=True,
+        )
+        features = cylindrical_physics_features(
+            boosted,
+            daughter_masses=None,
+            mass_from_energy=True,
+            eps=1e-8,
+        )
+        features.sum().backward()
+        self.assertTrue(torch.isfinite(boosted.grad).all())
+
+    def test_cylindrical_mass_feature_value_unchanged_by_the_floor(self) -> None:
+        # The floor must not move any feature value: for every input the new
+        # mass feature equals log(clamp(sqrt(clamp(mass2, 0)), eps)).
+        generator = torch.Generator().manual_seed(7)
+        values = torch.rand(512, 8, generator=generator) * 60.0 + 0.5
+        values[:, 3] = torch.linalg.norm(values[:, 0:3], dim=1) + 0.5
+        values[:, 7] = torch.linalg.norm(values[:, 4:7], dim=1) + 0.5
+        pair = values[:, 0:4] + values[:, 4:8]
+        mass2 = pair[:, 3] ** 2 - (
+            pair[:, 0] ** 2 + pair[:, 1] ** 2 + pair[:, 2] ** 2
+        )
+        reference = torch.log(
+            torch.clamp(torch.sqrt(torch.clamp(mass2, min=0.0)), min=1e-8)
+        )
+        features = cylindrical_physics_features(
+            values,
+            daughter_masses=None,
+            mass_from_energy=True,
+            eps=1e-8,
+        )[:, 8]
+        torch.testing.assert_close(features, reference, rtol=0.0, atol=0.0)
 
     @unittest.skipUnless(
         getattr(torch.backends, "mps", None) is not None

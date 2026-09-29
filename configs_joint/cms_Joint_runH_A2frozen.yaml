@@ -1,0 +1,77 @@
+# A2.3 frozen: the decoder's resolution is a fixed physics kernel.
+#
+# Change set versus Run H (not a single-variable attribution - see the note):
+#   1. `cycle_decoder_noise: zero` (A1 stability fix, inherited);
+#   2. component-aware honest priors (C4 prerequisite);
+#   3. `decoder_noise_overrides.core_sigma_floor_spec` with a model-effective
+#      linear kernel and `freeze_noise_amplitude: true`: the decoder's noise
+#      amplitude is no longer learned, it is the calibrated resolution, and the
+#      mean map is the only trainable channel.
+#
+# Why the honest prior is a prerequisite: the kernel is physical (~28 MeV at
+# J/psi). On the legacy hand-smeared J/psi prior (26 MeV) it would over-smear
+# the peak to ~43 MeV, so a kernel-only arm on the legacy priors is not
+# physical. The Z prior switches to the unified file for loader consistency.
+#
+# Kernel provenance: outputs/cms_Joint/Run_H_cycleNoNoise/kernel_fit_linear/
+# (base A2.0 shape outputs/cms_Joint/resolution_kernel/kernel_spec_recommended.json,
+# fitted on the A1 stage-2 best checkpoint with the decode probe, frozen mode).
+# Validation at scale 1: achieved/target = 1.21 (J/psi, physical 28.1 MeV),
+# 0.86 (Upsilon 1S 84 MeV), 0.83 (Z 2.50 GeV); 2S/3S 0.93/0.99.
+#
+# NOT trained here.
+extends: cms_Joint_runH_cycleNoNoise.yaml
+
+run_label: Run H A2.3 frozen physics kernel (honest priors)
+run_name: Run_H_A2frozen
+
+comparison:
+  baseline_run: Run_H_cycleNoNoise
+  controlled_change: frozen_physics_resolution_kernel_with_honest_component_priors
+  note: >-
+    Differs from Run H_cycleNoNoise by the honest component-aware training
+    priors and the frozen physics kernel. The prior switch is required for the
+    kernel to be physical; the kernel is the A2 variable.
+
+model:
+  decoder_noise_overrides:
+    core_sigma_floor_spec:
+      eta_bins: [0.0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4]
+      linear_offset: [0.00595074, 0.00675931, 0.00802552, 0.00881325, 0.00917026, 0.00880492]
+      linear_slope: [0.000390620, 0.000443697, 0.000526813, 0.000578522, 0.000601956, 0.000577975]
+      tail_ratio: 0.25
+      sigma_cap: 0.25
+      pt_max_gev: 200.0
+      units:
+        logpt: "log(pT/GeV)"
+        linear_offset: "log-pT sigma"
+        linear_slope: "per GeV"
+      form: "sigma_logpT = scale * shape(eta) * (offset(eta) + slope(eta) * pT)"
+      provenance:
+        source: outputs/cms_Joint/Run_H_cycleNoNoise/kernel_fit_linear/kernel_spec_fitted.json
+        base: outputs/cms_Joint/resolution_kernel/kernel_spec_recommended.json
+        checkpoint: outputs/cms_Joint/Run_H_cycleNoNoise/best_RunHcycleNoNoise_stage2_stochastic_core.pt
+        targets_gev: {jpsi: 0.0281, upsilon1s: 0.084, z: 2.50188}
+        validation_ratio: {jpsi: 1.21, upsilon1s: 0.86, z: 0.83}
+    freeze_noise_amplitude: true
+
+regions:
+  jpsi:
+    paths:
+      theory_prior_file: legacy/priors/jpsi_unified_bare_tms10.hdf5
+  z:
+    paths:
+      theory_prior_file: legacy/priors/z_unified_bare_tms22p8.hdf5
+
+prior_components:
+  enabled: true
+  weights:
+    policy: resample_if_ess_ge_0p5
+    resample_seed: 20260906
+    stop_if_ess_below: 0.5
+  jpsi:
+    signal_fraction: null
+    signal_fraction_source: legacy_prior_effective
+  z:
+    signal_fraction: null
+    signal_fraction_source: single_component

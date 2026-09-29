@@ -1,0 +1,59 @@
+# cms_Joint unifiedP1_components: the C4 re-run of unifiedP1 with the
+# component-aware prior loader actually implemented.
+#
+# unifiedP1 was trained while `prior_components` was inert: cms_data read only
+# FDL/zData, so the J/psi sample was the union of the labelled components at
+# whatever ratio the file carries (737,262 signal / 999,089 continuum) with the
+# CKKW-L FDL/weight dropped. This config declares the same block against the
+# implemented loader:
+#   * components are selected by FDL/component_id;
+#   * the J/psi mixture target is the legacy prior's effective POST-SELECTION
+#     signal fraction, measured at load time from
+#     data/legacy/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5 (FDL attrs
+#     n_signal/n_continuum = 80,648/14,232 -> 0.85);
+#   * FDL/weight is applied by resampling under resample_if_ess_ge_0p5
+#     (stop below ESS/N = 0.5);
+#   * Z is a single component (gamma*/Z is one interfering amplitude).
+#
+# The only intended change against unifiedP1 is the training-prior
+# construction. Model, losses, schedules, CMS selection and data_split are
+# inherited unchanged.
+#
+# KNOWN GAP: the inherited `selection:` and `metrics:` blocks are still
+# unimplemented and remain silently ignored by the loader; C4 covers
+# prior_components only.
+
+extends: cms_Joint_unifiedP1.yaml
+
+run_label: unifiedP1_components
+run_name: unifiedP1_components
+
+comparison:
+  baseline_run: unifiedP1
+  controlled_change: component_aware_unified_prior_mixture_and_ckkwl_weights
+  note: >-
+    unifiedP1 trained on the same prior files with the component block inert.
+    This run differs only in how the training prior is constructed: labelled
+    components resampled to the legacy post-selection signal fraction, with the
+    stored CKKW-L weights applied under the declared ESS policy.
+
+regions:
+  jpsi:
+    paths:
+      theory_prior_file: legacy/priors/jpsi_unified_bare_tms10.hdf5
+  z:
+    paths:
+      theory_prior_file: legacy/priors/z_unified_bare_tms22p8.hdf5
+
+prior_components:
+  enabled: true
+  weights:
+    policy: resample_if_ess_ge_0p5
+    resample_seed: 20260906
+    stop_if_ess_below: 0.5
+  jpsi:
+    signal_fraction: null
+    signal_fraction_source: legacy_prior_effective
+  z:
+    signal_fraction: null
+    signal_fraction_source: single_component

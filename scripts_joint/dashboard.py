@@ -60,7 +60,7 @@ img { max-width: 100%; border: 1px solid #334155; border-radius: 6px; margin: 4p
   <div class="card"><h2>Total loss</h2><canvas id="loss_total"></canvas></div>
   <div class="card"><h2>Region loss</h2><canvas id="loss_region"></canvas></div>
   <div class="card"><h2>Raw worst-region score</h2><canvas id="selection"></canvas></div>
-  <div class="card"><h2>Gate-pass history</h2><canvas id="gates"></canvas></div>
+  <div class="card"><h2>Eval loss</h2><canvas id="eval_loss"></canvas></div>
   <div class="card"><h2>Noise / LR</h2><canvas id="noise"></canvas></div>
 </div>
 <div class="grid">
@@ -101,9 +101,13 @@ function renderStatus(d) {
   let html = `Run: ${runLabel} | Port: ${d.port} | Polling: ${d.interval}s`;
   if (last) {
     html += `<br>Epoch: <b>${last.global_epoch}</b> | Stage: ${last.stage} | LR: ${Number(last.lr).toExponential(2)}`;
+    if (last.train) {
+      html += ` | Train loss: ${Number(last.train.loss).toFixed(4)}`;
+    }
+    if (last.eval_loss !== undefined && last.eval_loss !== null) {
+      html += ` | Eval loss: ${Number(last.eval_loss).toFixed(4)}`;
+    }
     if (last.joint_selection) {
-      const ok = last.joint_selection.all_gates_passed;
-      html += ` | Gates: <span class="badge ${ok ? 'ok' : 'fail'}">${ok ? 'PASS' : 'FAIL'}</span>`;
       html += ` | Score: ${Number(last.joint_selection.selection_score).toFixed(4)}`;
     }
   }
@@ -168,14 +172,12 @@ function renderLoss() {
 function renderSelection() {
   const rows = state.history.filter(r => r.joint_selection);
   const labels = rows.map(r => r.global_epoch);
-  // The penalized selection score jumps by gate_fail_penalty (1e6) whenever a
-  // gate fails, which flattens the raw curve to a straight line if the two are
-  // drawn on one axis. Plot the raw score alone and show gate state separately.
   drawChart('selection', labels, [
-    { name: 'raw', values: rows.map(r => r.joint_selection.raw_worst_region_score) },
+    { name: 'score', values: rows.map(r => r.joint_selection.raw_worst_region_score) },
   ]);
-  drawChart('gates', labels, [
-    { name: 'all gates', values: rows.map(r => r.joint_selection.all_gates_passed ? 1 : 0) },
+  const evalRows = state.history.filter(r => r.eval_loss !== undefined && r.eval_loss !== null);
+  drawChart('eval_loss', evalRows.map(r => r.global_epoch), [
+    { name: 'eval', values: evalRows.map(r => r.eval_loss) },
   ]);
 }
 
@@ -195,9 +197,12 @@ function renderValidation(d) {
   if (!last) { $('validation').textContent = 'No validation yet.'; return; }
   const sel = last.joint_selection;
   let html = `<div class="mono">Epoch ${last.global_epoch} | ${last.stage}</div>`;
-  html += `<table><tr><th>Region</th><th>Worst metric</th><th>Score</th><th>Gates</th></tr>`;
+  html += `<table><tr><th>Region</th><th>Worst metric</th><th>Score</th><th>Eval loss</th></tr>`;
   for (const [name, rep] of Object.entries(sel.regions)) {
-    html += `<tr><td>${name}</td><td>${rep.worst_metric}</td><td>${Number(rep.score).toFixed(4)}</td><td>${rep.gate_passed ? 'PASS' : 'FAIL'}</td></tr>`;
+    const loss = last.region_validation && last.region_validation[name]
+      ? Number(last.region_validation[name].base_loss).toFixed(4)
+      : '—';
+    html += `<tr><td>${name}</td><td>${rep.worst_metric}</td><td>${Number(rep.score).toFixed(4)}</td><td>${loss}</td></tr>`;
   }
   html += `</table>`;
   $('validation').innerHTML = html;
@@ -206,10 +211,11 @@ function renderValidation(d) {
 function renderRecent(d) {
   const h = d.history;
   const recent = h.slice(-20).reverse();
-  let html = '<table><tr><th>Epoch</th><th>Stage</th><th>Loss</th><th>Gates</th></tr>';
+  let html = '<table><tr><th>Epoch</th><th>Stage</th><th>Train loss</th><th>Eval loss</th></tr>';
   for (const r of recent) {
-    const ok = r.joint_selection ? (r.joint_selection.all_gates_passed ? 'PASS' : 'FAIL') : '—';
-    html += `<tr><td>${r.global_epoch}</td><td>${r.stage}</td><td>${r.train ? Number(r.train.loss).toFixed(4) : '—'}</td><td>${ok}</td></tr>`;
+    const trainLoss = r.train ? Number(r.train.loss).toFixed(4) : '—';
+    const evalLoss = (r.eval_loss !== undefined && r.eval_loss !== null) ? Number(r.eval_loss).toFixed(4) : '—';
+    html += `<tr><td>${r.global_epoch}</td><td>${r.stage}</td><td>${trainLoss}</td><td>${evalLoss}</td></tr>`;
   }
   html += '</table>';
   $('recent').innerHTML = html;
@@ -313,15 +319,20 @@ class Dashboard:
     def state(self) -> dict:
         history = self.load_history()
         best = None
-        for row in reversed(history):
-            sel = row.get("joint_selection") or {}
-            if sel.get("all_gates_passed"):
-                best = {
-                    "global_epoch": row.get("global_epoch"),
-                    "stage": row.get("stage"),
-                    "selection_score": sel.get("selection_score"),
-                }
-                break
+        candidates = [
+            row for row in history
+            if (row.get("joint_selection") or {}).get("selection_score") is not None
+        ]
+        if candidates:
+            best_row = min(
+                candidates,
+                key=lambda row: float(row["joint_selection"]["selection_score"]),
+            )
+            best = {
+                "global_epoch": best_row.get("global_epoch"),
+                "stage": best_row.get("stage"),
+                "selection_score": best_row["joint_selection"]["selection_score"],
+            }
         return {
             "run_label": self.run_label,
             "port": self.port,

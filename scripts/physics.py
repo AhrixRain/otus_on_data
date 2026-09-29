@@ -232,8 +232,13 @@ def invariant_mass_torch(
 
     px1, py1, pz1 = pairs[:, 0], pairs[:, 1], pairs[:, 2]
     px2, py2, pz2 = pairs[:, 4], pairs[:, 5], pairs[:, 6]
-    pt1 = torch.sqrt(px1 * px1 + py1 * py1)
-    pt2 = torch.sqrt(px2 * px2 + py2 * py2)
+    # Positive floor inside the sqrt: a decoded muon can reach exactly zero pT
+    # (or the pair can become collinear, mass2 -> 0), and the naive
+    # sqrt(0) backward returns inf, which turns the whole model gradient into
+    # NaN. The floor keeps the value finite and the gradient bounded by
+    # 1/(2*sqrt(eps)).
+    pt1 = torch.sqrt(torch.clamp(px1 * px1 + py1 * py1, min=eps))
+    pt2 = torch.sqrt(torch.clamp(px2 * px2 + py2 * py2, min=eps))
     phi1 = torch.atan2(py1, px1)
     phi2 = torch.atan2(py2, px2)
     dphi = phi1 - phi2
@@ -269,4 +274,4 @@ def invariant_mass_torch(
         denominator = torch.clamp(mt1 * mt2 + pt1 * pt2, min=eps)
         correction = 2.0 * (numerator / denominator) * torch.cosh(dy)
         mass2 = m1sq + m2sq + angular + correction
-    return torch.sqrt(torch.clamp(mass2, min=0.0))
+    return torch.sqrt(torch.clamp(mass2, min=eps))

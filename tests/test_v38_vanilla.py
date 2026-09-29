@@ -147,10 +147,14 @@ class TestV38Config(unittest.TestCase):
         config = resolve_config(load_config(V38_CONFIG_PATH))
         loss = config["loss"]
         for key in DEFAULT_SPACE_WEIGHTS:
-            self.assertEqual(loss[key], 0.0, key)
+            # Absent keys carry the default weight (0.0 for every non-vanilla
+            # term, including any component added after this config was frozen).
+            self.assertEqual(loss.get(key, 0.0), 0.0, key)
         for space in ("x", "z"):
             for key in DEFAULT_SPACE_WEIGHTS:
-                self.assertEqual(loss["space_weights"][space][key], 0.0, f"{space}.{key}")
+                self.assertEqual(
+                    loss["space_weights"][space].get(key, 0.0), 0.0, f"{space}.{key}"
+                )
         self.assertEqual(loss["x_reco_physics_w1"], 0.0)
         self.assertEqual(loss["selection_score"]["x_sim"], 0.0)
         self.assertEqual(loss["selection_score"]["cycle"], 0.0)

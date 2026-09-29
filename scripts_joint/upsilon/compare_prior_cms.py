@@ -45,6 +45,7 @@ from plot_upsilon import (  # noqa: E402
 DEFAULT_PRIOR = (
     REPO_ROOT
     / "data"
+    / "legacy"
     / "cms_upsilon_mumu_mg5_8tev_inclusive_3S_continuum_ptj5_fiducial_8p5_11p5_1M.hdf5"
 )
 DEFAULT_CMS = UPSILON_EXPERIMENT / "data" / "Ymumu.csv"
@@ -383,7 +384,7 @@ def main() -> int:
             "cms_in_window": int(len(cms_masses)),
         },
         "unbinned_shape_metrics_in_window": {
-            "ks": float(ks_2samp(cms_masses, prior_masses).statistic),
+            "ks": float(ks_2samp(cms_masses, prior_masses, method="asymp").statistic),
             "w1_gev": float(wasserstein_distance(cms_masses, prior_masses)),
         },
         "component_mapping": mapping,

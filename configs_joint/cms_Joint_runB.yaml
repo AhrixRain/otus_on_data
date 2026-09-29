@@ -20,4 +20,4 @@ holdout:
 regions:
   z:
     paths:
-      theory_prior_file: cms_dymumu_mg5_8tev_dy1j_ptj5_fiducial_70_110_1M.hdf5
+      theory_prior_file: legacy/cms_dymumu_mg5_8tev_dy1j_ptj5_fiducial_70_110_1M.hdf5

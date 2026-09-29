@@ -37,7 +37,7 @@ regions:
     paths:
       # Session 29 unified prior. Resolved against paths.data_root - confirm in
       # --dry-run that this lands on <repo>/data/priors/.
-      theory_prior_file: priors/jpsi_unified_bare_tms10.hdf5
+      theory_prior_file: legacy/priors/jpsi_unified_bare_tms10.hdf5
     # The unified priors are loose-generated; the analysis window is an offline
     # choice. These are the LEGACY windows, chosen so the only controlled
     # change against Run E is the prior's provenance and shape - not the cut.
@@ -49,7 +49,7 @@ regions:
       muon_abs_eta_max: 2.4
   z:
     paths:
-      theory_prior_file: priors/z_unified_bare_tms22p8.hdf5
+      theory_prior_file: legacy/priors/z_unified_bare_tms22p8.hdf5
     theory_prior_selection:
       mass_min: 70
       mass_max: 110
@@ -89,12 +89,7 @@ prior_components:
     signal_fraction_source: single_component
 
 selection:
-  # Gates stay computed and logged, and stop blocking. Their thresholds were
-  # calibrated on the smeared prior and are stale; the per-region
-  # selection.gates / selection.targets blocks inherited from Run A are kept for
-  # the record and must no longer halt a run or drive checkpoint choice.
-  gates_blocking: false
-  # Identity and floor references are KEPT and reported. CLAUDE.md section 4:
+  # Identity and floor references are kept and reported. CLAUDE.md section 4:
   # a raw KS carries no claim without them. On these priors they become
   # informative for the first time - the J/psi signal component's robust width
   # is 0.161 MeV against ~30 MeV of resolution, so z~ = x cannot pass.
@@ -110,19 +105,7 @@ selection:
     cycle_in_score: false  # no identity reference by design; reported only
     also_record_legacy_score: true
 
-# ---------------------------------------------------------------------------
-# TWO INHERITED KEYS THAT CONTRADICT THE BLOCKS ABOVE. Both are overridden here;
-# the implementation must honour these, not the inherited values.
-# ---------------------------------------------------------------------------
-
 checkpoint_selection:
-  # Inherited from Run A: hard_gates true with gate_fail_penalty 1e6. On these
-  # priors the J/psi gates are expected to fail at EVERY validation (A/B narrow
-  # arm 0/35, M1 0/35), so a 1e6 penalty would dominate the objective and the
-  # 35/65 score would never operate - selection would be driven by the penalty
-  # alone. Gates are diagnostics here, not selectors.
-  hard_gates: false
-  gate_fail_penalty: 0
   # Composition order: compute the 35/65 vs_identity score PER REGION, then
   # combine across regions with the inherited worst_region_rms reduction.
   mode: worst_region_rms

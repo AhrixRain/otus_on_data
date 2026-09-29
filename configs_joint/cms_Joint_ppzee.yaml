@@ -30,8 +30,8 @@
 #   2. electron daughter masses instead of muon;
 #   3. a bounded two-stage schedule instead of Run E's 432 epochs -- this is a
 #      bench and is meant to reach a stable validation, not a headline;
-#   4. gates and targets rescaled to a 91 GeV resonance, with two omissions
-#      documented at the gate block below.
+#   4. targets rescaled to a 91 GeV resonance, with two deliberate omissions
+#      documented at the selection block below.
 #
 # Two facts about this dataset that must be stated whenever its number is
 # quoted (both artifact-measured 2026-09-07, outputs/ppzee_layout.json):
@@ -64,7 +64,6 @@ device: auto
 cuda_memory_limit_gb: 11
 float_type: float32
 seed: 1701
-require_stage_gate_pass: false
 
 # The mass used to rebuild E from the cylindrical coordinates. The daughters
 # here are electrons; see the header note on why the value is immaterial.
@@ -162,8 +161,6 @@ loaders:
 
 checkpoint_selection:
   base_loss_weight: 0
-  gate_fail_penalty: 1000000
-  hard_gates: true
   mode: worst_region_rms
   region_reduction: rms
 
@@ -259,8 +256,8 @@ regions:
       z_columns: [0, 8]
       x_columns: [0, 8]
     paths:
-      paired_train_file: ppzee.hdf5
-      paired_test_file: ppzee_test.hdf5
+      paired_train_file: legacy/ppzee.hdf5
+      paired_test_file: legacy/ppzee_test.hdf5
     data_split:
       train_ratio: 0.8
       val_ratio: 0.1
@@ -276,27 +273,14 @@ regions:
       # Rescaled from the joint programme's Z region, which is the same
       # resonance at the same mass. Two deliberate omissions:
       #
-      #  * latent_pair_pt_ks is NOT gated or targeted. The truth pair pT is
+      #  * latent_pair_pt_ks is not targeted. The truth pair pT is
       #    identically zero, so the x -> z pair-pT KS against the identity map
       #    is ~1 by construction and no map that keeps the leptons anywhere
-      #    near their measured directions can move it. Gating it would make
-      #    every checkpoint fail for a reason that has nothing to do with the
-      #    question. direct_pair_pt_ks IS kept: manufacturing recoil from a
-      #    2 -> 1 truth is the decoder's actual job here.
+      #    near their measured directions can move it. direct_pair_pt_ks IS
+      #    kept: manufacturing recoil from a 2 -> 1 truth is the decoder's
+      #    actual job here.
       #  * cycle gauges are absent by design; the identity cycle is x -> x and
       #    every ratio against it divides by zero (memory.md section 7.3).
-      gates:
-        latent_mass_ks: 0.15
-        latent_mass_w1_gev: 3
-        latent_mass_width_rel_error: 0.5
-        latent_mass_ks_vs_identity: 0.5
-        latent_mass_w1_gev_vs_identity: 0.5
-        direct_mass_ks: 0.15
-        direct_mass_w1_gev: 3
-        direct_mass_width_rel_error: 0.5
-        direct_pair_pt_ks: 0.25
-        cycle_mass_ks: 0.15
-        cycle_mass_w1_gev: 3
       targets:
         latent_mass_ks: 0.04
         latent_mass_w1_gev: 0.5

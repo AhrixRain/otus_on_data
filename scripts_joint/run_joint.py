@@ -40,6 +40,11 @@ from joint_data import (  # noqa: E402
 from identity_reference import equal_subset, reference_block  # noqa: E402
 from physics import invariant_mass_np  # noqa: E402
 from joint_model import build_joint_autoencoder  # noqa: E402
+from joint_metrics import (  # noqa: E402
+    current_noise_multipliers,
+    resolve_noise_multipliers,
+    set_noise_multipliers,
+)
 from joint_trainer import (  # noqa: E402
     _full_pass_step_count,
     restore_joint_checkpoint,
@@ -98,9 +103,48 @@ def parse_args(default_config: Path | None = None) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--skip-evaluation", action="store_true")
+    parser.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Skip training and re-score an existing checkpoint (default "
+        "<run-name>/best_model.pt, or --resume-checkpoint) with the run's "
+        "final-evaluation protocol at the configured/overridden noise level. "
+        "Writes a labeled report and never overwrites joint_evaluation.json.",
+    )
+    parser.add_argument(
+        "--evaluation-label",
+        default=None,
+        help="Suffix for the evaluate-only report: joint_evaluation_<label>.json.",
+    )
+    parser.add_argument(
+        "--eval-noise-core",
+        type=float,
+        default=None,
+        help="Override the final-evaluation shared core noise multiplier.",
+    )
+    parser.add_argument(
+        "--eval-noise-tail",
+        type=float,
+        default=None,
+        help="Override the final-evaluation shared tail noise multiplier.",
+    )
+    parser.add_argument(
+        "--cycle-weight-scale",
+        type=float,
+        default=None,
+        help="Multiply the per-stage cycle weight (beta) for every enabled "
+        "stage; a probe knob for the per-event term.",
+    )
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        default=None,
+        help="Load weights from a checkpoint and start from the first enabled stage "
+        "without resume history (warm start).",
+    )
     args = parser.parse_args()
     if args.run is not None:
         if args.config is not None and default_config is None:
@@ -126,6 +170,15 @@ def apply_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[st
         loaders = config.setdefault("loaders", {})
         loaders["steps_per_epoch"] = int(args.steps_per_epoch)
         loaders["epoch_definition"] = "fixed_steps"
+    if args.cycle_weight_scale is not None:
+        # Probe knob for the per-event term: multiply every enabled stage's
+        # cycle weight (beta) without editing the shipped config.
+        scale = float(args.cycle_weight_scale)
+        if scale <= 0.0:
+            raise ValueError("--cycle-weight-scale must be positive")
+        for stage in config["stages"]:
+            if stage.get("enabled", True):
+                stage["beta"] = float(stage.get("beta", 1.0)) * scale
     if args.smoke:
         model = config.setdefault("model", {})
         model["hidden_dims"] = [64, 64]
@@ -141,7 +194,6 @@ def apply_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[st
         loaders["steps_per_epoch"] = 2
         loaders["validation_events"] = 256
         loaders["validation_draws"] = 1
-        config.setdefault("checkpoint_selection", {})["hard_gates"] = False
         final = config.setdefault("final_evaluation", {})
         final.update(
             {
@@ -204,6 +256,125 @@ def configure_cuda_memory_limit(config: dict[str, Any], device: torch.device):
     }
 
 
+def assert_mass_not_conditioned(model, run_label: str = "<run>") -> None:
+    """Hard contract: the explicit dimuon invariant mass is never a model input.
+
+    Index 8 of the 14 cylindrical physics features is ``log_pair_mass``. Both the
+    encoder and the decoder must mask it out. The check is per component because
+    a checkpoint can in principle carry different masks.
+    """
+    for component_name in ("encoder", "decoder"):
+        indices = getattr(model, component_name).condition_indices.tolist()
+        if 8 in indices:
+            raise RuntimeError(
+                f"{run_label} contract violation: invariant mass (feature index 8) "
+                f"is a {component_name} condition input"
+            )
+
+
+def assert_no_mass_anchor(config, run_label: str = "<run>") -> None:
+    """Hard contract: no invariant-mass anchor term in any region.
+
+    ``resonance_mass_w1`` is the physical-GeV windowed mass anchor and
+    ``mass_w1`` is its standardized duplicate. A deliberate, declared
+    mass-anchor experiment can override with ``allow_mass_anchor: true`` at the
+    top level of its config. The distributed mass terms (``pair_mass_w1``,
+    ``mass_kin_swd``, ``physics_swd``, the cycle) are not anchors and are left
+    untouched.
+    """
+    if bool(config.get("allow_mass_anchor", False)):
+        return
+    for region in config.get("region_order", []):
+        merged = dict(config.get("loss", {}))
+        merged.update(config.get("regions", {}).get(region, {}).get("loss", {}))
+        for key in ("resonance_mass_w1", "mass_w1"):
+            value = float(merged.get(key, 0.0) or 0.0)
+            if value != 0.0:
+                raise RuntimeError(
+                    f"{run_label} contract violation: {key}={value} in region "
+                    f"{region!r}; the invariant mass must not be used as an anchor. "
+                    "Set allow_mass_anchor: true only for a declared mass-anchor "
+                    "experiment."
+                )
+
+
+def _schedule_end_value(spec: Any, default: float) -> float:
+    """End-of-stage value of a scalar or ``{start,end,schedule}`` multiplier."""
+    if spec is None:
+        return float(default)
+    if isinstance(spec, dict):
+        return float(spec.get("end", spec.get("start", default)))
+    return float(spec)
+
+
+def assert_mean_map_anchor_contract(config, run_label: str = "<run>") -> None:
+    """Hard contract for the frozen mean-map anchor, mirroring the mass guard.
+
+    The invariant-mass contract forbids the physical mass from being an anchor.
+    This is its complement: the deterministic map captured in the declared
+    noiseless reference stage is frozen, and later stochastic stages may not
+    move it. The guard enforces four things:
+
+    1. the anchor is opt-in and declared at the top level of the config;
+    2. at least one enabled stage actually uses it (a weight above zero);
+    3. the declared reference stage exists and is enabled;
+    4. **the model stays stochastic in both directions**: every anchored stage
+       keeps nonzero encoder *and* decoder core/tail noise. The anchor may not
+       be used to switch the model off -- that is the whole point of keeping
+       the encoder noise (audit decision, 2026-09-11).
+    """
+    anchor = config.get("mean_map_anchor") or {}
+    anchored = [
+        stage
+        for stage in config.get("stages", [])
+        if stage.get("enabled", True)
+        and _schedule_end_value(stage.get("mean_map_anchor_weight"), 0.0) > 0.0
+    ]
+    if not anchored:
+        return
+    if not anchor.get("enabled", False):
+        raise RuntimeError(
+            f"{run_label} contract violation: a stage sets mean_map_anchor_weight "
+            "but mean_map_anchor.enabled is not true. Declare the anchor at the "
+            "top level of the config."
+        )
+    enabled_names = {
+        str(stage.get("name"))
+        for stage in config.get("stages", [])
+        if stage.get("enabled", True)
+    }
+    reference_stage = str(anchor.get("reference_stage", ""))
+    if reference_stage not in enabled_names:
+        raise RuntimeError(
+            f"{run_label} contract violation: mean_map_anchor.reference_stage="
+            f"{reference_stage!r} is not an enabled stage ({sorted(enabled_names)})."
+        )
+    if int(anchor.get("events_per_region", 0)) < 2:
+        raise RuntimeError(
+            f"{run_label} contract violation: mean_map_anchor.events_per_region "
+            "must be at least 2."
+        )
+    for stage in anchored:
+        name = str(stage.get("name"))
+        for component in ("encoder", "decoder"):
+            multipliers = []
+            for kind, default in (("core", 1.0), ("tail", 0.0)):
+                override = stage.get(f"{component}_{kind}_noise_multiplier")
+                shared = stage.get(f"{kind}_noise_multiplier")
+                multipliers.append(
+                    _schedule_end_value(
+                        override if override is not None else shared, default
+                    )
+                )
+            if all(value <= 0.0 for value in multipliers):
+                raise RuntimeError(
+                    f"{run_label} contract violation: stage {name!r} anchors the "
+                    f"mean map but switches the {component} noise off. The joint "
+                    "model must stay stochastic in both directions; the anchor "
+                    "must not be used to freeze it."
+                )
+
+
 def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(base)
     for key, value in override.items():
@@ -226,6 +397,27 @@ def build_loss_factories(config, region_arrays):
             daughter_masses=masses,
         )
     return factories
+
+
+def _evaluate_bidirectional_with_noise(
+    model,
+    *args,
+    noise_multipliers=None,
+    **kwargs,
+):
+    """Score the final report under an explicit noise policy, then restore.
+
+    The final evaluation must not inherit the selected checkpoint's training
+    noise: that would report a different map than the deterministic one used
+    for selection. Defaults to the deterministic map; override with
+    ``final_evaluation.noise_multipliers``.
+    """
+    previous = current_noise_multipliers(model)
+    set_noise_multipliers(model, resolve_noise_multipliers(noise_multipliers))
+    try:
+        return evaluate_bidirectional_model(model, *args, **kwargs)
+    finally:
+        set_noise_multipliers(model, previous)
 
 
 def _write_provenance(output_dir: Path, args, config, cache_info, memory_limit,
@@ -284,7 +476,10 @@ def main(default_config: Path | None = None) -> int:
         run_name = default_name
     output_dir = Path(config["paths"]["output_root"]) / run_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    continuing = bool(args.resume or args.resume_checkpoint is not None)
+    evaluate_only = bool(args.evaluate_only)
+    continuing = bool(
+        args.resume or args.resume_checkpoint is not None or evaluate_only
+    )
     occupied = [
         path
         for path in (output_dir / "history.json", output_dir / "best_model.pt")
@@ -336,15 +531,18 @@ def main(default_config: Path | None = None) -> int:
         num_samples=effective_num_samples,
         pair_indices=pair_indices,
     )
-    write_joint_split_manifest(manifest, output_dir / "joint_split_manifest.json")
-    config["_joint_contract_sha256"] = manifest["contract_sha256"]
-    save_resolved_config(config, output_dir / "config.resolved.json")
-    report = device_report(device)
-    (output_dir / "device_report.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    _write_provenance(output_dir, args, config, cache_info, memory_limit,
-                      precision=precision)
+    if not evaluate_only:
+        # Evaluate-only is read-only on the run directory apart from its own
+        # labeled report: do not rewrite provenance/manifest/config metadata.
+        write_joint_split_manifest(manifest, output_dir / "joint_split_manifest.json")
+        config["_joint_contract_sha256"] = manifest["contract_sha256"]
+        save_resolved_config(config, output_dir / "config.resolved.json")
+        report = device_report(device)
+        (output_dir / "device_report.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        _write_provenance(output_dir, args, config, cache_info, memory_limit,
+                          precision=precision)
 
     model = build_joint_autoencoder(
         config["model"],
@@ -354,10 +552,21 @@ def main(default_config: Path | None = None) -> int:
     ).to(device)
     loss_factories = build_loss_factories(config, region_arrays)
     print(f"Shared model parameters: {sum(p.numel() for p in model.parameters()):,}")
-    if 8 in model.encoder.condition_indices.tolist():
-        raise RuntimeError(
-            f"{run_label} contract violation: parent mass is a condition feature"
-        )
+    # Hard contracts for the joint series: the explicit invariant mass is never
+    # a model input, and it is never used as an anchor term.
+    assert_mass_not_conditioned(model, run_label)
+    assert_no_mass_anchor(config, run_label)
+    # Complementary contract: later stochastic stages may not move the frozen
+    # deterministic mean map, and may not switch the bidirectional noise off.
+    assert_mean_map_anchor_contract(config, run_label)
+
+    if args.init_checkpoint is not None:
+        init_path = args.init_checkpoint.expanduser().resolve()
+        if not init_path.exists():
+            raise FileNotFoundError(f"Init checkpoint not found: {init_path}")
+        init_ckpt = torch.load(init_path, map_location="cpu", weights_only=False)
+        restore_joint_checkpoint(model, init_ckpt)
+        print(f"Initialized from {init_path}")
 
     resume = None
     checkpoint_path = None
@@ -365,6 +574,12 @@ def main(default_config: Path | None = None) -> int:
         checkpoint_path = args.resume_checkpoint.expanduser().resolve()
     elif args.resume:
         checkpoint_path = output_dir / "last_model.pt"
+    if evaluate_only and checkpoint_path is None:
+        checkpoint_path = output_dir / "best_model.pt"
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"--evaluate-only needs a checkpoint: {checkpoint_path} not found"
+            )
     if checkpoint_path is not None:
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Resume checkpoint not found: {checkpoint_path}")
@@ -374,24 +589,49 @@ def main(default_config: Path | None = None) -> int:
         restore_joint_checkpoint(model, resume)
         print(f"Resuming from {checkpoint_path}")
 
-    if args.dry_run:
+    if args.dry_run and not evaluate_only:
         print(f"{run_label} dry-run passed; Upsilon was not opened.")
         return 0
 
-    _, best = run_joint_training(
-        model,
-        config,
-        region_arrays,
-        loss_factories,
-        device,
-        output_dir,
-        resume=resume,
-    )
-    if args.skip_evaluation:
-        print(f"Training complete: {output_dir / 'best_model.pt'}")
-        return 0
+    if evaluate_only:
+        print(f"Evaluate-only: scoring {checkpoint_path}")
+        best = {
+            "global_epoch": resume.get("global_epoch"),
+            "stage": resume.get("stage"),
+            "stage_epoch": resume.get("stage_epoch"),
+            "joint_selection": resume.get("joint_selection"),
+            "noise_multipliers": resume.get("noise_multipliers"),
+        }
+    else:
+        _, best = run_joint_training(
+            model,
+            config,
+            region_arrays,
+            loss_factories,
+            device,
+            output_dir,
+            resume=resume,
+        )
+        if args.skip_evaluation:
+            print(f"Training complete: {output_dir / 'best_model.pt'}")
+            return 0
 
     final_cfg = config.get("final_evaluation", {})
+    final_spec = dict(final_cfg.get("noise_multipliers") or {})
+    if args.eval_noise_core is not None or args.eval_noise_tail is not None:
+        # The resolved config may carry explicit encoder_*/decoder_* keys;
+        # they would override a shared core/tail value, so drop them first.
+        core = final_spec.get("core", 0.0)
+        tail = final_spec.get("tail", 0.0)
+        if args.eval_noise_core is not None:
+            core = float(args.eval_noise_core)
+        if args.eval_noise_tail is not None:
+            tail = float(args.eval_noise_tail)
+        for key in ("encoder_core", "encoder_tail", "decoder_core", "decoder_tail"):
+            final_spec.pop(key, None)
+        final_spec["core"] = core
+        final_spec["tail"] = tail
+    final_noise = resolve_noise_multipliers(final_spec)
     final_report: dict[str, Any] = {
         "schema_version": 1,
         "series": config.get("series"),
@@ -402,15 +642,16 @@ def main(default_config: Path | None = None) -> int:
             "stage": (best.get("stage") or {}).get("name"),
             "stage_epoch": best.get("stage_epoch"),
             "joint_selection": best.get("joint_selection"),
-            "global_gate_fallback": bool(best.get("global_gate_fallback", False)),
+            "checkpoint_noise_multipliers": best.get("noise_multipliers"),
         },
+        "evaluation_noise_multipliers": final_noise,
         "holdout": config.get("holdout"),
         "regions": {},
     }
     masses = config["model"].get("daughter_masses")
     for offset, name in enumerate(config["region_order"]):
         eval_seed = int(final_cfg.get("seed", 20260821)) + 1000 * offset
-        region_report = evaluate_bidirectional_model(
+        region_report = _evaluate_bidirectional_with_noise(
             model,
             region_arrays[name]["x_test"],
             region_arrays[name]["z_test"],
@@ -423,11 +664,12 @@ def main(default_config: Path | None = None) -> int:
             c2st_folds=int(final_cfg.get("c2st_folds", 5)),
             c2st_mlp_iterations=int(final_cfg.get("c2st_mlp_iterations", 250)),
             seed=eval_seed,
+            noise_multipliers=final_noise,
         )
         # What the same metrics read for the identity map and for pure
         # finite-sample noise, on the same event set. Without these two lines a
-        # reader cannot tell a model that unfolds from one that passes the
-        # gate because the prior already looks like the data (memory.md 7.2).
+        # reader cannot tell a model that unfolds from one that looks good
+        # because the prior already looks like the data (memory.md 7.2).
         # evaluate_bidirectional_model draws its equal-count pair with
         # ``eval_seed``, so reusing that seed reproduces the scored events.
         x_equal, z_equal = equal_subset(
@@ -481,11 +723,24 @@ def main(default_config: Path | None = None) -> int:
         )
         region_report["identity_reference"] = identity_block
         final_report["regions"][name] = region_report
-    report_path = output_dir / "joint_evaluation.json"
+    if args.evaluation_label:
+        report_path = output_dir / f"joint_evaluation_{args.evaluation_label}.json"
+    elif evaluate_only:
+        report_path = output_dir / "joint_evaluation_reeval.json"
+    else:
+        report_path = output_dir / "joint_evaluation.json"
+    if evaluate_only and report_path.exists():
+        raise FileExistsError(
+            f"evaluate-only report already exists: {report_path}; "
+            "choose another --evaluation-label"
+        )
     report_path.write_text(
         json.dumps(final_report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(f"{run_label} complete: {output_dir / 'best_model.pt'}")
+    if evaluate_only:
+        print(f"{run_label} evaluate-only ({checkpoint_path})")
+    else:
+        print(f"{run_label} complete: {output_dir / 'best_model.pt'}")
     print(f"Evaluation: {report_path}")
     if config.get("holdout", {}).get("status") == "locked_zero_shot":
         print("Upsilon remains unopened and locked for zero-shot testing.")

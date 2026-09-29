@@ -1,0 +1,22 @@
+# cms_Joint Run G with TF32 matmuls.
+#
+# Identical to Run G except performance.tf32. Run G itself stays strict fp32 so
+# that the stage/width comparison against Run F is not confounded by matmul
+# precision. Use this file for the throughput question, or for a new question
+# where bit-comparability with the fp32 record does not matter.
+#
+# Measured impact at this architecture (4x128, 8,192-event batch, same seeds):
+#   pure matmul max relative error            2.8e-4
+#   model output max / rms relative error     4.9e-7 / 1.8e-8
+#   loss relative differences                 1e-5 .. 3.7e-4
+#   gradient-norm relative differences       2e-5 .. 2.6e-4
+#   matmul-only speedup at 16384x256x256      1.30x
+# The end-to-end speedup is smaller: the pipeline bottleneck is the sorts in
+# the sliced-Wasserstein and W1 terms, which TF32 does not touch.
+extends: cms_Joint_runG.yaml
+
+run_label: Run G three-stage 4x128 TF32
+run_name: Run_G_tf32
+
+performance:
+  tf32: true

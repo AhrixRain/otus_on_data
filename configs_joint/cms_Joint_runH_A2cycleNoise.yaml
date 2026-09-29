@@ -1,0 +1,35 @@
+# A2.4 cycle-consistent frozen kernel.
+#
+# Single change versus H_A2frozen: `cycle_decoder_noise: zero` -> `native`.
+# Everything else (A1 cycle fix inheritance, honest component priors, frozen
+# model-effective kernel, optimizer schedule) is identical.
+#
+# Why: with the decoder amplitude frozen to the calibrated kernel, the A1
+# zero-noise cycle can be satisfied by a deterministic autoencoder, so the
+# encoder keeps the detector resolution in z and the latent (x->z) gauge stays
+# at the identity value. A2frozen measured `latent_mass_ks` ~= the identity map
+# on the honest J/psi prior (0.372 vs 0.385; target 0.04). Feeding the frozen
+# kernel into the cycle turns it into a denoising cycle whose optimum is the
+# unfolding encoder: z must be narrow enough that z + kernel noise matches x.
+#
+# Readout: same as A2frozen (A0 noise budget, native-noise validation score,
+# reweighted-prior Upsilon transfer, slice-resolved ratios). Success = the
+# latent J/psi gauge beats identity by a wide margin while the noise budget
+# stays at the 84 MeV Upsilon / 2.5 GeV Z scale.
+#
+# NOT trained without a serious training slot.
+
+extends: cms_Joint_runH_A2frozen.yaml
+
+run_label: Run H A2.4 cycle-consistent frozen physics kernel
+run_name: Run_H_A2cycleNoise
+
+cycle_decoder_noise: native
+
+comparison:
+  baseline_run: Run_H_A2frozen
+  controlled_change: cycle_sees_the_frozen_decoder_kernel
+  note: >-
+    Differs from H_A2frozen only in `cycle_decoder_noise`: the reconstruction
+    cycle is scored with the same frozen kernel noise the decoder uses, instead
+    of a noise-free deterministic map.

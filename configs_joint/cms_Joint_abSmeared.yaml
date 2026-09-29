@@ -34,7 +34,7 @@ comparison:
 regions:
   jpsi:
     paths:
-      theory_prior_file: cms_jpsi_ab_smeared.hdf5
+      theory_prior_file: legacy/cms_jpsi_ab_smeared.hdf5
 
 stages:
   - name: runA_stage1_deterministic_identity
