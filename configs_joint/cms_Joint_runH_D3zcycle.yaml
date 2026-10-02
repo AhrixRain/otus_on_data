@@ -1,0 +1,47 @@
+# D3: z-space consistency cycle encode(decode(z)) ~ z.
+#
+# Single change versus H_A2frozen: one new loss *term* (not a knob), active in
+# the stages that already carry the noise channel. The x-side cycle
+# decode(encode(x)) can be satisfied by a deterministic autoencoder - that is the
+# F2 failure - while this term ties the truth vector z to whatever the decoder
+# hands back to the encoder, i.e. it asks the two maps to compose to the
+# identity:
+#
+#   z_reco = encode(decode(z))            (decoder then encoder, native noise)
+#   loss  += zeta * MSE_standardized(z, z_reco)
+#
+# zeta = 0 in stage 1 so the deterministic stage-1 reference map (the map the
+# A1/A2 arms, the mean-map anchor and the OOD drift discussion are built on)
+# stays exactly as it is; zeta = 0.5 in stages 2-3. z_cycle_noise: native makes
+# the cycle a denoising consistency condition at the model own operating point
+# (the A2.4 lesson applied on the z side); "zero" would score the deterministic
+# composition instead.
+#
+# Readout: the A0.4 scorecard (Axis R first, then C), the honest-prior J/psi
+# latent mass KS (D3 target 0.04, identity 0.385, best mass-only contraction
+# 0.279), and the per-epoch history.json columns jpsi_z_cycle_loss /
+# z_z_cycle_loss. Probe the weight with --z-cycle-weight-scale.
+extends: cms_Joint_runH_A2frozen.yaml
+
+run_label: Run H A2.3 frozen kernel + D3 z-space consistency cycle
+run_name: Run_H_D3zcycle
+
+z_cycle_noise: native
+
+stages:
+  - name: runH_stage1_deterministic_warmup
+    zeta: 0.0
+  - name: runH_stage2_stochastic_core
+    zeta: 0.5
+  - name: runH_stage3_stochastic_tail
+    zeta: 0.5
+
+comparison:
+  baseline_run: Run_H_A2frozen
+  controlled_change: >-
+    One new loss term: the D3 z-space consistency cycle encode(decode(z)) ~ z as
+    a paired standardized MSE, weight zeta 0.5 in stages 2-3 and 0 in the
+    deterministic warmup, evaluated at native noise. Everything else - the A1
+    cycle_decoder_noise zero, the honest component priors, the frozen physics
+    kernel, the 20/80/80 schedule, beta/lamb/tau/nu_e/nu_d and the noise
+    multipliers - is inherited from H_A2frozen unchanged.

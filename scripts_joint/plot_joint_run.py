@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import os
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+if os.name == "nt":
+    # Windows-only; see the note in scripts_joint/run_joint.py.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import json
 import sys

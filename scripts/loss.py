@@ -1394,6 +1394,22 @@ class DualSpaceFeatureOTLoss:
             )
         return loss
 
+    def z_cycle_loss(self, z_true: torch.Tensor, z_reco: torch.Tensor) -> torch.Tensor:
+        """D3: the z-space consistency cycle encode(decode(z)) ~ z.
+
+        A paired MSE in the same standardized z coordinates the encoder targets,
+        so an exact inverse gives exactly zero and the term constrains the
+        *composition* of the two maps instead of any marginal. This is the
+        natural inverse condition the plan tree asks for in leaf D3: the x-side
+        cycle (decode(encode(x))) can be satisfied by a deterministic
+        autoencoder, while this term ties the truth vector to what the decoder
+        hands back to the encoder.
+        """
+        loss = self.paired_mse_standardized(z_true, z_reco, self.standardize_z_raw)
+        self.latest_components["z_cycle_mse_raw"] = loss
+        self.latest_components["z_cycle_mse_weighted"] = loss
+        return loss
+
     def encoder_anchor_loss(self, z_encoded: torch.Tensor, x_true: torch.Tensor) -> torch.Tensor:
         return anchor_loss(z_encoded, x_true)
 

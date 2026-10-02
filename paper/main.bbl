@@ -1,0 +1,85 @@
+\begin{thebibliography}{13}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Howard et~al.(2022)Howard, Mandt, Whiteson, and Yang]{otus_paper}
+Jessica~N. Howard, Stephan Mandt, Daniel Whiteson, and Yibo Yang.
+\newblock Foundations of a fast, data-driven, machine-learned simulator.
+\newblock \emph{Nature Machine Intelligence}, 4:\penalty0 351--360, 2022.
+
+\bibitem[Paganini et~al.(2018)Paganini, de~Oliveira, and Nachman]{calogan}
+Michela Paganini, Luke de~Oliveira, and Benjamin Nachman.
+\newblock Calogan: Simulating 3d high energy particle showers in multilayer
+  electromagnetic calorimeters with generative adversarial networks.
+\newblock \emph{Physical Review D}, 97:\penalty0 014021, 2018.
+
+\bibitem[Kolouri et~al.(2018)Kolouri, Pope, Martin, and Rohde]{swae}
+Soheil Kolouri, Phillip~E. Pope, Charles~E. Martin, and Gustavo~K. Rohde.
+\newblock Sliced wasserstein auto-encoders.
+\newblock \emph{arXiv preprint arXiv:1804.01947}, 2018.
+
+\bibitem[Tolstikhin et~al.(2018)Tolstikhin, Bousquet, Gelly, and
+  Schoelkopf]{wae}
+Ilya Tolstikhin, Olivier Bousquet, Sylvain Gelly, and Bernhard Schoelkopf.
+\newblock Wasserstein auto-encoders.
+\newblock In \emph{International Conference on Learning Representations}, 2018.
+
+\bibitem[Andreassen et~al.(2020)Andreassen, Komiske, Metodiev, Nachman, and
+  Thaler]{omnifold}
+Anders Andreassen, Patrick~T. Komiske, Eric~M. Metodiev, Benjamin Nachman, and
+  Jesse Thaler.
+\newblock Omnifold: A method to simultaneously unfold all observables.
+\newblock \emph{Physical Review Letters}, 124:\penalty0 182001, 2020.
+
+\bibitem[Bellagente et~al.(2020)Bellagente, Butter, Kasieczka, Plehn, and
+  Rousselot-Pailley]{cwola}
+Marco Bellagente, Anja Butter, Gregor Kasieczka, Tilman Plehn, and Armand
+  Rousselot-Pailley.
+\newblock How to gan away detector effects.
+\newblock \emph{SciPost Physics}, 8:\penalty0 070, 2020.
+
+\bibitem[Li et~al.(2025)Li, Kuchera, Ramanujan, Anthony, Hunt, and
+  Ayyad]{unpairedpointcloud}
+Mingyang Li, Michelle Kuchera, Raghuram Ramanujan, Adam Anthony, Curtis Hunt,
+  and Yassid Ayyad.
+\newblock Unpaired translation of point clouds for modeling detector response.
+\newblock \emph{arXiv preprint}, 2025.
+
+\bibitem[Krause and Shih(2023)]{caloflow}
+Claudius Krause and David Shih.
+\newblock Caloflow: Fast and accurate generation of calorimeter showers with
+  normalizing flows.
+\newblock \emph{Physical Review D}, 107:\penalty0 113003, 2023.
+
+\bibitem[Krause et~al.(2022)]{calochallenge}
+Claudius Krause et~al.
+\newblock Calochallenge 2022: A community challenge for fast calorimeter
+  simulation.
+\newblock \emph{arXiv preprint arXiv:2210.06811}, 2022.
+
+\bibitem[Cuturi(2013)]{cuturi_sinkhorn}
+Marco Cuturi.
+\newblock Sinkhorn distances: Lightspeed computation of optimal transport.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2013.
+
+\bibitem[Genevay et~al.(2018)Genevay, Peyr{\'e}, and Cuturi]{genevay_sinkhorn}
+Aude Genevay, Gabriel Peyr{\'e}, and Marco Cuturi.
+\newblock Learning generative models with sinkhorn divergences.
+\newblock In \emph{International Conference on Artificial Intelligence and
+  Statistics}, 2018.
+
+\bibitem[Lipman et~al.(2022)Lipman, Chen, Ben-Hamu, Nickel, and
+  Le]{lipman_flow}
+Yaron Lipman, Ricky T.~Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le.
+\newblock Flow matching for generative modeling.
+\newblock \emph{arXiv preprint arXiv:2210.02747}, 2022.
+
+\bibitem[Albergo and Vanden-Eijnden(2023)]{albergo_stochastic}
+Michael~S. Albergo and Eric Vanden-Eijnden.
+\newblock Building normalizing flows with stochastic interpolants.
+\newblock In \emph{International Conference on Learning Representations}, 2023.
+
+\end{thebibliography}

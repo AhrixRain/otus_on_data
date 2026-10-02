@@ -110,6 +110,10 @@ def main() -> int:
         "--output-dir", type=Path, default=None,
         help="default: <run-dir>/upsilon_transfer_comparison",
     )
+    parser.add_argument(
+        "--title", default=None,
+        help="report title (default: '<run-dir name> Upsilon-transfer comparison')",
+    )
     args = parser.parse_args()
     if args.output_dir is None:
         args.output_dir = args.run_dir / "upsilon_transfer_comparison"
@@ -225,13 +229,23 @@ def main() -> int:
     plt.close(figure)
 
     # ---- table ------------------------------------------------------------
+    if not rows:
+        raise SystemExit(
+            f"no decoded transfer directories found under {args.run_dir}; "
+            "pass --sample LABEL=TRANSFER_DIR"
+        )
+    title = args.title or f"{args.run_dir.name} Upsilon-transfer comparison"
     lines = [
-        "# Run F Upsilon-transfer comparison",
+        f"# {title}",
         "",
-        "All four evaluations decode the same labelled Upsilon prior; the last row",
-        "uses the continuum-reweighted prior. Mass W1/KS, pair-pT KS and C2ST come",
+        "Every row decodes one labelled Upsilon prior; the same prior is drawn as the",
+        "grey dashed curve and used for the ratio panel. Mass W1/KS, pair-pT KS and",
+        "C2ST come",
         "from `z_to_x_metrics.json`; the 8.5-9.25 density ratio is computed here",
         "from the decoded mass spectra normalized over 8.5-11.2 GeV.",
+        "",
+        f"- reference prior: {args.prior}",
+        f"- CMS data: {CMS_CSV}",
         "",
         "| sample | mass W1 [GeV] | mass KS | pair-pT KS | C2ST MLP | decoded mass mean [GeV] | 1S mean [GeV] | 1S std [MeV] | 8.5-9.25 / CMS |",
         "|---|---|---|---|---|---|---|---|---|",

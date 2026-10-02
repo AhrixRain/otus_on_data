@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 import os
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+if os.name == "nt":
+    # Windows-only; see the note in scripts_joint/run_joint.py.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -299,6 +302,28 @@ def _make_region_plots(
     }
 
 
+def _load_regions_with_fallback(config: dict):
+    """Load cached region splits; if a configured prior has moved (legacy arms
+    point at data/ before the move to data/legacy/), resolve the existing path in
+    memory and retry. Nothing on disk is modified."""
+    try:
+        arrays, _, _, _ = load_joint_regions(config, num_samples=None, use_cache=True)
+        return arrays, config
+    except FileNotFoundError:
+        from fixed_z_noise_budget import resolve_prior_path
+
+        patched = copy.deepcopy(config)
+        for region in ("jpsi", "z"):
+            try:
+                path, _used, fallback = resolve_prior_path(config, region)
+            except FileNotFoundError:
+                continue
+            if fallback:
+                patched["regions"][region]["paths"]["theory_prior_file"] = str(path)
+        arrays, _, _, _ = load_joint_regions(patched, num_samples=None, use_cache=True)
+        return arrays, patched
+
+
 def main() -> int:
     args = parse_args()
     torch.set_num_threads(max(1, int(args.threads)))
@@ -316,7 +341,7 @@ def main() -> int:
     )
     density = not args.counts
     config = resolve_joint_config(load_config(config_path))
-    arrays, _, _, _ = load_joint_regions(config, num_samples=None, use_cache=True)
+    arrays, config = _load_regions_with_fallback(config)
     device = select_device(args.device)
     model = build_joint_autoencoder(
         config["model"],

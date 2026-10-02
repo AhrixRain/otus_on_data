@@ -5,7 +5,14 @@
 from __future__ import annotations
 
 import os
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+if os.name == "nt":
+    # Windows-only escape hatch for a duplicated Intel OpenMP runtime
+    # (libiomp5md.dll); see the "Windows OpenMP error" note in
+    # scripts_joint/README.md. Deliberately NOT set on Linux: there it would
+    # downgrade a genuine OpenMP/libgomp conflict from a loud abort into
+    # silent undefined behaviour, which is the opposite of what a fresh
+    # cluster environment needs.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import json
 import platform
@@ -135,6 +142,13 @@ def parse_args(default_config: Path | None = None) -> argparse.Namespace:
         help="Multiply the per-stage cycle weight (beta) for every enabled "
         "stage; a probe knob for the per-event term.",
     )
+    parser.add_argument(
+        "--z-cycle-weight-scale",
+        type=float,
+        default=None,
+        help="Multiply the per-stage D3 z-space cycle weight (zeta) for every "
+        "enabled stage; a probe knob for the encode(decode(z)) ~ z term.",
+    )
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
@@ -179,6 +193,16 @@ def apply_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[st
         for stage in config["stages"]:
             if stage.get("enabled", True):
                 stage["beta"] = float(stage.get("beta", 1.0)) * scale
+    z_cycle_scale = getattr(args, "z_cycle_weight_scale", None)
+    if z_cycle_scale is not None:
+        # Probe knob for the D3 term: multiply every enabled stage zeta without
+        # editing the shipped config. A stage at zeta 0 stays at zero.
+        scale = float(z_cycle_scale)
+        if scale <= 0.0:
+            raise ValueError("--z-cycle-weight-scale must be positive")
+        for stage in config["stages"]:
+            if stage.get("enabled", True):
+                stage["zeta"] = float(stage.get("zeta", 0.0)) * scale
     if args.smoke:
         model = config.setdefault("model", {})
         model["hidden_dims"] = [64, 64]

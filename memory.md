@@ -1607,6 +1607,586 @@ Preflight dirs removed per the CLAUDE.md section 3 rule
 (`clean_preflight.py --root outputs --apply`: 2 dirs, 1708.0 KiB). Full suite
 397 tests, OK (4 skipped), `logs/tests_session55.log`.
 
+### 2026-10-01 - Session 56, latest/best Run H identified; paperstyle + Upsilon transfer delivered
+
+**artifact-measured (arm choice).** The latest Run H arm by directory mtime is
+`Run_H_A2cycW5native` (2026-09-29), a refuted 60-global D3 probe (beta x5, no
+latent-gauge movement) - not a candidate. The best completed arm is
+`Run_H_A2frozen` (A2.3 frozen kernel, 180 epochs, 20/80/80):
+`best_model.pt` is the stage-3 best at **global epoch 110**, zero-noise
+selection score **3.7981**, the minimum over the completed honest-prior arms
+(`Run_H_A2floor`'s best is 3.8095 at g40, and its learned above-kernel
+correction was rejected). source-verified: the full state dict of
+`best_model.pt` is tensor-identical to
+`best_RunHA2frozen_stage3_stochastic_tail.pt` (`torch.equal` over every
+key, 2026-10-01); sha256
+`e8a9b25f6683a8a9b51b5be1fef7950a2d6a55fa345e369d34ca3637de2a6be4`; native
+multipliers (core, tail) = (1.0, 0.5), encoder = decoder.
+
+**artifact-measured (new paperstyle, in-domain).**
+`outputs/cms_Joint/Run_H_A2frozen/paperstyle_best_model/` and
+`paperstyle_last_model/` - 22 plots each (15000 events per distribution,
+split test, the run's own `config.resolved.json`), epochs 110 / 180.
+Shown sliced-Wasserstein^2 on the J/psi x-space mass: cycle 2.104e-05, decoded
+prior 1.536e-05; Z 4.200e-01 / 3.995e-01. These are J/psi + Z only and carry the
+known honest-prior shape deficit (Z ratio 0.5-1.5 across 75-105 GeV).
+
+**artifact-measured (new Upsilon transfer, frozen checkpoints).**
+`scripts_joint/upsilon_transfer_test.py` was run on the raw 1M prior for
+stage2-best, stage3-best (= `best_model.pt`) and last; overlays were built
+for both priors. Primary (continuum-reweighted) readout, mass W1 / KS / 1S std /
+8.5-9.25-over-CMS: stage3 best **0.0407 / 0.0295 / 297.3 MeV / 0.948**, last
+0.0260 / 0.0267 / 290.1 / 1.123, stage2 best 0.0727 / 0.0760 / 361.3 / 1.320.
+Raw-prior rows carry the raw prior's own continuum shape (Session 51c) and are
+secondary. Peak medians (existing `upsilon_peak_medians/`): stage3
++21.6/+2.9/+6.3 MeV, last +18.9/+6.9/+13.3, stage2 -147.7/-169.1/-172.4;
+best-vs-last 1S drift -2.7 MeV. Consolidated write-up:
+`outputs/cms_Joint/Run_H_A2frozen/UPSILON_TEST_2026-10-01.md`.
+
+**D2 status (four criteria, `DIAGNOSIS_AND_FIX.md` section 5).** 2 of 4 green:
+criterion 1 (medians for best and last) passes for g110/g180, criterion 2
+(`sigma_noise_only >= 50 MeV`) passes at 91-101 MeV; criterion 3 (in-domain
+score) stays blocked on D3/honest-prior latent gauge and criterion 4 (slice
+ratios toward the floor) still fails at 36-87x floor. The Y(1S) width is
+290-299 MeV against the 84 MeV CMS resolution - F2/D3, not tail noise.
+
+**source-verified (tool change).** `scripts_joint/upsilon_transfer_comparison.py` gained
+`--title` (default derived from the run directory), reference-prior and CMS
+provenance lines in its REPORT.md, and a hard failure when no decoded transfer
+directory is found. Its test file is untouched; full suite **397 tests, OK
+(4 skipped)**, `logs/tests_session56.log`.
+
+No checkpoint, `data/` file or existing output was modified; nothing was
+trained.
+
+### 2026-10-01 - Session 57, A0.4 response scorecard built, runs E-H scored, evaluation notebook
+
+**source-verified (new mechanism).** `scripts_joint/response_scorecard.py`
+(plan-tree leaf A0.4) + `tests/test_response_scorecard.py` (19 tests). It measures
+three axes per checkpoint and turns them into a selection key:
+
+- **R - response identification:** fixed-z decode budget per region (within-z
+  robust width vs the required resolution, `sigma_noise_only`, and the exact split
+  `Var = E_z[Var(x|z)] + Var_z[E(x|z)]`). Gate band 0.8-1.25; **degenerate when
+  within/required < 0.5**.
+- **C - conditional closure:** per pair-pT quartile mass W1 / finite-sample floor at
+  zero and native noise; gate median <= 3, worst slice <= 10.
+- **T - transfer (report-only):** Upsilon per-state medians vs the CMS fit. A unit
+  test proves Axis T cannot change the selection key.
+- **Key:** reject R-fail/degenerate, rank survivors by C median then in-domain
+  score, else `identification_failed` with the least-bad R. This is the
+  operational form of the A0.3 verdict ("select on the A0.1/A0.2 columns").
+
+**artifact-measured (11 arms / 22 checkpoints, `outputs/cms_Joint/scorecard/`).**
+256 fixed z, 32 draws, 40k slice events, GPU, ~17 s per arm. Every legacy arm
+(Run E, F, G_tf32, H, H_fix, H_anchor, A1) is **degenerate at every checkpoint**
+- Z within/required 0.038-0.088, deterministic checkpoints exactly 0. The four A2
+arms' stochastic checkpoints are the **only identified** ones (J/psi 0.98-1.22, Z
+0.81-0.85) and their keys select a stochastic checkpoint. Axis C fails everywhere
+(median slice ratio 3-75x floor), including the identified A2 checkpoints - the
+conditional defect is unchanged.
+
+**artifact-measured (retrospective check, the A0.3 question).** On the complete
+A2frozen pool (`scorecard/Run_H_A2frozen_all`, 8 checkpoints) the key **rejects
+both stage-1 deterministic warmups** as degenerate and selects
+`last_RunHA2frozen_stage2_stochastic_core` (g100, C median 20.2). Native-noise
+marginal scoring selected the g20 warmup in 8 of 8 arms; this key cannot.
+
+**Cross-validation (artifact-measured).** The scorecard reproduces the A0 numbers
+through a different code path: Run H last J/psi 1.73 x 12.2 = 21.1 MeV (A0
+21.1-22.1), Z 0.0377 x 2537.6 = 95.7 MeV (A0 95-98); A2frozen J/psi
+1.09 x 30.0 = 32.7 MeV (A2_VERDICT 31.1-34.4), Z 0.829 x 2537.6 = 2.10 GeV
+(A2_VERDICT 2.12-2.18).
+
+**source-verified (notebook).** `scaffold/response_scorecard_runs_E_H.ipynb` -
+executed with results inline (12 arms / 30 checkpoints, table + figure + automatic
+verdicts). Runner: `scripts_joint/execute_notebook.py` (nbclient; nbconvert is not
+installed). nbformat/nbclient/ipykernel were installed into the working Python
+3.10; **pandas is not installed** and the notebook deliberately avoids it.
+
+**Bugs found by running and fixed (source-verified).** (1) `math.log(0)` crash on
+deterministic checkpoints (within-z width exactly 0) - now degenerate with an
+infinite R deviation; (2) the degeneracy flag was first keyed on the noise
+variance share, which is prior-dependent (A2frozen J/psi share 0.016 with a live
+channel) - re-keyed to the width ratio, share kept as a diagnostic; (3) D2
+criterion 2 now reports *not measured* (`None`) unless Axis R ran the Upsilon
+states; (4) Axis C degrades gracefully when the region cache cannot be built,
+leaving an R-only scorecard instead of failing.
+
+**Run_E data note (source-verified, from a read-only audit).** Run_E's config
+points at the moved legacy jpsi prior and `load_joint_regions` raises before it
+checks the cache; the scorecard's fallback resolves `data/legacy/...` in memory
+and lands on a cache hit, so Run_E scores without touching `data/`.
+
+Full suite: **416 tests, OK (4 skipped)**, `logs/tests_session57.log`. No
+checkpoint, `data/` file or existing output was modified; nothing was trained.
+
+### 2026-10-01 - Session 58, D3 z-space consistency cycle implemented and preflighted
+
+**source-verified (new loss term, plan-tree D3).**
+
+- `scripts/loss.py`: `DualSpaceFeatureOTLoss.z_cycle_loss(z_true, z_reco)` = a
+  paired standardized MSE in the z coordinates the encoder targets, registered
+  as `z_cycle_mse_raw` / `z_cycle_mse_weighted` components. An exact inverse
+  scores exactly zero.
+- `scripts_joint/joint_trainer.py`: `_resolve_z_cycle_noise` (choices
+  `native` | `zero`, default `native`) and `_z_cycle_roundtrip` =
+  `encode(decode(z))` with the noise policy honoured and the multipliers
+  restored afterwards. The epoch loop adds `zeta * z_cycle_loss` and registers
+  `jpsi_z_cycle_loss` / `z_z_cycle_loss` **only when zeta > 0**, so every
+  earlier config keeps a byte-identical history row.
+- `scripts_joint/run_joint.py`: `--z-cycle-weight-scale` probe knob
+  (getattr-guarded, so synthetic arg namespaces in existing tests keep working).
+- `configs_joint/cms_Joint_runH_D3zcycle.yaml` (run key `H_D3zcycle`): extends
+  `cms_Joint_runH_A2frozen.yaml` with one new term - `z_cycle_noise: native`
+  and `zeta` 0.0 / 0.5 / 0.5. Stage 1 is deliberately off so the deterministic
+  stage-1 reference map (the map A1/A2, the anchor and the OOD argument are
+  built on) is unchanged; everything else - A1 `cycle_decoder_noise: zero`,
+  honest component priors, the frozen kernel, the 20/80/80 schedule,
+  beta/lamb/tau/nu_e/nu_d, the noise multipliers - is inherited untouched.
+- `tests/test_d3_z_cycle.py` (12): exact-inverse zero, gradient through the
+  roundtrip into the model parameters, the noise policy (default / stage
+  override / reject / multipliers restored), epoch-level presence and absence of
+  the component, and the shipped-config one-change contract.
+
+**artifact-measured (preflight green; both dirs deleted per the CLAUDE.md rule).**
+
+- dry-run `Run_H_D3zcycle_dryrun`: 830,536 freshly built shared parameters, 180
+  epochs, Upsilon not opened.
+- CUDA smoke `Run_H_D3zcycle_smoke`: 3 epochs, no non-finite skips; history has
+  **no** z_cycle keys in stage 1 (zeta 0) and `jpsi_z_cycle_loss` 8.24e-4 ->
+  7.45e-4, `z_z_cycle_loss` 2.25e-3 -> 2.29e-3 in stages 2-3.
+- Full suite: **428 tests, OK (4 skipped)**.
+
+**proposal (full run, needs sign-off).**
+
+- train: `python scripts_joint/run_joint.py --run H_D3zcycle --device cuda`
+- readout: `python scripts_joint/response_scorecard.py --run-dir
+  outputs/cms_Joint/Run_H_D3zcycle --device cuda --slice-samples 40000` and
+  `python scripts_joint/rescore_validation.py --checkpoint
+  outputs/cms_Joint/Run_H_D3zcycle/best_model.pt --noise zero --compare-zero`
+- decision: if the honest-prior J/psi latent mass KS does not fall below the
+  identity 0.385 (target 0.04) and the scorecard Axis C does not improve, D3 is
+  refuted like A2.4 and the next option is the architectural branch.
+
+**update (same session) - per-epoch logging now flushes, and the D3 run is live.**
+
+- **source-verified (logging).** The trainer's two per-epoch print sites in
+  `scripts_joint/joint_trainer.py` (the eval branch and the plain branch) now pass
+  `flush=True`, so a piped or redirected run streams in real time instead of
+  block-buffering 4-8 KB - which is why a `Tee-Object` launch appeared to print
+  nothing while the run was in fact progressing. Full suite after the change:
+  **428 tests, OK (4 skipped)**.
+- **artifact-measured (live run, read-only).** The D3 full run was launched
+  2026-10-01 14:47:11 as `C:\Users\AhrixMarin\.conda\envs\cms\python.exe
+  scripts_joint/run_joint.py --run H_D3zcycle --device cuda` (PID 3320). At
+  14:48:45 `outputs/cms_Joint/Run_H_D3zcycle/` held one history row (g1, stage 1,
+  eval 2.8667, score 5.5974, no z_cycle keys yet, as designed) plus the stage-1
+  best/last checkpoints. There is no `logs/Run_H_D3zcycle.log` because the launch
+  carried no `Tee-Object`. The running process keeps the pre-flush code in memory:
+  do not restart it for logging. First `jpsi_z_cycle_loss` / `z_z_cycle_loss`
+  values are expected at global epoch 21 (stage 2, zeta 0.5).
+- **estimate (NOT artifact-measured - my weighting, to be revisited).** Plan-tree
+  completion: **~59% goal-weighted** (tree section 1 items: simulate + Upsilon
+  transfer 60%, per-event inverse 20%, stochastic decoder carrying the resolution
+  65%, identity/floor-reported gauges 90%) and **~67% by leaf count** (17.95 of 27
+  leaves carry a delivered artifact or a verdict, with A3 0.5, C1 0.7, C2 0.3,
+  D2 0.5, D3 0.25, D4 0.7 credited). The unfinished mass is concentrated in D3
+  (in flight), A5, the inverse branch B1/B2, and the gate items G-A in-domain,
+  G-B and G-D criteria 3-4.
+
+### 2026-10-01 - Session 59, paper re-framed: identification, Upsilon transfer, inversion
+
+**proposal / decision (user instruction).** The old narrative - "a physics-cost
+Neural-OT upgrade of the SWAE for detector-level J/psi simulation (Run D / Run E)" -
+is dropped. The paper is re-scoped to one question with three measurable parts:
+
+1. **RQ1 identification** - does the stochastic channel carry the detector
+   resolution, or does the deterministic mean map fake it?
+2. **RQ2 transfer** - does one shared mass-blind response trained on J/psi + Z
+   predict the held-out Upsilon family in position *and* width?
+3. **RQ3 inversion** - does the same object unfold per event with calibrated
+   uncertainty?
+
+**source-verified (artifacts).** `paper/main.tex` rewritten and compiles to 4 pages
+(`pdflatex`, MiKTeX); new `paper/FRAMING.md` (tone, claim ladder, PRD assessment,
+open problems, ordered plan); `paper/README.md` updated. The previous skeleton is
+recoverable from git history only.
+
+**Assessment (judgement, not artifact-measured).** Against the criteria a PRD
+referee applies, the current state scores: novelty 3.5/5, completeness 2/5, external
+comparison 2/5, systematics 1/5, physical impact 2/5, reproducibility 4.5/5 - i.e.
+**not PRD today**. Three additions would make it a candidate: (1) one positive
+physics result (Upsilon widths near the 84 MeV resolution with conditional closure,
+or inversion reaching the 0.810 oracle); (2) a quantified systematics section (prior
+dependence, seed/checkpoint stability, the post-unblinding meaning of the Upsilon
+claim); (3) an external comparison (AUSSIE on ppzee as a ceiling; one modern
+generative baseline on the locked splits). **Fallback paper**: if RQ1 succeeds and
+RQ2/RQ3 do not, the paper becomes the identification-criterion + scorecard
+diagnostics paper (not PRD; MLST / JINST / EPJC territory) - still a complete,
+honest, reproducible result.
+
+**Current blockers (unchanged).** P1 encoder no-op on the honest-prior J/psi mass
+(latent KS 0.372 vs identity 0.385, target 0.04); P2 mean map still absorbs the
+width (Y(1S) 290-299 MeV vs 84); P3 conditional closure 44-87x floor; P4 inversion
+0.981-0.983 vs oracle 0.810; P5 the A0.4 key is not wired into trainer selection;
+P6 paper engineering (setup section, figures/tables dirs, Results, Conclusion).
+
+**Next.** The D3 z-space cycle run is in flight (started 14:47:11; first z_cycle
+readings at global epoch 21). Its outcome chooses the paper branch at milestone M1;
+milestones M2 (one positive result) and M3 (systematics + comparison) are what move
+the target from a diagnostics paper to a PRD candidate.
+
+### 2026-10-01 - Session 60, S5 systematics: what survives the obvious variations
+
+**source-verified (new tool).** `scripts_joint/systematics_study.py` +
+`tests/test_systematics_study.py` (15). Four axes per headline claim: **prior**
+(two Upsilon evaluation priors, read from existing decoded files so the checkpoint
+and the noise multipliers are identical), **checkpoint** (the retained checkpoints
+of the arm), **seed** (re-decode at three subsample seeds), and a **bootstrap**
+floor; plus the required-resolution shift between the legacy and honest J/psi
+priors. Verdicts are robust/fragile against each claim's own tolerance (median
+30 MeV, drift 40 MeV, width 30 MeV, R band 0.225, slice ratio 3).
+
+**artifact-measured (`outputs/cms_Joint/systematics/`, 400k Upsilon events per seed).**
+
+- **Peak positions are prior-robust and seed-robust.** 1S median-CMS 20.95 MeV (raw
+  prior) vs 20.82 MeV (continuum-reweighted); seeds 20260822/23/24 give
+  +19.4/+21.6/+20.9 MeV (half-range 1.09 MeV); bootstrap floor 0.41-0.43 MeV.
+  2S/3S prior half-ranges 0.25/0.10 MeV.
+- **But checkpoint-fragile**: half-range 84.8/89.0/91.5 MeV across
+  stage2-best (g35) / stage3-best (g110) / last (g180). The **selection rule, not
+  the evaluation noise, is the dominant systematic** for every transfer claim -
+  the quantitative form of the A0.3/A0.4 argument.
+- **Width**: 298 MeV with a 35.6 MeV checkpoint spread; the 84 MeV claim fails on
+  every axis.
+- **In-domain identification is seed-robust**: jpsi within/required 1.083 +/- 0.084,
+  z 0.848 +/- 0.028 against a 0.225 tolerance; the scorecard key selects the same
+  checkpoint at all three seeds.
+- **Conditional closure is not a sampling artefact**: jpsi slice ratio
+  38.3 +/- 7.9 against a gate of 3.
+- **The prior axis moves the continuum, not the peak**: 8.5-9.25/CMS = 1.57 (raw)
+  vs 0.948 (reweighted) for the same checkpoint, while the 1S peak moves 0.06 MeV -
+  consistent with the Session 51c correction.
+- **Required-resolution shift**: legacy jpsi 12.2 MeV vs honest 30.0 MeV robust
+  (prior robust 27.4 vs 0.65 MeV), i.e. honest/legacy = **2.46x**. Any in-domain
+  ratio is undefined without its prior.
+- Full suite: **443 tests, OK (4 skipped)**.
+
+**consequence for the paper.** (i) quote the prior with every in-domain ratio;
+(ii) report the checkpoint spread as the dominant uncertainty on the Upsilon claim,
+and tie the analysis to a pre-declared selection rule (the A0.4 key); (iii) quote
+~1 MeV as the evaluation-noise floor; (iv) the conditional-closure failure is robust.
+A training-seed study (new runs) remains the only untested axis.
+
+### 2026-10-01 - Session 61, paper re-laid out: single column, Nature-style
+
+**source-verified.** `paper/main.tex` rewritten as a single-column Nature-style
+working draft: unnumbered bold flush-left headings (`secnumdepth` 0 plus custom
+`\@startsection`), superscript numbered citations (`natbib` with
+`super,sort&compress` and `unsrtnat`), A4/11pt/2.6 cm margins, Methods at the end,
+then Data availability, Code availability, Acknowledgements, Author contributions
+and Competing interests. New content relative to the previous skeleton: a
+related-work paragraph folded into the Introduction (OmniFold, AUSSIE,
+Wasserstein-loss unfolding, the generative-simulation line), a systematics-budget
+table from S5, and the identification-scorecard table. Compiles with
+`pdflatex` + `bibtex` to **7 pages**; page renders were verified with `pdftoppm`.
+Two-column conversion is deliberately postponed to submission time so the draft
+stays readable. `paper/README.md` and `paper/FRAMING.md` updated (section 2b).
+
+### 2026-10-01 - Session 62, D3 early readout and the pre-declared M1 decision rule
+
+**artifact-measured (history.json only, no new GPU work; 15:45).** Matched-epoch comparison of
+the running D3 arm (`Run_H_D3zcycle`) against its control `Run_H_A2frozen`, honest-prior J/psi
+latent mass KS (raw; identity 0.385, D3 target 0.04, A2frozen final 0.372):
+
+| global epoch | D3 | A2frozen | D3 jpsi_z_cycle_loss |
+|---|---|---|---|
+| 21 | 0.504 | 0.531 | 3.82e-2 |
+| 25 | 0.504 | 0.462 | 1.66e-2 |
+| 30 | 0.481 | 0.445 | 7.86e-3 |
+| 35 | 0.414 | 0.401 | 6.04e-3 |
+
+Stage 1 (epochs 1-20) is identical by construction (zeta = 0, so the stage-1 reference map is
+unchanged). From the first stochastic epoch the cycle term is optimised hard - a factor 6 in 15
+epochs - while the encoder gauge tracks the control arm and sits slightly behind it at every
+matched epoch. That is an early warning, not a verdict; the decisive checkpoints are the stage-2
+and stage-3 best/last (g100/g110/g180).
+
+**hypothesis (if the pattern persists):** the z-space cycle can be satisfied without unfolding -
+the composition encode(decode(z)) can be made near-identity on the decoded support without the
+encoder contracting the detector resolution out of x. Testable by inspecting the decoded support
+and the per-coordinate z residuals at the stage-2 best.
+
+**proposal (pre-declared M1 rule, so the call is not made after the fact).** D3 is **positive** if
+the honest-prior J/psi latent mass KS at the stage-2/3 best checkpoints falls clearly below the
+A2frozen band (toward the 0.279 best mass-only contraction) with a downward trend, while scorecard
+Axis R does not regress and the Upsilon medians stay within +/-30 MeV; **negative** if it stays
+inside the 0.36-0.74 band seen in the earlier probes. Negative -> the mean-map contraction (D3b)
+becomes the primary fix and the paper takes the diagnostics branch.
+
+### 2026-10-01 - Session 63, figures staged in PaperPlots/images and the paper filled in
+
+**source-verified.** New figure directory `PaperPlots/images/` (8 PNGs) wired into the
+paper with `\graphicspath{{../PaperPlots/images/}}`; the paper now compiles to **12
+pages** with all eight figures embedded (`pdflatex`, MiKTeX; renders verified with
+`pdftoppm`):
+
+- in-domain closure: `jpsi_mass_ratio_rune.png`, `z_mass_ratio_rune.png` - generated
+  for **Run E** with `plot_joint_paperstyle.py`, which gained a `data/legacy/` prior
+  fallback so the legacy arms plot without touching `data/`.
+- identification: `identification_scorecard.png` (12 arms / 30 checkpoints),
+  `peak_shift_vs_tail.png` (the late shift is inert under tail noise),
+  `noise_budget.png` (14 checkpoints).
+- transfer: `upsilon_transfer.png` (continuum-reweighted prior, three checkpoints),
+  `systematics_budget.png` (S5 prior and seed axes).
+- inversion: `per_event_closure.png` - new read-only script
+  `scripts_joint/plot_per_event_closure.py` reading the retained ppzee payloads
+  (identity 1.000, upstream 3.330, ours 0.981-0.983, oracle 0.810; pull std 20.7,
+  1-sigma coverage 5.8% for the trained checkpoints, degenerate for the deterministic
+  one).
+
+**content filled in the paper (all [measured]).** Real per-arm scorecard numbers in
+Table 2 (legacy arms $Z$ ratio 0.038-0.088 and $J/\psi$ slice ratios 6.9-13.8; A2
+arms pass the response gate at 1.09-1.22 with slice ratios 44.6/75.1); locked-split
+event counts in Methods (2,899,563 / 71,659 $J/\psi$; 4,207,696 / 800,000 $Z$;
+honest group 501,317 / 401,718 truth-level); model size (830,710 parameters, 415,355
+per direction, 3.32 MB float32).
+
+Full suite unchanged at 443 tests. No checkpoint, data file or existing output was
+modified; the new files are the figure directory, one plotting script and the paper
+edits.
+
+### 2026-10-01 - Session 64, D3 (z-space cycle) read out: refuted; M1 falls back to D3b
+
+**artifact-measured.** `Run_H_D3zcycle` finished the full 20/80/80 schedule (180/180 epochs)
+in 4 h 42 min (14:47:11-19:28:59); `joint_evaluation.json` written 19:31:32. Selected
+checkpoint = stage-3 epoch 45 (`global_epoch` 145, selection score 3.9318). `grad_norm`
+456-512, `nonfinite_gradient_skips` 0 in every epoch. The z-cycle loss fell 3.82e-2 ->
+5.0e-3 in the first 15 stochastic epochs and then stayed flat for the remaining 80: the
+term is satisfied, the gauge does not move.
+
+**Verdict: NEGATIVE, by the rule pre-declared in Session 62** (positive required the
+honest-prior J/psi latent mass KS at the stage-2/3 best/last checkpoints to fall clearly
+below the A2frozen band toward 0.279 while Axis R held; negative if it stays inside the
+0.36-0.74 band). Decisive numbers, zero-noise locked validation:
+
+| checkpoint | jpsi latent mass KS | identity | `latent_mass_ks_vs_identity` |
+|---|---|---|---|
+| D3 ge 145 (best) | 0.4325 | 0.3682 | **1.1766** |
+| D3 ge 180 (last) | 0.4058 | 0.3682 | - |
+| A2frozen ge 110 / ge 180 | 0.3716 / 0.372 | - | 1.0585 (native) |
+
+Matched at the *same* operating point (native core 1.0 / tail 0.5, `rescore_validation.py`
+on D3 ge 145 vs `Run_H_A2frozen/joint_evaluation_native_stage3.json` ge 110): jpsi latent
+`vs_identity` **1.0656 vs 1.0585** - a 0.7% difference, i.e. the z-cycle term moved the
+encoder not at all.
+
+**artifact-measured, A0.4 scorecard (`outputs/cms_Joint/scorecard/Run_H_D3zcycle/scorecard.json`,
+`--all-checkpoints`).**
+
+| checkpoint | R jpsi within/required | R jpsi noise var fraction | R z within/required | C jpsi native median/max slice ratio |
+|---|---|---|---|---|
+| D3 ge 145 (best_model) | 1.0107 | 0.01505 | 0.8081 | 49.03 / 77.71 |
+| D3 ge 180 (last_model) | 1.0063 | 0.01562 | 0.8190 | 23.06 / 44.40 |
+| A2frozen ge 110 (best) | 1.0867 | 0.01577 | 0.8286 | 44.59 / 65.41 |
+| A2frozen ge 180 (last) | 0.9831 | 0.01514 | 0.8132 | 43.98 / 52.60 |
+
+Axis R: indistinguishable from the control (mean-map variance fraction 0.985 in all four;
+the learned noise channel never carries more than ~1.6% of the variance). The key calls D3
+`identified` and rejects both stage-1 deterministic checkpoints as degenerate - the R gate
+works, but nothing D3 did changed the R numbers. Axis C: gates are median <= 3.0 and
+max <= 10.0, so **every checkpoint in both arms fails by roughly an order of magnitude**;
+D3's last_model value (23.06) is the lowest of the four but its sibling is the worst (49.03),
+so that spread is run-to-run scatter, not a signal.
+
+**The decoder side remains the asset.** D3 ge 145, jpsi direct mass KS `vs_identity` 0.1109
+at zero noise and 0.3017 at native; z direct 0.7979 native; direct width relative error
+`vs_identity` 0.2311 (jpsi) and 0.8297 (z).
+
+**hypothesis confirmed.** The Session-62 hypothesis - the z-space cycle is satisfiable
+without unfolding - is now measured, not assumed: a 7x reduction in `encode(decode(z)) - z`
+left the x -> z gauge at 1.18x the identity gap (worse than no model at all) and left Axis R
+byte-for-byte at the control's level.
+
+**proposal (pre-declared fallback, needs sign-off).** D3b becomes the primary fix: contract
+the mean map (penalise the variance of the deterministic `mean_delta`, or parameterise the
+conditional mean and learn only its shape), one variable, ~4 h for a 20/80/80 arm. The
+architectural option (a flexible conditional density `p(eps|z)`) is the untested alternative.
+The paper takes the diagnostics branch: D3 is the fourth documented refutation (after A2.2,
+A2.4 and beta x5), and it is the sharpest of them because it closes the 'a missing loss term
+would fix it' explanation.
+
+**Files (all new, nothing existing modified).** `outputs/cms_Joint/scorecard/Run_H_D3zcycle/`,
+`logs/scorecard_Run_H_D3zcycle.log` (UTF-16, `Tee-Object` default - read it with
+`Get-Content`, not the file reader), `outputs/cms_Joint/Run_H_D3zcycle/validation_native_best.json`.
+
+**correction (same session, after reading the probe code) - the Axis-R variance split is NOT F1 evidence.**
+`fixed_z_noise_budget.py` draws its fixed-z probe from the prior *file* without applying the region
+mass window, and normalises the split by the variance over that probe. For jpsi the probe has
+`prior_mass_std_gev` 0.2647 GeV while the run's own locked region split has 0.0148 GeV
+(`reference_resolution`), an 18x difference. A noise share of ~1.5% is roughly what a *correct*
+model would also give on a 265 MeV-wide probe with a 34 MeV resolution, so the 0.985 mean-map
+fraction quoted above must not be read as 'the mean map absorbs the resolution'. The load-bearing
+measurement is the zero-vs-native width of the decoded region sample, D3 ge 145, jpsi z->x mass
+`width_rel_error`: **0.118 at zero noise** (`vs_identity` 0.2405) vs **0.753 at native**
+(`vs_identity` **1.5996**). With its own response channel switched on, the decoder is 60% worse
+than the identity map on the width; with it off, it removes 76% of the identity gap.
+
+**Consequence that stands on its own.** Every headline in-domain closure number in this project
+(Run E J/psi KS 0.017, the D3 `joint_evaluation.json`) is evaluated at **zero noise** - the
+config's `final_evaluation.noise_multipliers` are all 0.0, and the selected checkpoints are
+unanimously the zero-noise ones. They therefore describe the *deterministic mean map with the
+response channel off*, and at the native operating point the same checkpoint is worse than
+identity on the width. Reporting closure only at zero noise is not defensible and this must
+change before any further claim.
+
+**to verify (proposal).** Confirm which z sample the Axis-R probe loads for jpsi (prior file
+without the region window vs the locked region split). If it is the unwindowed file, the R axis
+split and the `min_noise_variance_fraction` gate need re-deriving on the region sample.
+
+### 2026-10-01 - Session 65, the root cause is nailed down and D3b is built (config-only)
+
+**source-verified (why selection could never see this).** `joint_trainer.validate_joint` scores every
+checkpoint with all four noise multipliers at zero and says so: scoring at the stage's training noise
+"makes stage scores incomparable and hides deterministic-map degeneration". The A0.3 fixed-z noise
+budget is merged into the region metrics but is **diagnostic only - it never enters the selection
+score**. So both the training curriculum and the checkpoint key were blind to the response channel by
+construction, and a deterministic map can match any marginal (Monge), so the key could only ever
+reward the degenerate map.
+
+**artifact-measured (stage-wise, zero noise, J/psi z->x, `rescore_validation.py`).** This is the
+cleanest statement of the mechanism the project has:
+
+| checkpoint | width_rel_error | vs_identity | direct mass KS | latent KS vs_identity |
+|---|---|---|---|---|
+| stage-1 ge20 (no noise at all) | **0.0385** | **0.0735** | 0.0221 | 1.237 |
+| stage-2 best ge35 | 0.2315 | 0.4729 | 0.1469 | 1.101 |
+| stage-3 best ge145 (final) | 0.1181 | 0.2405 | 0.0474 | 1.177 |
+| stage-3 ge145, native noise | **0.7533** | **1.5996** | 0.1227 | 1.066 |
+
+A purely deterministic map closes the decoded J/psi width to 3.9% in 20 epochs, and 125 epochs of
+stochastic training make the zero-noise marginal **worse**, not better. The deterministic map
+manufactures the data width (prior robust 0.65 MeV -> decoded 31.4 MeV against 28.1 MeV of data); the
+frozen kernel then adds ~34 MeV on top, giving sqrt(31^2+34^2) ~ 49 MeV, i.e. 1.75x too wide and
+worse than the identity map on the width at the model's own operating point.
+
+**The arithmetic that makes a fix feasible (artifact-measured).** With the frozen kernel the within-z
+decoded width is already ~30.2 MeV (robust) against ~30.0 MeV of data width and a ~0.65 MeV prior.
+The noise channel alone therefore SATURATES the data width, so the marginal can only close if the mean
+map contributes almost no width. Turning the channel on where the decision is made should make the
+existing marginal objective fix the attribution by itself - no new penalty term, no new hyperparameter.
+
+**proposal -> implemented: `Run_H_D3b`** (`configs_joint/cms_Joint_runH_D3b.yaml`, key `H_D3b`,
+extends `cms_Joint_runH_A2frozen.yaml`). One intervention, two config edits, documented in the header:
+(1) stage-1 noise 0/0 -> 1.0/0.25, the channel stage 2 already uses; (2) validation and
+final-evaluation noise -> decoder 1.0/0.25 with the encoder left at 0/0 so the latent numbers keep the
+convention of every earlier arm (identity 0.385, target 0.04). Splitting the two edits is not
+meaningful: changing only the schedule leaves selection rewarding the degenerate checkpoints, changing
+only the scoring leaves stage 1 forcing the construction.
+
+**Naming warning (source-verified).** Stage 1 keeps the inherited name
+`runH_stage1_deterministic_warmup` because `_deep_merge` merges stage lists by name and **appends**
+unknown names - a rename would silently produce a four-stage schedule. In this arm stage 1 is
+stochastic; do not use its checkpoint as a deterministic reference map. `tests/test_d3b_response_channel.py`
+(6 tests) pins the stage names, the one-intervention diff against A2frozen, the stage-1 channel and the
+scored-map policy, and asserts the baseline still scores the deterministic map.
+
+**Pre-declared readout (before the run).** Primary, native-noise J/psi z->x at the selected checkpoint:
+`width_rel_error <= 0.15` (A2frozen final 0.753) and `direct_mass_ks_vs_identity <= 0.5` (0.302).
+Secondary: A0.4 Axis C native slice median ratio toward the 3.0 gate (23-49 now). OOD: Upsilon widths
+toward 84 MeV (290-299 now). **Mechanism check:** at zero noise the decoded width must now be near the
+PRIOR width (~0.65 MeV), not the data's ~30 MeV - the signature that the mean map stopped carrying the
+resolution; if the native numbers improve while this fails, the gain is not identification. Refuted if
+the native width stays ~1.7x and Axis C does not move: then the fix has to be structural (explicit
+frozen smearing channel plus smooth-correction-only mean map).
+
+**artifact-measured (preflight, both exit 0).** dry-run `Run_H_D3b_dryrun`: 180 epochs, 830,536
+parameters, Upsilon not opened. Smoke `Run_H_D3b_smoke`: 3 epochs, no non-finite skips, and every stage
+logs `val_noise=enc0/0,dec1/0.25` - the new policy is live in stage 1 as well as 2-3. Resolved config
+confirms stage core/tail 1.0/0.25, 1.0/0.25, 1.0/0.5 and the scored map decoder 1.0/0.25.
+
+### 2026-10-01 - Session 66, HPC3 deployment plan and the post-run git-sync design
+
+**proposal, not executed on HPC3.** New directory `deploy/hpc3/`: `README.md` (runbook),
+`env_create.sh`, `stage_data.sh`, `train_joint.sbatch`, `sync_after_run.py`, `pull_run.ps1`.
+Nothing has run on the cluster; section 9 of the runbook is the list of unknowns to close on
+the first interactive session.
+
+**artifact-measured (what the workload costs, from `outputs/cms_Joint/Run_H/history.json`).**
+Run H is 180 epochs / 13,551 s = **3.76 h**, median 74.4 s/epoch (min 66.1, max 83.2), peak CUDA
+**3.21 GB reserved / 2.11 GB allocated**. Source-verified: there is no `DistributedDataParallel`,
+`torchrun`, `nccl`, `world_size` or `multiprocessing` anywhere under `scripts_joint/`, so the whole
+request is `--gres=gpu:1`. Every HPC3 GPU (smallest 16 GB V100) is >=5x oversized. The config's
+`cuda_memory_limit_gb: 11` needs no edit because `configure_cuda_memory_limit` renormalises it to a
+fraction of the device total.
+
+**source-verified (HPC3 policy that shapes the plan).** `gpu` needs a Slurm account ending in `gpu`;
+"There are NO personal GPU accounts" and the PI must specifically request GPU-hours, so the GPU
+allocation is the blocker, not the code (https://rcic.uci.edu/slurm/slurm.html,
+https://rcic.uci.edu/about/allocations.html). `free-gpu` is preemptible and uncharged. "Do not run
+Slurm jobs in your $HOME. Instead, use your DFS storage /pub/UCInetID"
+(https://rcic.uci.edu/account/acceptable-use.html) -> the checkout, data, env prefix and outputs all
+live under `/pub/$USER`. Login nodes forbid conda installs and multi-GB downloads, so the 2.1 GB CMS
+file is fetched inside a compute job. Charging is 34 units/GPU-hour (32 GPU + 2 CPU).
+
+**source-verified (GPU arch pin).** V100 (sm_70) works only because the environment pins
+torch 2.12.0+cu126: CUDA 12.6 was the last build publishing Volta kernels and is removed from CD in
+PyTorch 2.15 (https://dev-discuss.pytorch.org/t/notice-cuda-12-6-wheels-will-no-longer-be-published-from-pytorch-2-15-drops-maxwell-pascal-volta/3432).
+Do not raise the torch pin past 2.14 while training on V100 nodes.
+
+**source-verified (why the CMS file is not shipped).** `data/Run2012BC_DoubleMuParked_Muons.root` is
+byte-identical to CERN Open Data record 12341 (CC0-1.0, DOI 10.7483/OPENDATA.CMS.LVG5.QT81): local size
+2,244,449,133 B and a HEAD on
+https://opendata.cern.ch/record/12341/files/Run2012BC_DoubleMuParked_Muons.root returns 200 with the
+same `Content-Length`. `stage_data.sh` re-checks the size and the record's `adler32:1fa61aca`.
+
+**source-verified (the region cache is machine-bound).** The cache key hashes a record containing the
+**absolute path, `mtime_ns` and size** of the CMS ROOT file and the prior HDF5 (see any
+`.region_cache/*/selected_split_*.json` sidecar), and the key also includes `num_samples`. So the 2.3 GB
+cache must not be transferred (a different path can never hit) and dry-run/smoke
+(`num_samples: 1000`) do not warm the cache a full run (`num_samples: null`) will use. The full run
+builds its own cache inside its own time limit.
+
+**artifact-measured (the git-sync trap this session exists to close).** The repo tracks 3,171 files,
+**2,669 of them under `outputs/` and zero of them JSON**: `.gitignore` line `*.json` excludes every
+metric file a run produces (`history.json`, `joint_evaluation.json`, `provenance.json`,
+`joint_split_manifest.json`, `config.resolved.json`). A hand-rolled "commit the run" therefore either
+records plots with no numbers behind them or drags 77 MB of checkpoints plus 104 MB of decoded HDF5
+into git forever, and it fails silently. `sync_after_run.py` instead force-adds a whitelist inside one
+run directory only: 99 of Run H's 109 files = **8.8 MB** (65 PNG 7.94 MB, 21 JSON 0.72 MB, 6 CSV, 4 PDF,
+3 MD), skipping the 8 `.pt` and the 2 `.hdf5` by type plus anything over 8 MB. Every sync also writes
+`<run>/sync_manifest.json`, the durable record of job id, node, start SHA, epoch count, wall time, peak
+VRAM and per-file sha256.
+
+**artifact-measured (sync script tested locally, throwaway bare remote seeded with this `.gitignore`).**
+`--dry-run` exits 4 and writes nothing; `--no-push` commits exactly the whitelist; a push over a remote
+that had advanced on an unrelated file rebased and pushed with `rev-list --merges --count == 0`; a push
+over a remote that had edited the same `history.json` exited 2 with `rebase --abort` clean and the
+commit preserved locally. Not yet exercised: real network, real credentials, real SLURM env.
+`pull_run.ps1` was tested in dry-run and its dirty-tree guard was fixed (it tested output truthiness
+instead of `$LASTEXITCODE`).
+
+**Files (all new, nothing existing modified).** `deploy/hpc3/{README.md,env_create.sh,stage_data.sh,train_joint.sbatch,sync_after_run.py,pull_run.ps1,vscode_connect.ps1}`.
+`README.md` is matched by `.gitignore` line `*.md` and needs `git add -f`; the six scripts are
+tracked normally. `.gitignore` itself was deliberately left unmodified; adding `!outputs/**/*.json`
+next to the existing `!outputs/**/*.md` is the proposal that would remove the trap for hand commits.
+
+**source-verified (VS Code on HPC3 is not a plain Remote-SSH).** "We do not allow running VSCode on
+login nodes ... Any VSCode server instances will be removed from login nodes without a notice", and
+the supported route is "the only accepted method to run VSCode on HPC3": `sbatch
+/opt/rcic/scripts/vscode-sshd.sh`, which starts a per-user sshd on a compute node, reached by
+ProxyJump through `hpc3.rcic.uci.edu` (https://rcic.uci.edu/account/login.html#using-vscode). The
+sshd picks a free port on whatever node the job lands on, so node name and port change every job and
+the local `~/.ssh/config` must be rewritten each time. Key-based auth with a >=10 character
+passphrase is mandatory (https://rcic.uci.edu/account/generate-ssh-keys.html), and an un-cancelled
+job keeps charging because the `standard` default limit is 2 days. `vscode_connect.ps1` automates
+submit -> wait -> parse `~/vscode-sshd-<jobid>.out` -> rewrite a delimited `Host hpc3-*` block in
+`~/.ssh/config`, plus `-Stop` (scancel) and `-Status`; `-SelfTest` (exit 0, artifact-measured locally)
+covers the parsing, idempotent block replacement that preserves unrelated `Host` stanzas, and a
+BOM-free write (PS 5.1 `Set-Content -Encoding utf8` emits a BOM that breaks ssh's config parser).
+Not yet tested end to end against the cluster.
+
 ## 7. Procedures and tests (2026-09-09/11 session)
 
 Operational companion to sections 1-6: what to run, what it writes, and what

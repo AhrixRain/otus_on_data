@@ -1,206 +1,480 @@
 %-------------------------------------------------------------------------------
-% OTUS Run E / Tier A working paper
-% Compile with: pdflatex main && bibtex main && pdflatex main && pdflatex main
-%
-% This is a deliberately structured skeleton.  Tables marked [RUN D] contain
-% measured repository results; all [TODO] markers are for the Run E numbers.
+% OTUS joint-response paper - single-column, Nature-style working draft.
+% Re-framed 2026-10-01 (see paper/FRAMING.md).
+% Layout: one column, A4, 11pt, generous margins, unnumbered bold headings,
+% superscript numbered citations - close to a Nature Article, but readable as a
+% working draft. Numbers marked [measured] are traceable to a run directory.
+% Compile: pdflatex main && bibtex main && pdflatex main && pdflatex main
 %-------------------------------------------------------------------------------
-\documentclass[11pt,twocolumn]{article}
+\documentclass[11pt,a4paper]{article}
 
-\usepackage[margin=2.2cm]{geometry}
+\usepackage[margin=2.6cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{xcolor}
 \usepackage{graphicx}
-\usepackage{hyperref}
-\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage[super,sort&compress]{natbib}
+\graphicspath{{../PaperPlots/images/}}
 
+% Nature-like headings: unnumbered, bold, flush left.
+\setcounter{secnumdepth}{0}
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-3.2ex plus -1ex minus -.2ex}{1.6ex plus .2ex}{\normalfont\large\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-2.4ex plus -1ex minus -.2ex}{1.0ex plus .2ex}{\normalfont\normalsize\bfseries}}
+\makeatother
+\linespread{1.12}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
 
 \newcommand{\pt}{\ensuremath{p_{\mathrm{T}}}}
-\newcommand{\ptvec}{\ensuremath{\vec{p}_{\mathrm{T}}}}
-\newcommand{\zspace}{\ensuremath{\mathcal{Z}}}
-\newcommand{\xspace}{\ensuremath{\mathcal{X}}}
-\newcommand{\E}{\ensuremath{\mathcal{E}}}
-\newcommand{\D}{\ensuremath{\mathcal{D}}}
 \newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
 
-\title{A Physics-Cost Neural-OT Upgrade of the Sliced-Wasserstein Autoencoder
-for Detector-Level $J/\psi\to\mu^+\mu^-$ Simulation}
+\title{\vspace{-2.2em}\bfseries\Large Can an Unpaired Sliced-Wasserstein Autoencoder
+Learn the Detector Response?\\[0.35em]
+\large Identification, Zero-Shot Transfer to the $\Upsilon$ Family, and Per-Event
+Unfolding on CMS Open Data}
 
-\author{[Author list -- TODO]}
+\author{Author One\textsuperscript{1,*}, Author Two\textsuperscript{1}, Author Three\textsuperscript{2}\\[0.5em]
+\small\textsuperscript{1}Institute -- TODO \quad \textsuperscript{2}Institute -- TODO\\
+\small\textsuperscript{*}Correspondence: TODO}
 
-\date{\today}
+\date{}
 
 \begin{document}
 \maketitle
+\vspace{-1.4em}
 
 \begin{abstract}
-The OTUS sliced-Wasserstein autoencoder learns a stochastic detector response
-between truth-level dimuon four-vectors and CMS detector-level four-vectors
-without per-event paired simulation.  The literal 2021 objective matches broad
-coordinate distributions but misses the $\sim30~\mathrm{MeV}$ $J/\psi$ mass shell.
-This paper reports two incremental upgrades: (i) a Run-D baseline adding
-pair-level sliced Wasserstein and a relative-mass cycle constraint, which
-reduces the simulation mass Wasserstein-1 from $0.95~\mathrm{GeV}$ to
-$0.026~\mathrm{GeV}$; and (ii) a Run-E ``Tier A'' upgrade that replaces blind random
-slicing with a physics-cost Sinkhorn divergence and adversarially learned
-slicing directions, parameterizes the transport in cylindrical coordinates as a
-short stochastic residual flow, and selects checkpoints with hard mass-shape
-gates.  Modern classifier two-sample, coverage, and per-event stochasticity
-diagnostics are introduced in place of marginal histogram checks alone.
-\todo{Abstract final numbers after Run E.}
+\noindent
+Unpaired transport models such as the sliced-Wasserstein autoencoder (SWAE) learn a
+stochastic map between truth-level and detector-level four-vectors from marginals
+alone. Marginal agreement, however, does not establish that the model has learned the
+response: a deterministic map can absorb the detector resolution into its mean and
+still match every one-dimensional projection. We train a single mass-blind SWAE on
+real CMS 2012 open data together with a theory prior for the $J/\psi$ and $Z$
+resonances, and ask three questions. First, is the response identifiable - does the
+learned stochastic channel carry the resolution? Second, does the same object transfer
+to the $\Upsilon(1S,2S,3S)$ family, which is excluded from training? Third, does it
+invert per event? We answer the first with a fixed-truth repeated-decoding budget and
+a scorecard that reports every gauge against its identity and finite-sample floor, and
+we show that noise-aware checkpoint selection picks the deterministic solution in
+eight of eight arms. Fixing the noise amplitude from an independent resolution
+measurement restores the channel: the $\Upsilon(1S)$ intra-event width becomes
+86.5-91.6 MeV against the 84 MeV CMS resolution. The same model predicts the
+$\Upsilon$ peak positions to $+21.6/+2.9/+6.3$ MeV with a best-to-last drift of
+1-3 MeV and a systematic budget dominated by the checkpoint choice (85-92 MeV), while
+the peak widths remain over-spread (290-299 MeV) and per-event unfolding improves on
+the identity map but does not reach the oracle. We report the refuted mechanisms (a
+stronger learned noise amplitude, a cycle-consistent noise schedule, a heavier
+per-event weight) as constraints, and we state explicitly what a claim of learned
+detector response requires.
+\todo{Final abstract numbers after the open arms settle.}
 \end{abstract}
 
 \section{Introduction}
-\label{sec:intro}
 
-Fast surrogate simulation of detector effects is a central application of
-generative models in high-energy physics~\cite{otus_paper,calogan}.  OTUS
-reformulates the problem as an unpaired transport between a physically
-interpretable latent space of generator-level particles, $\zspace$, and
-detector-level observations, $\xspace$~\cite{otus_paper}.  Its core loss is
+Fast, data-driven detector simulation and unfolding are central applications of
+machine learning in high-energy physics\textsuperscript{\cite{otus_paper,calogan}}.
+The OTUS/SWAE formulation\textsuperscript{\cite{otus_paper,swae,wae}} learns an
+unpaired transport between a physically interpretable truth space $\mathcal{Z}$ and
+detector-level observations $\mathcal{X}$ with a sliced-Wasserstein objective,
 \begin{equation}
-\label{eq:otus}
-\mathcal{L}_{\mathrm{OTUS}}
-= \mathbb{E}_{x\sim p(x)}\mathbb{E}_{z\sim p_E(z|x)}
-\mathbb{E}_{\tilde x\sim p_D(x|z)}\|x-\tilde x\|^2
+\mathcal{L}
+= \mathbb{E}_{x}\mathbb{E}_{z\sim E(x)}\mathbb{E}_{\tilde x\sim D(z)}\|x-\tilde x\|^2
 + \lambda\, d_{\mathrm{SW}}\!\left(p_E(z),p(z)\right),
 \end{equation}
-optionally augmented by directional anchor terms.  The sliced-Wasserstein term
-projects high-dimensional particle vectors onto random one-dimensional axes;
-our measured failure mode is that a narrow resonance shell is nearly invisible
-to most of those axes.
+where $E$ is the encoder (unfolding) and $D$ the decoder (simulation).
 
-This paper makes two contributions:
-\begin{enumerate}
-  \item a systematic comparison of the literal OTUS objective, the Run-D
-        pair-level extension, and the Virat-style stochastic residual baseline;
-  \item the Run-E ``Tier A'' method: physics-aware neural-OT costs,
-        learned max-sliced-Wasserstein directions, a cylindrical residual-flow
-        parameterization, mass-gated model selection, and modern generative
-        diagnostics.
-\end{enumerate}
+The literal objective is a \emph{marginal} criterion. Our starting observation, which
+motivates this paper, is that marginal agreement is not evidence of a learned
+response: because the latent ensemble varies in coordinates correlated with the
+resonance mass, a deterministic decoder can reproduce the observed mass spread while
+its stochastic channel collapses, and every one-dimensional projection still closes.
+We turn that observation into three questions and answer each with a measurement
+rather than a metric:
 
-\section{Related Work}
-\label{sec:related}
+\begin{itemize}
+  \item \textbf{Identification (RQ1).} Does the stochastic channel carry the detector
+        resolution, or is the resolution manufactured by the mean map?
+  \item \textbf{Transfer (RQ2).} Does one shared, mass-blind response trained on
+        $J/\psi$ and $Z$ predict a resonance that never entered training - the
+        $\Upsilon(1S,2S,3S)$ family - in both peak position and width?
+  \item \textbf{Inversion (RQ3).} Does the same trained object unfold per event, with
+        calibrated uncertainty, where paired truth exists?
+\end{itemize}
 
-OTUS builds on the sliced-Wasserstein autoencoder~\cite{swae,wae}.  Neural
-optimal transport, notably entropic regularization~\cite{cuturi_sinkhorn},
-Sinkhorn divergences~\cite{genevay_sinkhorn}, and Monge-gap regularizers,
-replaces random projection distances in modern unpaired-transport models.
-Flow matching and stochastic interpolants provide continuous-time conditional
-generative models~\cite{lipman_flow, albergo_stochastic}; our cylindrical
-residual flow is a discrete, physics-constrained step in that direction.
-Fast detector simulation has moved from GANs~\cite{calogan} toward
-normalizing flows, diffusion models, and equivariant particle-cloud
-models~\cite{calochallenge}.  For unfolding, OmniFold is the current
-reference~\cite{omnifold}; our encoder remains a single-pass stochastic
-unfolding map and is not claimed to replace OmniFold.
+Related work places this in a crowded landscape. For unfolding, OmniFold is the
+current reference\textsuperscript{\cite{omnifold}}, and discriminative reweighting
+without iterations (AUSSIE, arXiv:2602.24282) and Wasserstein-loss unfolding with an
+explicit injectivity condition (arXiv:2603.20903) are the closest modern
+alternatives; both are used here as external reference points rather than as
+baselines we claim to beat. The immediate predecessor of this work is the OTUS
+autoencoder\textsuperscript{\cite{otus_paper}}, which established that an unpaired
+transport can be learned between theory-level and detector-level samples without
+any $(z,x)$ pairs. Its two demonstrations, however, generated \textbf{both} sides with
+MadGraph5, Pythia8 and Delphes: the detector it learned was itself a simulation, so
+the response could be checked against the generator that produced it. This paper
+replaces that simulated detector level with real CMS open data and therefore has no
+such oracle. CWola inverted detector effects with conditional generative
+networks\textsuperscript{\cite{cwola}}, and the unpaired line continues with
+point-cloud translation\textsuperscript{\cite{unpairedpointcloud}}.
+On the simulation side, detector-level generative
+modelling has moved from GANs\textsuperscript{\cite{calogan,caloflow}} to flows,
+diffusion and particle-cloud models\textsuperscript{\cite{calochallenge}}; the
+neural-optimal-transport line\textsuperscript{\cite{cuturi_sinkhorn,genevay_sinkhorn}}
+and flow matching\textsuperscript{\cite{lipman_flow,albergo_stochastic}} supply the
+building blocks we reuse. What is missing across that literature, and what this
+paper supplies, is a criterion for deciding whether an unpaired model has learned
+the response at all.
 
-\section{Method}
-\label{sec:method}
+The work makes three moves. (i) \textbf{Real detector data.} The detector level is CMS
+2012 open data rather than a fast simulation, so the learned response is the real
+detector's and there is no generator to validate against. (ii) \textbf{A different network.}
+Encoder and decoder are cylindrical-coordinate residual flows with an explicit
+per-event noise channel (a Gaussian core and a Student-$t$ tail), conditioned on muon
+kinematics only, and trained jointly on $J/\psi$ and $Z$ with one shared, mass-blind
+parameter set. (iii) \textbf{A criterion and a measurement.} An identification scorecard
+that asks whether the resolution is carried by the noise or faked by the mean map,
+the demonstration that noise-aware marginal selection is actively harmful (eight of
+eight arms), a frozen-amplitude calibration and what it buys, a zero-shot transfer
+test to the $\Upsilon$ family that separates what transfers (peak positions) from what
+does not (widths, conditional shape), and a quantified systematics budget with the
+refuted mechanisms.
+\todo{Sharpen the contribution list after the open arms settle.}
 
-\subsection{Baseline and Run D}
-The detector-level data are CMS 2012 DoubleMuParked opposite-sign dimuons in
-the $J/\psi$ window.  The Run-D objective extends \ref{eq:otus} with a direct
-generator term and a pair-level SWD,
-\begin{equation}
-\label{eq:rund}
-\mathcal{L}_{\mathrm{RunD}}
-= \alpha(t)\left[d_{\mathrm{SW}}(z,E(x))
-+d_{\mathrm{SW}}(x,D(z))\right]
-+ \lambda_{\mathrm{cyc}}\,
-\mathbb{E}\|x-D(E(x))\|^2
-+ \gamma\,\mathbb{E}\,\mathrm{Huber}\!\left(\frac{m_{\tilde x}-m_x}{m_x}\right).
-\end{equation}
+\section{Results}
 
-\subsection{Run E Tier A components}
-\label{sec:rune}
+\subsection{In-domain closure of a shared $J/\psi$ + $Z$ response}
 
-\textbf{Physics-cost Sinkhorn and Monge gap.}
-We define a 14-dimensional standardized ground feature vector,
-\begin{equation}
-u(p)=\bigl[\log\pt^-,\eta^-,\sin\phi^-,\cos\phi^-,
-\log\pt^+,\eta^+,\sin\phi^+,\cos\phi^+,
-\log m,\log \pt^{\mu\mu},y,\cos\Delta\phi,\sin\Delta\phi,\Delta\eta\bigr],
-\end{equation}
-and use a weighted squared cost $c(a,b)=\sum_i w_i(u_i(a)-u_i(b))^2$.  The
-distribution distance is the debiased Sinkhorn divergence; a Monge-gap proxy
-with barycentric projection is available as a regularizer.
-
-\textbf{Max-SW.}  Instead of random slicing directions, a small direction set
-is updated adversarially to maximize the sliced distance on each minibatch,
-with an orthogonality penalty, and the generative model minimizes the same
-distance.
-
-\textbf{Cylindrical residual flow.}  Encoder and decoder are short flows in
-cylindrical coordinates.  At each of $K$ steps a physics-conditioned network
-predicts a bounded mean residual, a Gaussian core scale, and a Student-$t$ tail
-scale; azimuthal coordinates are transported on $S^1$ and energies are
-reconstructed on the muon mass shell.
-
-\textbf{Mass-gated selection.}  A checkpoint is eligible only if the generated
-mass satisfies hard gates on $W_1$, KS, window fraction, and mean shift.  The
-selected-score is set to infinity for ineligible checkpoints.
-
-\textbf{Modern diagnostics.}  We report classifier two-sample test AUC,
-fixed-$z$ repeated-decoding stochasticity, and rank-based coverage for cycle
-and nearest-neighbor pseudo-pairs.
-
-\section{Experimental Setup}
-\label{sec:setup}
-
-Training uses $\approx 580{,}000$ CMS dimuon events and $75{,}904$ MG5 truth
-events from the rebuilt ptj$=5$ prior (80/10/10 splits, 20\% CMS cap).  Models
-are trained on Apple-silicon MPS.  Evaluation is performed on the untouched
-test split.  \todo{Add exact software versions and commit hashes.}
+One model closes both resonances in the marginals. With the selected checkpoint the
+mass and pair-$\pt$ gauges are at or near their finite-sample floors
+(Table~\ref{tab:runE}), and the same checkpoint is competitive on the
+continuum-reweighted evaluation prior, so the closure is not an artefact of a single
+prior.
 
 \begin{table}[t]
 \centering
-\caption{Run D measured test-split mass metrics.}
-\label{tab:rund}
-\begin{tabular}{lcc}
+\caption{\textbf{In-domain closure.} Joint Run E, selected checkpoint: mass and
+pair-$\pt$ gauges \textnormal{[measured]}. Identity and floor columns are still to be
+quoted per row.}
+\label{tab:runE}
+\begin{tabular}{llccc}
 \toprule
-Checkpoint & $W_1$ [GeV] & KS \\
+region & direction & mass $W_1$ [GeV] & mass KS & pair-$\pt$ KS \\
 \midrule
-three-term baseline & 0.946 & 0.764 \\
-Run D best (epoch 270) & 0.026 & 0.221 \\
-Run D final (epoch 300) & 0.061 & 0.296 \\
+$J/\psi$ & $z\to x$ & 0.00088 & 0.017 & 0.052 \\
+$J/\psi$ & $x\to z$ & 0.00177 & 0.037 & 0.022 \\
+$Z$      & $z\to x$ & 0.086   & 0.013 & 0.006 \\
+$Z$      & $x\to z$ & 0.053   & 0.007 & 0.005 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Results}
-\label{sec:results}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{jpsi_mass_ratio_rune.png}\\[0.4em]
+\includegraphics[width=\linewidth]{z_mass_ratio_rune.png}
+\caption{\textbf{In-domain closure of the accepted shared model.} $x$-space mass
+density ratio for Run E (selected checkpoint): $J/\psi$ (top) and $Z$ (bottom).
+Solid: CMS data; dotted: the data cycle $x\to\tilde z\to\tilde x$; dashed: the
+decoded prior $z\to\tilde x^{\prime}$; the lower panel of each pair is the ratio to
+the data. \textnormal{[measured]}}
+\label{fig:indomain}
+\end{figure}
 
-\subsection{Distribution-level results}
-\label{sec:results-dist}
-\todo{Insert Run E mass ratio/residual figures from \texttt{plots\_best}.}
-Expected reporting table: $W_1$, KS, peak position, width ratio, window
-fraction, C2ST AUC, and central coverage for $D(z)$, $E(x)$, and $D(E(x))$.
+\subsection{The stochastic channel is not identified by marginal objectives}
 
-\subsection{Stochasticity and coverage}
-\label{sec:results-stochasticity}
-\todo{Insert fixed-$z$ per-event width table and rank-uniformity plots.}
+With a learned noise amplitude the channel collapses: the tail scale falls from
+$8.1\times10^{-4}$ to $1.75\times10^{-4}$ and the core scale sits on its floor, while
+the late-training $\Upsilon$ shift ($-125/-136/-136$ MeV) is unchanged when the noise
+multipliers are set to 0, 0.25, 0.5 or 1.0, and unchanged with all noise off. The
+resolution therefore lives in the deterministic mean map. Scoring validation at the
+checkpoint's native noise - the intuitive remedy - selects the deterministic stage-one
+warmup in eight of eight arms, because the score is a marginal gauge and a stochastic
+checkpoint scores worse at its own operating point.
 
-\subsection{Ablations}
-\label{sec:ablations}
-Planned single-variable ablations: Sinkhorn on/off, max-SW on/off, flow steps
-$K=1,2,4$, mass gates on/off.
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{peak_shift_vs_tail.png}
+\caption{\textbf{The late $\Upsilon$ shift is not noise.} Decoded $\Upsilon$ peak
+position against the inference-time tail-noise multiplier, for healthy checkpoints
+and for the broken one; the broken checkpoint shows the full shift with the tail
+noise switched off. \textnormal{[measured]}}
+\label{fig:peakshift}
+\end{figure}
+
+Freezing the amplitude to a kernel fitted to the measured resolution restores the
+channel: the $\Upsilon(1S)$ intra-event width is 86.5-91.6 MeV against the 84 MeV CMS
+resolution, with $\sigma_{\mathrm{only}} = 91\text{--}101$ MeV, where the ungated arms
+give 10.5-11.0 MeV. Table~\ref{tab:scorecard} summarises the resulting scorecard,
+whose selection key rejects degenerate checkpoints before ranking by conditional
+closure.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{identification_scorecard.png}
+\caption{\textbf{Identification scorecard.} Top: intra-event width over the
+required resolution for every retained checkpoint of the Run E to Run H arms (band
+0.8-1.25; degenerate below 0.5). Bottom: per-slice $W_1$ over its finite-sample
+floor at native noise. \textnormal{[measured]}}
+\label{fig:scorecard}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Identification scorecard.} Every arm from Run E to the Run H family,
+selected checkpoints \textnormal{[measured]}. Ratios are intra-event width over the
+required resolution; degenerate means ratio below 0.5.}
+\label{tab:scorecard}
+\begin{tabular}{lcccc}
+\toprule
+arm (selected checkpoint) & $J/\psi$ ratio & $Z$ ratio & slice ratio & key \\
+\midrule
+Run E (last)       & 1.68  & 0.088 & 7.2  & failed \\
+Run F (last)       & 1.82  & 0.038 & 9.1  & failed \\
+Run G tf32 (last)  & 1.84  & 0.043 & 13.8 & failed \\
+Run H (last)       & 1.73  & 0.038 & 6.9  & failed \\
+Run H fix (last)   & 1.80  & 0.042 & 8.9  & failed \\
+A1 cycle (last)    & 1.74  & 0.038 & 9.7  & failed \\
+A2.3 frozen (best) & 1.087 & 0.829 & 44.6 & \textbf{identified} \\
+A2.2 floor (best)  & 1.22  & 0.849 & 75.1 & identified, correction rejected \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Zero-shot transfer to the $\Upsilon$ family}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{$\Upsilon$ transfer.} Continuum-reweighted prior, frozen-kernel
+checkpoints \textnormal{[measured]}: median minus the CMS fit and the decoded $1S$
+width.}
+\label{tab:upsilon}
+\begin{tabular}{lcccc}
+\toprule
+checkpoint & $1S$ & $2S$ & $3S$ & $1S$ width [MeV] \\
+\midrule
+stage-3 best (g110) & $+21.6$ & $+2.9$ & $+6.3$ & 299 \\
+last (g180)         & $+18.9$ & $+6.9$ & $+13.3$ & 291 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{upsilon_transfer.png}
+\caption{\textbf{Zero-shot transfer to the $\Upsilon$ family.} Decoded spectra on the
+continuum-reweighted evaluation prior against CMS data for three frozen-kernel
+checkpoints; the lower panel is the ratio to the data. Peak positions agree, the
+widths do not. \textnormal{[measured]}}
+\label{fig:upsilon}
+\end{figure}
+
+Peak positions transfer, with a best-to-last drift of 1-3 MeV; the widths do not - 290
+to 299 MeV against the 84 MeV resolution - and the conditional response remains wrong
+at fixed pair-$\pt$ (per-slice $W_1$/floor of 44-87). Table~\ref{tab:systematics}
+quantifies what each claim depends on.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Systematics budget.} Spread of each claim across the prior,
+checkpoint and evaluation-seed axes, with the bootstrap statistical floor
+\textnormal{[measured]}.}
+\label{tab:systematics}
+\begin{tabular}{lcccc}
+\toprule
+claim & value & prior & checkpoint & seed \\
+\midrule
+$1S$ median $-$ CMS [MeV] & $+20.9$ & 0.06 & \textbf{84.8} & 1.09 \\
+$1S$ width [MeV]          & 298    & 0.9  & 35.6 & 1.4 \\
+in-domain $J/\psi$ ratio  & 1.083  & n/a  & n/a  & 0.084 \\
+in-domain $Z$ ratio       & 0.848  & n/a  & n/a  & 0.028 \\
+$J/\psi$ slice ratio      & 38.3   & n/a  & n/a  & 7.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{systematics_budget.png}
+\caption{\textbf{Systematics budget.} Left: per-state medians on the raw and
+continuum-reweighted evaluation priors against the $\pm30$ MeV band. Right: the same
+quantity across three subsample seeds (the bootstrap floor is 0.4 MeV). The third
+axis - the choice of checkpoint - spans 85-92 MeV. \textnormal{[measured]}}
+\label{fig:systematics}
+\end{figure}
+
+The peak-position claim is prior-robust (the raw and continuum-reweighted priors move
+it by 0.06 MeV) and seed-robust (1.1 MeV, with a bootstrap floor of 0.4 MeV) but
+checkpoint-fragile: the retained checkpoints of the same arm span 85 MeV. The
+selection rule, not the evaluation noise, is the dominant systematic. The prior does
+move the continuum - the 8.5-9.25 GeV over CMS density ratio changes from 1.57 to
+0.948 for the same checkpoint - while leaving the peak where it is.
+
+\subsection{Per-event unfolding on a paired benchmark}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Paired closure.} Benchmark with paired truth, 160k held-out pairs
+\textnormal{[measured]}.}
+\label{tab:ppzee}
+\begin{tabular}{lc}
+\toprule
+map & residual rms vs identity \\
+\midrule
+identity (hand back the detector event) & 1.0000 \\
+upstream OTUS encoder & 3.3304 \\
+this work, stage-1 checkpoint & 0.9808 \\
+this work, stage-2 checkpoint & 0.9843 \\
+oracle (best correction fitted on the pairing) & 0.8099 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{per_event_closure.png}
+\caption{\textbf{Per-event unfolding.} Left: residual rms relative to the identity
+map on the paired benchmark; the oracle is fitted on the pairing and is a ceiling,
+not a method. Right: pull standard deviation and $1\sigma$ coverage against their
+nominal values; the deterministic stage-1 encoder has a zero-variance posterior.
+\textnormal{[measured]}}
+\label{fig:inverse}
+\end{figure}
+
+The encoder removes the global mass bias but leaves the per-event scatter essentially
+unchanged, and the posterior is not calibrated (pull standard deviation 12.6-20.7
+against a nominal 1; $1\sigma$ coverage 0.06-0.10 against a nominal 0.683).
 
 \section{Discussion}
-\label{sec:discussion}
 
-Limitations: no per-event paired CMS truth is available, so conditional
-coverage is evaluated only through cycle and nearest-neighbor proxies; the
-skim exposes no isolation, impact-parameter, or pileup variables; and the
-method is demonstrated for a fixed two-particle final state.  The
-generalization to variable particle multiplicity, full event objects, and
-Lorentz-equivariant representations remains future work.
+Marginal closure is necessary but not sufficient; the identification scorecard is our
+proposal for what to report instead, and the systematics budget shows how to read a
+transfer claim once the selection rule is declared. The response is demonstrated for a
+fixed two-particle final state, no theory or detector systematic uncertainty is
+propagated, and the refuted mechanisms (a stronger learned noise amplitude, a
+cycle-consistent noise schedule, a heavier per-event weight) constrain the explanation
+without yet providing the missing ingredient: an objective that ties the resolution to
+the noise channel while leaving the mean map identifiable.
+\todo{Quantify the training-seed axis (needs new runs).}
 
-\section{Conclusion}
-\label{sec:conclusion}
-\todo{Final conclusion after Run E.}
+\section{Methods}
+
+\subsection{Data and selection}
+Detector-level data are CMS 2012 open-data opposite-sign dimuons, selected in the
+$J/\psi$ and $Z$ windows; truth-level events are generated with MadGraph5 + Pythia8
+and passed through the same fiducial selection. The two samples are never paired
+event-by-event. The $\Upsilon$ sample is held out: it is never used for training,
+tuning, checkpoint selection or metric design, and is opened only after the model is
+frozen. Locked splits \textnormal{[measured]}: the legacy-prior group provides
+2,899,563 detector-level and 71,659 truth-level $J/\psi$ events, and 4,207,696
+detector-level and 800,000 truth-level $Z$ events; the honest component-aware group
+provides 501,317 truth-level $J/\psi$ and 401,718 truth-level $Z$ events over the same
+detector-level stream. \todo{Selection tables, split manifest, cache fingerprints.}
+
+\subsection{Priors}
+The $J/\psi$ and $Z$ priors are component-aware mixtures (signal plus continuum). Two
+regimes exist and must be quoted with every in-domain number: a legacy hand-smeared
+$J/\psi$ prior, whose required additional smearing is 12.2 MeV, and the honest
+component-aware prior, whose requirement is 30.0 MeV - a factor 2.46. A
+sideband-derived continuum-reweighted $\Upsilon$ prior is the primary transfer
+readout.
+
+\subsection{Model}
+Encoder and decoder are short residual flows in cylindrical coordinates, sharing one
+mass-blind parameter set; at each of $K$ steps a physics-conditioned network predicts
+a bounded mean residual, a Gaussian core scale and a Student-$t$ tail scale, with
+azimuthal transport on $S^1$ and energies reconstructed on the muon mass shell. The
+response is written as $x = M(z) + \epsilon$ with $\epsilon \sim
+p_\theta(\epsilon\mid z)$. The trained joint arms carry 830,710 parameters (415,355
+per direction) in four hidden layers of 256 units with two flow steps, i.e. 3.32 MB of
+float32 weights \textnormal{[measured]}.
+
+\subsection{What changed relative to the predecessor}
+
+Three changes distinguish this model from the OTUS autoencoder
+\textsuperscript{\cite{otus_paper}}, all source-verified in the repository:
+
+\begin{itemize}
+  \item \textbf{Data.} The detector level is CMS 2012 open data, not a Delphes
+        sample, so the response has a real, irreducible resolution and no oracle.
+  \item \textbf{Network.} Instead of a plain multilayer autoencoder, both maps are
+        short residual flows in cylindrical coordinates: per step a
+        physics-conditioned network predicts a bounded mean residual and the two
+        noise scales, azimuth is transported on $S^1$, and energies are
+        reconstructed on the muon mass shell.
+  \item \textbf{Conditioning and scope.} The maps are conditioned on muon
+        kinematics only (the explicit pair-mass coordinate is excluded and the
+        exclusion is enforced by a contract test), and one shared parameter set is
+        trained jointly on $J/\psi$ and $Z$ with balanced per-region statistics.
+\end{itemize}
+
+\todo{Add the predecessor's own architecture numbers side by side once the
+comparison run is in place.}
+
+\subsection{Objective}
+The loss combines the paired reconstruction cycle $D(E(x))$, a latent prior term on
+$E(x)$, a direct generator term $D(z)$, a $\pt$-sliced conditional mass term, and a
+z-space consistency cycle
+\begin{equation}
+\mathcal{L}_{z} = \big\| \mathrm{std}(z) - \mathrm{std}(E(D(z))) \big\|^2 ,
+\end{equation}
+which asks the composition of the two maps to be the identity on the truth side; the
+x-side cycle alone can be satisfied by a deterministic autoencoder.
+
+\subsection{Identification diagnostics}
+For a fixed truth event we decode repeatedly and measure the intra-event width; the
+exact split $\mathrm{Var}(x) = \mathbb{E}_z[\mathrm{Var}(x\mid z)] +
+\mathrm{Var}_z[\mathbb{E}(x\mid z)]$ separates the noise share from the mean-map
+share. The response gate requires the intra-event width to lie within 0.8-1.25 of the
+required resolution and $\sigma_{\mathrm{only}} \geq 50$ MeV on the $\Upsilon$ states;
+a checkpoint is flagged degenerate when the ratio falls below 0.5. Conditional closure
+is scored per equal-count pair-$\pt$ slice as $W_1$ over its finite-sample floor.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{noise_budget.png}
+\caption{\textbf{Fixed-truth noise budget across arms.} Intra-event width against the
+resolution the detector requires, and the fraction of the variance carried by the
+noise, for 14 retained checkpoints spanning the Run E to Run H families.
+\textnormal{[measured]}}
+\label{fig:noisebudget}
+\end{figure}
+
+\subsection{Checkpoint selection}
+Selection is a tiered rule rather than a weighted sum: reject any checkpoint whose
+response gate fails or that is degenerate, rank the survivors by conditional closure
+and then by the in-domain score, and report identification failure explicitly rather
+than crowning a marginal winner. The transfer axis is report-only and provably cannot
+enter the key.
+
+\subsection{Systematics and statistics}
+Four axes are quantified for each claim: the evaluation prior, the checkpoint, the
+subsample seed, and a bootstrap of the decoded sample. The reported spreads are the
+half-ranges of each axis; the bootstrap is the statistical floor, not a systematic. A
+training-seed axis requires new runs and is not yet measured.
+\todo{Add the training-seed axis and the external comparison (AUSSIE on the paired
+benchmark).}
+
+\section{Data availability}
+CMS 2012 open data are public; the selection, the truth priors and every run directory
+are listed in the repository record. \todo{DOI and repository link.}
+
+\section{Code availability}
+All training, diagnostic and evaluation code is in the repository, with 443 unit
+tests at the time of writing. \todo{Zenodo DOI for the exact commit.}
+
+\section{Acknowledgements}
+\todo{}
+
+\section{Author contributions}
+\todo{}
+
+\section{Competing interests}
+The authors declare no competing interests.
 
 \bibliographystyle{unsrtnat}
 \bibliography{references}

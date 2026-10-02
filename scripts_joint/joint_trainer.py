@@ -152,6 +152,44 @@ def _decode_cycle(model, z_encoded: torch.Tensor, mode: str) -> torch.Tensor:
     raise ValueError(f"unknown cycle decoder noise mode {mode!r}")
 
 
+_Z_CYCLE_NOISE_CHOICES = ("native", "zero")
+
+
+def _resolve_z_cycle_noise(config: dict[str, Any], stage: dict[str, Any]) -> str:
+    """Read the D3 switch: which noise the z-space cycle sees.
+
+    "native" (default) evaluates encode(decode(z)) at the model own operating
+    point, so the term is a denoising consistency condition whose fixed point is
+    the unfolding encoder. "zero" scores the deterministic composition only.
+    """
+    value = stage.get("z_cycle_noise", config.get("z_cycle_noise", "native"))
+    mode = str(value).lower()
+    if mode not in _Z_CYCLE_NOISE_CHOICES:
+        raise ValueError(
+            f"z_cycle_noise must be one of {_Z_CYCLE_NOISE_CHOICES}, got {value!r}"
+        )
+    return mode
+
+
+def _z_cycle_roundtrip(model, z: torch.Tensor, mode: str) -> torch.Tensor:
+    """encode(decode(z)) for the D3 term under an explicit noise policy."""
+    if mode == "native":
+        return _first(model.encode(_first(model.decode(z))))
+    if mode == "zero":
+        previous = current_noise_multipliers(model)
+        zeroed = dict(previous)
+        zeroed["encoder_core"] = 0.0
+        zeroed["encoder_tail"] = 0.0
+        zeroed["decoder_core"] = 0.0
+        zeroed["decoder_tail"] = 0.0
+        set_noise_multipliers(model, zeroed)
+        try:
+            return _first(model.encode(_first(model.decode(z))))
+        finally:
+            set_noise_multipliers(model, previous)
+    raise ValueError(f"unknown z cycle noise mode {mode!r}")
+
+
 def train_joint_epoch(
     model,
     optimizer,
@@ -170,6 +208,8 @@ def train_joint_epoch(
     """Accumulate one independent loss per region before each shared update."""
     model.train()
     cycle_noise_mode = _resolve_cycle_decoder_noise(config, stage)
+    z_cycle_noise_mode = _resolve_z_cycle_noise(config, stage)
+    z_cycle_weight = float(stage.get("zeta", 0.0) or 0.0)
     loaders = config.get("loaders", {})
     batch_size = int(loaders.get("train_batch_size", 1024))
     # Mechanism fix for the flat-loss diagnosis: pad every stream whose
@@ -289,12 +329,19 @@ def train_joint_epoch(
                 if stage["nu_e"] > 0.0
                 else x.new_tensor(0.0)
             )
+            # D3: z-space consistency cycle encode(decode(z)) ~ z. Off unless
+            # the stage declares zeta > 0, so every earlier config is unchanged.
+            z_cycle_loss = x.new_tensor(0.0)
+            if z_cycle_weight > 0.0:
+                z_reco = _z_cycle_roundtrip(model, z, z_cycle_noise_mode)
+                z_cycle_loss = factory.z_cycle_loss(z, z_reco)
             region_loss = (
                 stage["beta"] * x_loss
                 + stage["lamb"] * z_loss
                 + stage["tau"] * direct_loss
                 + stage["nu_e"] * encoder_anchor
                 + stage["nu_d"] * decoder_anchor
+                + z_cycle_weight * z_cycle_loss
             )
             weighted_loss = weights[name] * region_loss
             if not torch.isfinite(weighted_loss):
@@ -303,14 +350,19 @@ def train_joint_epoch(
             # graph is built, keeping memory near one-region peak usage.
             weighted_loss.backward()
             step_total += _as_float(weighted_loss)
-            for key, value in {
+            components = {
                 "loss": region_loss,
                 "x_loss": x_loss,
                 "z_loss": z_loss,
                 "direct_loss": direct_loss,
                 "encoder_anchor": encoder_anchor,
                 "decoder_anchor": decoder_anchor,
-            }.items():
+            }
+            # Only register the D3 component when the stage actually uses it, so
+            # every earlier config keeps a byte-identical history row.
+            if z_cycle_weight > 0.0:
+                components["z_cycle_loss"] = z_cycle_loss
+            for key, value in components.items():
                 sums[f"{name}_{key}"] = sums.get(f"{name}_{key}", 0.0) + _as_float(value)
 
         # Frozen mean-map anchor. The invariant-mass guard forbids a physical
@@ -929,12 +981,14 @@ def run_joint_training(
                         f" peak_cuda={torch.cuda.max_memory_reserved(device) / 1024**3:.2f}GiB"
                         if device.type == "cuda"
                         else ""
-                    )
+                    ),
+                    flush=True,
                 )
             else:
                 print(
                     f"[{name} {local_epoch}/{stage['epochs']}] "
-                    f"train_loss={train_loss:.6g}"
+                    f"train_loss={train_loss:.6g}",
+                    flush=True,
                 )
             if device.type == "cuda":
                 row["peak_cuda_allocated_gb"] = (

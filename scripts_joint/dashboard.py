@@ -14,7 +14,9 @@ Usage:
 from __future__ import annotations
 
 import os
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+if os.name == "nt":
+    # Windows-only; see the note in scripts_joint/run_joint.py.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import json
 import subprocess
@@ -411,7 +413,8 @@ class Dashboard:
             ],
         ]
         env = os.environ.copy()
-        env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+        if os.name == "nt":
+            env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
         env.setdefault("OMP_NUM_THREADS", "1")
         for cmd in cmds:
             try:

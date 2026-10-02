@@ -1,0 +1,109 @@
+# D3b: keep the response channel present everywhere - in stage 1 training AND
+# in validation/selection.
+#
+# Root cause this arm attacks (artifact-measured, memory.md Session 64/65):
+#   1. Stage 1 trains with the noise channel OFF, so the only way to close the
+#      J/psi marginal in stage 1 is the deterministic mean map, and it does
+#      exactly that: the stage-1 checkpoint closes the decoded mass width to
+#      3.9% (vs_identity 0.073, mass KS 0.022) with no noise at all. The
+#      detector resolution is absorbed by the construction, not by the response.
+#   2. Stages 2-3 then switch the (correctly calibrated) frozen kernel ON, but
+#      nothing removes the resolution from the mean map, so the two ADD UP:
+#      sqrt(31^2 + 34^2) ~ 49 MeV against 28 MeV of data, i.e. 1.75x too wide
+#      at the native operating point, and worse than the identity map on the
+#      width (width_rel_error_vs_identity 1.5996).
+#   3. Validation and checkpoint selection score the map with all four noise
+#      multipliers at zero. joint_trainer.validate_joint documents the reason
+#      (cross-stage comparability) and also documents the cost: scoring this way
+#      "hides deterministic-map degeneration". Since a deterministic map can
+#      match any marginal (Monge), zero-noise scoring rewards the degenerate
+#      solution by construction and is blind to the response channel.
+#
+# Why this is a test and not a hope - the arithmetic: with the frozen kernel the
+# within-z decoded width is already ~30 MeV (robust) against ~30 MeV of data
+# width and a ~0.65 MeV prior. The noise channel alone therefore saturates the
+# data width, so the marginal can only close if the mean map contributes almost
+# no width. With the channel ON from the start, the existing marginal objective
+# fixes the attribution by itself; no new penalty term and no new hyperparameter
+# is introduced.
+#
+# Change set versus H_A2frozen - ONE intervention, two config edits. Splitting
+# them is not meaningful: changing only the schedule leaves selection rewarding
+# the degenerate checkpoints; changing only the scoring leaves stage 1 forcing
+# the construction and hands the optimiser a warm start it cannot leave.
+#   1. stage 1 noise 0/0 -> 1.0/0.25, the channel stage 2 already uses, so no
+#      new noise schedule has to be justified;
+#   2. validation and final-evaluation noise -> decoder core 1.0 / tail 0.25, so
+#      the scored map is the response model at its operating point. The encoder
+#      stays deterministic (0/0) so the latent / unfolding numbers keep the
+#      convention of every earlier arm (honest-prior J/psi latent mass KS:
+#      identity 0.385, target 0.04, best mass-only contraction 0.279).
+#
+# NAMING WARNING. Stage 1 keeps the inherited name
+# 'runH_stage1_deterministic_warmup'. _deep_merge merges stage lists by name and
+# APPENDS unknown names, so a rename would silently produce a four-stage
+# schedule. The name is historical: in this arm stage 1 is stochastic.
+# Do NOT use best_RunHD3b_stage1_deterministic_warmup.pt as a deterministic
+# reference map - it is not one.
+#
+# Readout (pre-declared BEFORE the run, so the call is not made after the fact).
+# Primary, native-noise J/psi z->x at the selected checkpoint:
+#   width_rel_error <= 0.15 (H_A2frozen final: 0.753) AND
+#   direct_mass_ks_vs_identity <= 0.5 (H_A2frozen final: 0.302).
+# Secondary: A0.4 scorecard Axis C, J/psi native slice median ratio moving toward
+#   the gate of 3.0 (H_A2frozen/D3: 23-49, gate 3.0, max gate 10.0).
+# OOD: Upsilon widths moving toward the 84 MeV resolution (D3/A2: 290-299 MeV).
+# Mechanism check (did the fix do what it says): at ZERO noise the decoded mass
+#   width should now be near the PRIOR width (~0.65 MeV robust), not the data's
+#   ~30 MeV. That is the direct signature that the mean map stopped carrying the
+#   resolution. If the native numbers improve while this check fails, the gain
+#   came from somewhere else and must not be claimed as identification.
+# Refuted if: the native width stays ~1.7x the data and Axis C does not move.
+#   Then the marginal objective cannot fix the attribution even with the channel
+#   present everywhere, and the fix has to be structural (an explicit, frozen
+#   smearing channel with the mean map restricted to smooth corrections - option
+#   (c) in deliverables/brief_for_daniel_2026-10-01.md).
+extends: cms_Joint_runH_A2frozen.yaml
+
+run_label: Run H D3b - response channel present in stage 1 and in selection
+run_name: Run_H_D3b
+
+loaders:
+  # The scored map is the response model at its operating point. Fixed across
+  # stages, so stage scores stay comparable with each other (the reason the
+  # deterministic policy existed) while no longer being blind to the response.
+  validation_noise_multipliers:
+    encoder_core: 0.0
+    encoder_tail: 0.0
+    decoder_core: 1.0
+    decoder_tail: 0.25
+
+final_evaluation:
+  # Must score the same map that selection used.
+  noise_multipliers:
+    encoder_core: 0.0
+    encoder_tail: 0.0
+    decoder_core: 1.0
+    decoder_tail: 0.25
+
+stages:
+  # Same channel as stage 2, turned on from the first epoch.
+  - name: runH_stage1_deterministic_warmup
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+
+comparison:
+  baseline_run: Run_H_A2frozen
+  controlled_change: >-
+    One intervention: the response channel is present in stage 1 training and in
+    validation/selection, where A2frozen had it absent from both. Two config
+    edits implement it (stage-1 noise 0/0 -> 1.0/0.25; scored noise -> decoder
+    1.0/0.25) because either edit alone leaves the run unjudgeable. Everything
+    else - the A1 cycle_decoder_noise zero, the honest component priors, the
+    frozen physics kernel, the 20/80/80 schedule, beta/lamb/tau/nu_e/nu_d, the
+    encoder noise policy and every other loader - is inherited unchanged.
+  not_claimed: >-
+    This arm does not add a penalty on the mean map and does not change the
+    architecture. It tests whether the existing marginal objective, once the
+    response channel is present where the decision is made, fixes the
+    attribution on its own.

@@ -10,7 +10,9 @@ comparison/evaluation/plotting scripts.
 from __future__ import annotations
 
 import os
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+if os.name == "nt":
+    # Windows-only; see the note in scripts_joint/run_joint.py.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import argparse
 import subprocess
 import sys
@@ -53,7 +55,8 @@ def parse_args() -> argparse.Namespace:
 def run(cmd: list[str]) -> None:
     print("\n$ " + " ".join(str(item) for item in cmd))
     env = os.environ.copy()
-    env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    if os.name == "nt":
+        env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     env.setdefault("OMP_NUM_THREADS", "1")
     subprocess.check_call([str(item) for item in cmd], env=env)
 
