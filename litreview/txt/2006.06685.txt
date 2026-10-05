@@ -1,0 +1,1658 @@
+SciPost Physics Submission
+Invertible Networks or Partons to Detector and Back Again
+Marco Bellagente1, Anja Butter 1, Gregor Kasieczka3, Tilman Plehn 1, Armand Rousselot 1,2,
+Ramon Winterhalder1, Lynton Ardizzone2, and Ullrich K¨ othe2
+1 Institut f¨ ur Theoretische Physik, Universit¨ at Heidelberg, Germany
+2 Heidelberg Collaboratory for Image Processing, Universit¨ at Heidelberg, Germany
+3 Institut f¨ ur Experimentalphysik, Universit¨ at Hamburg, Germany
+butter@thphys.uni-heidelberg.de
+October 2, 2020
+Abstract
+For simulations where the forward and the inverse directions have a physics meaning, invert-
+ible neural networks are especially useful. A conditional INN can invert a detector simulation
+in terms of high-level observables, speciﬁcally for ZW production at the LHC. It allows for
+a per-event statistical interpretation. Next, we allow for a variable number of QCD jets.
+We unfold detector eﬀects and QCD radiation to a pre-deﬁned hard process, again with a
+per-event probabilistic interpretation over parton-level phase space.
+Content
+1 Introduction 2
+2 Unfolding basics 3
+2.1 Binned toy model and locality 4
+2.2 Bayes’ theorem and model dependence 5
+2.3 Reference process pp→ZW 6
+3 Unfolding detector eﬀects 7
+3.1 Naive INN 7
+3.2 Noise-extended INN 9
+3.3 Conditional INN 12
+4 Unfolding with jet radiation 16
+4.1 Individual n-jet samples 17
+4.2 Combined n-jet sample 19
+5 Outlook 21
+References 22
+1
+arXiv:2006.06685v3  [hep-ph]  1 Oct 2020
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+1 Introduction
+The unique feature of LHC physics from a data science perspective is the comparison of
+vast amounts of data with predictions based on ﬁrst principles. This modular prediction
+starts with the Lagrangian describing the hard scattering, then adds perturbative QCD pro-
+viding precision predictions, resummed QCD describing parton showers and fragmentation,
+hadronization, and ﬁnally a full detector simulation [1]. In this so-deﬁned forward direction
+all simulation modules are based on Monte Carlo techniques, and in the ideal world we would
+just compare measured and simulated events and draw conclusions about the hard process.
+This hard process is where we expect to learn about new aspects of fundamental physics, for
+instance dark matter, extended gauge groups, or additional Higgs bosons.
+Because our simulation chain works only in one direction, the typical LHC analysis starts
+with a new, theory-inspired hypothesis encoded in a Lagrangian as new particles and cou-
+plings. For every point in the new physics parameter space we simulate events, compare them
+to the measured data using likelihood methods, and discard the new physics hypothesis. This
+approach is ineﬃcient for a variety of reasons:
+1. The best way to compare two hypotheses is the log-likelihood ratio based on new physics
+and Standard Model predictions for the hard process. Using this ratio in the analysis
+is the idea behind the matrix element method [2–7], but usually this information is not
+available [8].
+2. New physics hypotheses have free model parameters like masses or couplings, even if an
+analysis happens to be independent of them. If the predicted event rates follow a simple
+scaling, like for a truncated eﬀective theory, this is simple, but usually we need to simulate
+events for each point in model space.
+3. There is a limit in electroweak or QCD precision to which we can reasonably include
+predictions in our standard simulation tools. Beyond this limit we can, for instance, only
+compute a limited set of kinematic distributions, which excludes these precision prediction
+from standard analyses.
+4. Without a major eﬀort it is impossible for model builders to derive competitive limits on
+a new model by recasting an existing analysis.
+All these shortcomings point into the same direction: we need to invert the simulation chain,
+apply this inversion to the measured data, and compare hypotheses at the level of the hard
+scattering. For hadronization and fragmentation an approximate inversion is standard in
+that we always apply jet algorithms to extract simple parton properties from the complex
+QCD jets. For the detector simulation either at the level of particles or at the level of jets
+this problem is usually referred to as detector unfolding. For instance in top physics we also
+unfold kinematic information to the level of the decaying top quarks, assuming that the top
+decays are correctly described by the standard model [9, 10]. Going beyond detector eﬀects
+we know what for many analyses QCD jet radiation adds little to our new physics search.
+This is certainly true whenever soft and collinear radiation can be simulated by spin-averaged
+parton showers depending only logaritmically on the global energy scale of the hard process.
+In that case we should also be able to also unfold QCD jet radiation as the last simulation
+step. This is the ﬁnal goal of our paper.
+Technically, we propose to use invertible networks (INNs) [11–13] to invert part of the LHC
+2
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+simulation chain. This application builds on a long list of one-directional applications of gen-
+erative or similar networks to LHC simulations, including phase space integration [14,15], am-
+plitudes [16,17], event generation [18–22], event subtraction [23], detector simulations [24–32],
+parton showers [33–36], or searches for physics beyond the Standard Model [37]. INNs are an
+alternative class of generative networks, based on normalizing ﬂows [38–41]. In particle physics
+such normalizing ﬂow networks have proven useful for instance in phase space generation [42],
+linking integration with generation [43,44], or anomaly detection [45].
+Our INN study on unfolding detector-level events [46] to the hard scattering builds on
+similar attempts with a standard GAN [47] and a fully conditional GAN analysis [48]. In Sec. 3
+we show how the bijective structure of the INN makes their training especially stable. If we add
+suﬃciently many random numbers to the INN we can start generating probability distributions
+in the parton-level phase space. The conditional INN (cINN) [49,50] adds even more sampling
+elements to the generation of unfolded conﬁgurations. For arbitrary kinematic distributions
+we can test the calibration of this generative network output using truth information and
+ﬁnd that unlike GANs the cINN lives up to its generative promise: for a single detector-level
+event the cINN generates probability distributions in the multi-dimensional parton-level phase
+space.
+Next, we show in Sec. 4 how the inversion can link two phase spaces with diﬀerent dimen-
+sion. This allows us to unfold based on a model with a variable number of ﬁnal state particles
+at the detector level and is crucial to include higher-order perturbative corrections. We show
+how the cINN can account for jet radiation and unfolds it together with the detector eﬀects.
+In other words, the network distinguishes between jets from the hard process and jets from
+QCD radiation and it also unfolds the kinematic modiﬁcations from initial state radiation, to
+provide probability distributions in the parton-level phase space of a hard process.
+We note that our examples only cover analyses where subjet information factorizes from
+the hard process, for instance in terms of (mis-)tagging eﬃciencies. For analyses going beyond
+this level, like searches for long-lived particles, we need to skip the jet algorithm stage and
+instead include the full calorimeter and tracking information. In principle and assuming the
+availability of a proper detector simulations our ideas might still work for these applications,
+but for the time being we ignore these complications.
+2 Unfolding basics
+Unfolding particle physics events is a classic example for an inverse problem [51–53]. In the
+limit where detector eﬀects can be described by Gaussian noise, it is similar to unblurring
+images. However, actual detector eﬀects depend on the individual objects, the global energy
+deposition per event, and the proximity of objects, which means they are much more com-
+plicated than Gaussian noise. The situation gets more complicated when we add eﬀects like
+QCD jet radiation, where the radiation pattern depends for instance on the quantum numbers
+of the incoming partons and on the energy scale of the hard process.
+What we do know is that we can describe the measurement of phase space detector-level
+distributions dσ/dxd as a random process, just as the detector eﬀects or jet radiation can be
+simulated by a set of random numbers describing a Markov process. This means that also the
+3
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+inversion or extraction of the parton-level distribution d σ/dxp is a statistical problem.
+2.1 Binned toy model and locality
+As a one-dimensional toy example we can look at a binned (parton-level) distribution σ(p)
+j
+which gets transformed into another binned (detector-level) distribution σ(d)
+j by the kernel or
+response function gij,
+σ(d)
+i =
+N∑
+j=1
+gijσ(p)
+j . (1)
+We can postulate the existence of an inversion with the kernel ¯g through the relation
+σ(p)
+k =
+N∑
+i=1
+¯gkiσ(d)
+i =
+N∑
+j=1
+( N∑
+i=1
+¯gkigij
+)
+σ(p)
+j with
+N∑
+i=1
+¯gkigij =δkj . (2)
+If we assume that we know theN 2 entries of the kernelg, this form gives us theN 2 conditions
+to compute its inverse ¯g. We illustrate this one-dimensional binned case with a semi-realistic
+smearing matrix
+g =
+
+
+1−x x 0
+x 1− 2x x
+0 x 1−x
+
+ . (3)
+We illustrate the smearing pattern with two input vectors, keeping in mind that in an unfolding
+problem we typically only have one kinematic distribution to determine the inverse matrix ¯g,
+σ(p) =n
+
+
+1
+1
+1
+
+ ⇒ σ(d) =σ(p),
+σ(p) =
+
+
+1
+n
+0
+
+ ⇒ σ(d) =σ(p) +x
+
+
+n− 1
+−2n + 1
+n
+
+ . (4)
+The ﬁrst example shows how for a symmetric smearing matrix a ﬂat distribution removes all
+information about the detector eﬀects. This implies that we might end up with a choice of
+reference process and phase space such that we cannot extract the detector eﬀects from the
+available data. The second example illustrates that for bin migration from a dominant peak
+the information from the original σ(p) gets overwhelmed easily. We can also compute the
+inverse of the smearing matrix in Eq.(3) and ﬁnd
+¯g≈ 1
+1− 4x
+
+
+1− 3x −x x 2
+−x 1− 2x −x
+x2 −x 1− 3x
+
+ , (5)
+where we neglect the sub-leading x2-terms whenever there is a linear term as well. The
+unfolding matrix extends beyond the nearest neighbor bins, which means that local detector
+eﬀects lead to a global unfolding matrix and unfolding only works well if we understand our
+entire data set. The reliance on useful kinematic distributions and the global dependence of
+the unfolding deﬁne the main challenges once we attempt to unfold the full phase space of an
+LHC process.
+4
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+2.2 Bayes’ theorem and model dependence
+Over the continuous phase space a detector simulation can be written as
+dσ
+dxd
+=
+∫
+dxpg(xd,x p) dσ
+dxp
+, (6)
+where xd is a kinematic variable at detector level, xp the same variable at parton level, and
+g a kernel or transfer function which links these two arguments. We ignore eﬃciency factors
+for now, because they can be absorbed into the parton-level rate. To invert the detector
+simulation we deﬁne a second transfer function ¯g such that [54–56]
+dσ
+dxp
+=
+∫
+dxd ¯g(xp,x d) dσ
+dxd
+=
+∫
+dx′
+p
+dσ
+dx′p
+∫
+dxd ¯g(xp,x d)g(xd,x′
+p). (7)
+This inversion is fulﬁlled if we construct the inverse ¯g of g deﬁned by
+∫
+dxd ¯g(xp,x d)g(xd,x′
+p) =δ(xp−x′
+p), (8)
+all in complete analogy to the binned form above. The symmetric form of Eq.(6) and Eq.(7)
+indicates thatg and ¯g are both deﬁned as distributions. In the g-direction we use Monte Carlo
+simulation and sample in xp, while ¯g needs to be sampled in g(xp) or xd. In both directions
+this statistical nature implies that we should only attempt to unfold suﬃciently large event
+samples.
+The above deﬁnitions can be linked to Bayes’ theorem if we identify the kernels with
+probabilities. We now look at ¯g(xd|xp) in the slightly modiﬁed notation as the probability of
+observing xd given the model prediction xp and g(xp|xd) gives the probability of the model
+xp being true given the observation xd [57, 58]. In this language Eq.(6) and (7) describe
+conditional probabilities, and we can write something analogous to Bayes’ theorem,
+¯g(xp|xd) dσ
+dxd
+∼g(xd|xp) dσ
+dxp
+. (9)
+In this form ¯g(xp|xd) is the posterior, g(xd|xp) as a function of xp is the likelihood, d σ/dxp
+is the prior, and the model evidence d σ/dxd ﬁxes the normalization of the posterior. From
+standard Bayesian analyses we know two things: (i) the posterior will in general depend on
+the prior, in our case the kinematics of the underlying particle physics process or model; (ii)
+when analyzing high-dimensional spaces the prior dependence will vanish when the likelihood
+develops a narrow global maximum.
+If the posterior ¯g(xp|xd) in general depends on the model d σ/dxp, then Eq.(7) does not
+look useful. On the other hand, Bayesian statistics is based on the assumption that the prior
+dependence of the posterior deﬁnes an iterative process where we start from a very general
+prior and enter likelihood information step by step to ﬁnally converge on the posterior. The
+same approach can deﬁne a kinematic unfolding algorithm [59]. We will not discuss these
+methods further, but come back to this model dependence throughout our paper.
+5
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+2.3 Reference process pp → ZW
+To provide a quantitative estimate of unfolding with an invertible neural networks we use the
+same example process as in Ref. [48],
+pp→ZW±→ (𝓁−𝓁+) (jj), (10)
+One of the contributing Feynman diagrams is shown in Fig. 1. With jets and leptons in the
+ﬁnal state we can test the stability of the unfolding network for small and for large detector
+eﬀects. We generate the ZW events using Madgraph5 [60] without any generation cuts and
+then simulate parton showering with Pythia8 [61] and the detector eﬀects with Delphes [62]
+using the standard ATLAS card. For jet clustering we use the anti- kT algorithm [63] with
+R = 0.6 implemented in F astJet[64]. All jets are required to have
+pT,j > 25 GeV and |ηj|< 2.5. (11)
+For the hadronically decaying W -boson the limited calorimeter resolution will completely
+dominate over the parton-level Breit-Wigner distribution. After applying the cuts we have
+320k events which we split into 90% training and 10% test data.
+In a ﬁrst step, corresponding to Ref. [48] we are only interested in inverting these detector
+eﬀects. These results are shown in Sec. 3. For the simulation this implies that we switch oﬀ
+initial state radiation as well as underlying event and pile-up eﬀects and require exactly two
+jets and a pair of same-ﬂavor opposite-sign leptons. The jets and corresponding partons are
+separately ordered by pT . The detector and parton level leptons are assigned by charge. This
+gives us two samples matched event by event, one at the parton level ( xp) and one including
+detector eﬀects (xd). Each of them is given as an unweighted set of four 4-vectors. These
+4-vectors can be simpliﬁed if we assume all external particles at the parton level to be on-shell.
+Obviously, this method can be easily adapted to weighted events.
+In a second step we include initial state radiation and allow for additional jets in Sec. 4.
+We still require a pair of same-ﬂavor opposite-sign leptons and at least two jets in agreement
+with the condition in Eq.(11). The four jets with highest pT are then used as input to the
+network, ordered by pT . Events with less than 4 jets are zero-padded. This second data set
+is only used for the conditional INN.
+W
+Z
+j
+j
+𝓁+
+𝓁−
+Figure 1: Sample Feynman diagram contributing to ZW production, with intermediate on-
+shell particles labeled.
+6
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+INN
+{˜xp, ˜rp}
+{˜xd, ˜rd}{xp,r p}
+parton
+LMMD, MSE
+{xd,r d}
+detector
+LMMD, MSE
+¯g(xd,r d)
+g(xp,r p)
+Figure 2: Structure of INN. The {xd,p} denote detector-level and parton-level events, {rd,p}
+are random numbers to match the phase space dimensionality. A tilde indicates the INN
+generation.
+3 Unfolding detector eﬀects
+We introduce the conditional INN in two steps, starting with the non-conditional, standard
+setup. The construction of the INN we use in our analysis combines two goals [11]:
+1. the mapping from input to output is invertible and the Jacobians for both directions are
+tractable;
+2. both directions can be evaluated eﬃciently. This second property goes beyond some other
+implementations of normalizing ﬂow [38,40].
+While the ﬁnal aim is not actually to evaluate our INN in both directions, we will see that
+these networks can be extremely useful to invert a Markov process like detector smearing.
+Their bi-directional training makes them especially stable.
+In Sec. 3.3 we will show how the conditional INN retains a proper statistical notion of the
+inversion to parton level phase space. This avoids a major weakness of standard unfolding
+methods, namely that they only work on large enough event samples condensed to one-
+dimensional or two-dimensional kinematic distributions. This could be a missing transverse
+energy distribution in mono-jet searches or the rapidities and transverse momenta in top
+pair production. To avoid systematics or biases in the full phase space coverage required
+by the matrix element method, the unfolding needs to construct probability distributions in
+parton-level phase space, including small numbers of events in tails of kinematic distributions.
+3.1 Naive INN
+While it is clear from our discussion in Ref. [48] that a standard INN will not serve our
+purpose, we still describe it in some detail before we extend it to a conditional network.
+7
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+Following the conventions of our GAN analysis and in analogy to Eqs.(6) to (8) we deﬁne the
+network input as a vector of hard process information xp∈RDp and the output at detector
+level via the vector xd∈ RDd. If the dimensionalities of the spaces are such that Dp<D d we
+add a noise vectorr with dimensionDd−Dp to deﬁne the bijective, invertible transformation,
+(xp
+r
+) Pythia,Delphes:g→
+←−−−−−−−−−−−−−−−→
+← unfolding:¯g
+xd. (12)
+A correctly trained networkg with the parametersθ then reproducesxd from the combination
+xp and r. Its inverse ¯g instead reproduces the combination of xp and r from xd.
+The deﬁning feature of the INN illustrated in Fig. 2 is that it learns both directions of
+the bijective mapping in parallel and encodes them into one network. Such a simultaneous
+training of both directions is guaranteed by the building blocks of the network, the invertible
+coupling layers [12, 65]. For notational purposes we ignore the random numbers in Eq.(12)
+and assume that this layer links an input vectorxp to an output vectorxd after splitting both
+of them in halves, xp,i and xd,i for i = 1, 2. The relation between input and output is given
+by a sub-network, which encodes arbitrary functions s1,2 and t1,2. Using an element-wise
+multiplication⊙ and sum one could for instance deﬁne an output xd,1(xp) =xp,1⊙s2(xp,2) +
+t2(xp,2). In order to avoid numerical instabilities caused by the division with s(x) in the
+inverse direction, we include an exponential to obtain
+(xd,1
+xd,2
+)
+=
+(xp,1⊙es2(xp,2) +t2(xp,2)
+xp,2⊙es1(xd,1) +t1(xd,1)
+)
+⇔
+(xp,1
+xp,2
+)
+=
+((xd,1−t2(xp,2))⊙e−s2(xp,2)
+(xd,2−t1(xd,1))⊙e−s1(xd,1)
+)
+. (13)
+By construction, this inversion works independent of the form of s and t. If we write the
+coupling block function as g(xp)∼ xd, again omitting the random numbers r, the Jacobian
+of the network function has a triangular form
+∂g(xp)
+∂xp
+=
+(diag es2(xp,2) ﬁnite
+0 diag es1(xd,1)
+)
+, (14)
+so its determinant is easy to compute. Such coupling layer transformations deﬁne a so-called
+normalizing ﬂow, when we view it as transforming an initial probability density into a very
+general form of probability density through a series of invertible steps. We can relate the
+two probability densities as long as the Jacobians of the individual layers can be eﬃciently
+calculated.
+Since the ﬁrst use of the invertible coupling layer, much eﬀort has gone into improving its
+eﬃciency. The All-in-One (AIO) coupling layer includes two features, introduced by Ref. [12]
+and Ref. [13]. The ﬁrst modiﬁcation replaces the transformation of xp,2 by a permutation of
+the output of each layer. Due to the permutation each component still gets modiﬁed after
+passing through several layers. The second modiﬁcation includes a global aﬃne transformation
+to include a global bias and linear scaling that maps x→sx +b. Finally, we apply a bijective
+soft clamping after the exponential function in Eq.(13) to prevent instabilities from diverging
+outputs.
+The INN in our simpliﬁed example combines three contributions to the loss function.
+First, it tests if in the Delphes direction of Eq.(12) we indeed ﬁnd g(xp) =xd via the mean
+squared error (MSE) function. While this is theoretically suﬃcient to obtain the inverse
+8
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+function, also testing the inverse direction ¯ g(xd) = xp greatly improves the eﬃciency and
+stability of the training. Third, to resolve special sharp features like the invariant mass of
+intermediate particles we use the maximum mean discrepancy (MMD) as a distance measure
+between the generated and real distribution of these features.
+Because we will also use the MMD in another function function [21] we review it brieﬂy.
+An MMD loss allows us to compare any pre-deﬁned distribution. For a relativistic phase space
+a critical narrow phase space feature is the invariant mass of intermediate particles. We can
+force the network to consider this one-dimensional distribution of the 4-vectors xp for batches
+of parton-level and detector-level events,
+MMD =
+[
+⟨k
+(
+x,x′)
+⟩x,x′∼Pp +⟨k
+(
+y,y′)
+⟩y,y′∼Pd− 2⟨k (x,y )⟩x∼Pp,y∼Pd
+]1/2 . (15)
+In Refs. [21] and [48] we compare common choices, like Gaussian or Breit-Wigner kernels
+kGauss (x,y ) = exp− (x−y)2
+2σ2 or kBW (x,y ) = σ2
+(x−y)2 +σ2 (16)
+with a ﬁxed or variable width σ [48]. Inside the INN architecture the Breit-Wigner kernel
+is the best choice to analyze the distribution of the random numbers as part of the loss
+function [11].
+We now use the INN network to map parton-level events to detector-level events or vice-
+versa. In a statistical analysis we then use standard kinematic distributions and compare
+the respective truth and INN-inverted shapes for both directions. The left panels of Fig. 3
+shows the transverse momentum distributions of the two jets and their invariant mass for
+both directions of the INN. The truth events at parton level and at detector level are marked
+as dashed lines. Starting from each of the truth events we can apply the INN describing the
+detector eﬀects as xd =g(xp) or unfolding the detector eﬀects as xp = ¯g(xd) in Eq.(12). The
+corresponding solid lines have to be compared to the dotted truth lines, where we need to
+keep in mind that at the parton level the relevant objects are quarks while at the detector
+level they are jets.
+For the leading jet the truth and INNed detector-level agree very well, while for the second
+jet the naive INN fails to capture the hard cut imposed by the jet deﬁnition. For the invariant
+mass we ﬁnd that the smearing due to the detector eﬀects is reproduced well with some small
+deviations in the tails. In the unfolding direction both pT distributions follow the parton level
+truth. The only diﬀerence is a systematic lack of events in the tail for the second quark. This is
+especially visible in the ratio of the INN-unfolded events and the parton-level truth, indicating
+that also at small pT the network does not ﬁll the phase space suﬃciently. Combining both
+directions we see that in forward direction the INN produces a too broad pT -distribution, the
+unfolding direction of the INN produces a too narrow distribution. The conceptual advantage
+of the INN actually implies a disadvantage for the inversion of particular diﬃcult features.
+Finally, the invariant mass of theW is reproduced perfectly without any systematic deviation.
+3.2 Noise-extended INN
+While our simpliﬁed example in the previous section shows some serious promise of INNs, it
+fails to incorporate key aspects of the physical process. First of all, the number of degrees
+9
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+2 jet no ISR
+Parton Truth
+Parton INN
+Detector Truth
+Detector INN
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+INN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+2 jet no ISR
+Parton Truth
+Parton eINN
+Detector Truth
+Detector eINN
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+INN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+2 jet no ISR
+Parton Truth
+Parton INN
+Detector Truth
+Detector INN
+0 20 40 60 80 100 120
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+INN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+2 jet no ISR
+Parton Truth
+Parton eINN
+Detector Truth
+Detector eINN
+0 20 40 60 80 100 120
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+INN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+2 jet no ISR
+Parton Truth
+Parton INN
+Detector Truth
+Detector INN
+70 75 80 85 90 95
+MW,reco [GeV]
+0.8
+1.0
+1.2
+INN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+2 jet no ISR
+Parton Truth
+Parton eINN
+Detector Truth
+Detector eINN
+70 75 80 85 90 95
+MW,reco [GeV]
+0.8
+1.0
+1.2
+INN
+Truth
+Figure 3: INNed pT,q andMW,reco distributions from a naive INN (left) and the noise-extended
+eINN (right). In green we compare the detector-level truth to INNed events transformed from
+parton level. In blue we compare the parton-level truth to INNed events transformed from
+detector level. The secondary panels show the ratio of INNed events over parton-level truth.
+More distributions can be found in the pdf ﬁles submitted to the arXiv.
+10
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+of freedom is not actually the same at parton level and at detector level. External partons
+are on their mass shell, while jets come with a range of jet masses. This mismatch becomes
+crucial when we include missing transverse momentum in the signature. We generally need
+fewer parameters to describe the partonic scattering than the detector-level process. For a
+ﬁxed set of parton-level momenta we usually smear each momentum component to simulate
+the detector measurement. These additional degrees of freedom are of stochastic nature, so
+adding Gaussian random variable on the parton side of the INN could be a ﬁrst step to address
+this problem.
+To also account for potentially unobservable degrees of freedom at the parton level we
+extend each side of the INN by a random number vector. The mapping in Eq.(12) now
+includes two random number vectors with dimensions Drd =Dp and Drp =Dd,
+(xp
+rp
+) Pythia,Delphes:g→
+←−−−−−−−−−−−−−−−→
+← unfolding:¯g
+(xd
+rd
+)
+. (17)
+In addition, a pure MSE loss can not capture the fact that the additional noise generates a
+distribution of detector-level events given ﬁxed parton momenta. It would just predict of a
+mean value of this distribution and minimize the eﬀect of the noise. A better solution is an
+MMD loss for each degree of freedom in the event and the masses of intermediate particles,
+as well as the Gaussian random variables. On the side of the random numbers this MMD loss
+ensures that they really only encode noise. Again it is beneﬁcial for the training to use the
+inverse direction and apply additional MMD losses to the parton level events as well as the
+corresponding Gaussian inputs. Finally we add a weak MSE loss on the four vectors of each
+side to stabilize the training.
+In the right panels of Fig. 3 we show results for this noise-extended INN (eINN). The
+generated distributions are similar to the naive INN case and match the truth at the parton
+level. A notable diﬀerence appears in the second jet, the weak spot of the naive INN. The
+additional random numbers and MMDs provide more freedom to generate the peak in the
+forward direction and also improve the unfolding in the low- pT and high-pT regimes.
+Aside from the better modeling, the noise extension allows for a statistic interpretation
+of the generated distributions and a test of the integrity of the INN-inverted distributions.
+In the left panel of Fig. 4 we illustrate the goal of the statistical treatment: we start from a
+single event at the detector level and generate a set of unfolded events. For each of them we
+evaluate for instancepT,q 1. Already in this illustration we see that the GAN output is lacking
+a statistical behavior at the level of individual events, while the noise-extended eINN returns
+a reasonable distribution of unfolded events.
+To see if the width of this INN output is correct we take 1500 parton-level and detector-
+level event pairs and unfold each event 60 times, sampling over the random variables. This
+gives us 1500 combinations like the one shown in the left panel of Fig. 4: a single parton-
+level truth conﬁguration and a distribution of the INNed conﬁguration. To see if the central
+value and the width of the INNed distribution can be interpreted statistically as a posterior
+probability distribution in parton phase space we analyse where the truth lies within the
+INN distribution for each of the 1500 events. For a correctly calibrated curve we start for
+instance from the left of the kinematic distribution and expect 10% of the 1500 events in the
+10% quantile of the respective probability distribution, 20% of events in the 20% quantile,
+11
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+10 15 20 25 30 35 40 45 50
+pT,q 1 [GeV]
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+events normalized
+eINN
+FCGAN
+single detector event
+3200 unfoldings
+Parton Truth
+0.0 0.2 0.4 0.6 0.8 1.0
+quantile pT, q1
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+fraction of events
+eINN
+FCGAN
+Figure 4: Left: illustration of the statistical interpretation of unfolded events for one event.
+Right: calibration curves for pT,q 1 extracted from the FCGAN and the noise-extended eINN.
+etc. The corresponding calibration curves for the noise-extended eINN are shown in the right
+panel of Fig. 4. While they indicate that we can attempt a statistical interpretation of the
+INN unfolding, the calibration is not (yet) perfect. A steep rise for the lower quantile indicates
+that too many events end up in the ﬁrst 10% quantile. In other words, the distributions we
+obtain by sampling over the Gaussian noise for each event are too narrow.
+While our noise-extended eINN takes several steps in the right direction, it still faces
+major challenges: the combination of many diﬀerent loss functions is sensitive to their relative
+weights; the balance between MSE and MMD on event constituents has to be calibrated
+carefully to generate reasonable quantile distributions; when we want to extend the INN to
+include more detector-level information we have to include an equally large number of random
+variable on the parton level which makes the training very ineﬃcient. This leads us again [48]
+to adopt a conditional setup.
+3.3 Conditional INN
+If a distribution of parton-level events can be described byn degrees of freedom, we should be
+able to use normalizing ﬂows or an INN to map a n-dimensional random number vector onto
+parton-level 4-momenta. To capture the information from the detector-level events we need to
+condition the INN on these events [48, 66, 67], so we link the parton-level data xp to random
+noise r under the condition of xd. Trained on a given process the network should now be
+able to generate probability distributions for parton-level conﬁgurations given a detector-level
+event and an unfolding model. We note that the cINN is still invertible in the sense that
+it includes a bi-directional training from Gaussian random numbers to parton-level events
+and back. While this bi-directional training does not represent the inversion of a detector
+simulation anymore, it does stabilize the training by requiring the noise to be Gaussian.
+12
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+cINN
+{˜xp}
+{˜r}{xp}
+parton
+LMMD
+{r}
+L
+condition
+subnet{xd}detector
+f(xd)
+¯g(r,f (xd))
+g(xp,f (xd))
+Figure 5: Structure of the conditional INN. The input are random numbers {r} while{xd,p}
+denote detector-level and parton-level data. The latent dimension loss L follows Eq.(18), a
+tilde indicates the INN generation.
+A graphic representation of this conditional INN or cINN is given in Fig. 5. We ﬁrst
+process the detector-level data by a small subnet, i.e.xd→ f(xd), to optimize its usability
+for the cINN [49]. The subnet is trained alongside the cINN and does not need to be reversed
+or adapted. We choose a shallow and wide architecture of two layers with a width of 1024
+internally, because four layers degrade already the conditional information and allow the
+cINN to ignore it. When a deeper subnet is required we advertize to use an encoder, which is
+initialized by pre-training it as part of an autoencoder. We apply this technique when using
+Parameter INN eINN
+Blocks 24 24
+Layers per block 2 2
+Units per layer 256 256
+Trainable weights ∼ 150k ∼ 270k
+Epochs 1000 1000
+Learning rate 8· 10−4 8· 10−4
+Batch size 512 512
+Training/testing events 290k / 30k 290k / 30k
+Kernel widths ∼ 2, 8, 25, 67 ∼ 2, 8, 25, 67
+Dp +Drp 12 + 4 12 + 16
+Dd +Drd 16 + 0 16 + 12
+λMMD 0.1 (masses only) 0.2
+λMMD increase - -
+Table 1: INN and noise-extended eINN setup and hyper-parameters, as implemented in Py-
+Torch (v1.2.0) [68].
+13
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+2 jet no ISR
+Parton Truth
+Parton cINN
+Detector Truth
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+2 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+2 jet no ISR
+Parton Truth
+Parton cINN
+Detector Truth
+0 20 40 60 80 100 120 140
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+2 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 20 40 60 80 100 120
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+2 jet no ISR
+Parton Truth
+Parton cINN
+Detector Truth
+65 70 75 80 85 90 95 100
+MW,reco [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+2 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+70 75 80 85 90 95
+MW,reco [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+Figure 6: cINNed pT,q and mW,reco distributions. Training and testing events include exactly
+two jets. In the left panels we use a data set without ISR, while in the right panels we use
+the two-jet events in the full data set with ISR. The lower panels give the ratio of cINNed to
+parton-level truth.
+the larger ISR input, where it leads to a more eﬃcient training. After this preprocessing, the
+detector information is passed to the functions si and ti in Eq.(13), which now depend on
+14
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+10 15 20 25 30 35 40 45 50
+pT,q 1 [GeV]
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+events normalized
+cINN eINN
+FCGAN
+single detector event
+3200 unfoldings
+Parton Truth
+0.0 0.2 0.4 0.6 0.8 1.0
+quantile pT, q1
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+fraction of events
+cINN
+eINN FCGAN
+Figure 7: Left: illustration of the statistical interpretation of unfolded events for one event.
+Right: calibration curves for pT,q 1 extracted from the FCGAN and the noise-extended eINN,
+as shown in Fig. 4, and the cINN.
+the input, the output, and on the ﬁxed condition. Since the invertibility of the network is
+independent of the values ofsi andti, the network remains invertible between the parton-level
+events{xp} and the random variables{r}. This feature stabilizes the training. The cINN loss
+function is motivated by the simple argument that for the correct set of network parameters
+θ describing si and ti we maximize the (posterior) probability p(θ|xp,x d) or minimize
+L =−⟨ logp(θ|xp,x d)⟩xp∼Pp,xd∼Pd
+=−⟨ logp(xd|xp,θ ) + logp(θ|xp)− logp(xd|xp)⟩xp∼Pp,xd∼Pd
+=−⟨ logp(xd|xp,θ )⟩xp∼Pp,xd∼Pd
+− logp(θ) + const.
+=−
+⟨
+logp(g(xp,x d)) + log
+⏐⏐⏐⏐
+∂g(xp,x d)
+∂xp
+⏐⏐⏐⏐
+⟩
+xp∼Pp,xd∼Pd
+− logp(θ) + const.,
+(18)
+where we ﬁrst use Bayes’ theorem, then ignore all terms irrelevant for the minimization, and
+ﬁnally apply a simple coordinate transformation for the bijective mapping. The last term is
+a simple weight regularization, while the ﬁrst two terms are called the maximum likelihood
+loss. Since we impose the latent distribution of the random variable p(g(xp,x d)) to produce
+a normal distribution centered around zero and with width one, the ﬁrst term becomes
+logp(g(xp,x d)) =−||g(xp,x d))||2
+2
+2 . (19)
+The ﬁnal network setup after tuning of the hyper-paramaeters are liste In Tab. 2. We veriﬁed
+that the network performance is stable under small changes of these parameters.
+In the left panels of Fig. 6 we show the unfolding performance of the cINN, trained and
+tested on the same exclusive 2-jet events as the simpler INNs in Fig. 3. Unlike the naive and
+15
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+the noise-extended INNs we cannot evaluate the cINN in both direction, detector simulation
+and unfolding, so we focus on the detector unfolding. The agreement between parton-level
+truth and the INN-unfolded distribution is around 10% for the bulk of the pT distributions,
+with the usual larger relative deviations in the tails. An interesting feature is still the cut
+pT,j > 20 GeV at the detector level, because it leads to a slight shift in the peak of the pT,j 2
+distribution. Finally, the reconstructed invariant W -mass and the physical W -width agree
+extremely well with the Monte Carlo truth owing to the MMD loss.
+As in Fig. 4 we can interpret the unfolding output for a given detector-level event sta-
+tistically. First, in the left panel of Fig. 7 we show a single event and how the FCGAN,
+INN, and cINN output is distributed in parton level phase space ∗. The separation between
+truth and sampled distributions does not have any signiﬁcance, but we see that the cINN
+inherits the beneﬁcial features of the noise-extended eINN. In the right panel of Fig. 7 we
+again reconstruct the individual probability distribution from the unfolding numerically. We
+then determine the position of the parton-level truth in its respective probability distribu-
+tion for the INN and the cINN. We expect a given percentage of the 1500 events to fall into
+the correct quantile of its respective probability distribution. The corresponding calibration
+curve for the cINN is added to the right panel of Fig. 7, indicating that without additional
+calibration the output of the cINN unfolding can be interpreted as a probability distribution
+in parton-level phase space for a single detector-level event, as always assuming an unfolding
+model. Instead of the transverse momentum of the harder parton-level quark we could use
+any other kinematic distribution at parton level. This marks the ﬁnal step for a statistically
+interpretable unfolding.
+4 Unfolding with jet radiation
+In the previous chapter we use a simpliﬁed data set to explore diﬀerent possibilities to unfold
+detector level information with invertible networks. We limit the data to events with exactly
+two jets, by switching oﬀ initial state radiation (ISR). This guarantees that the two jets come
+from the W -decay, so the network does not have to learn this feature. In a realistic QCD
+environment we do not have that information, because additional QCD jets will be radiated
+oﬀ the initial and ﬁnal state partons. In this section we demonstrate how we can unfold a
+sample of events including ISR and hence with a variable number of jets. We know that
+with very few exceptions [69, 70] the radiation of QCD jets does not help us understand the
+nature of the hard process. In such cases, we would like to interpret a measurement with an
+appropriately deﬁned hard process, leading to the question if an unfolding network can invert
+detector eﬀects and QCD jet radiation. Technically, this means inverting jet radiation and
+kinematic modiﬁcations to the hard process as, in our case, done by Pythia.
+We emphasize that this approach requires us to deﬁne a speciﬁc hard process with any
+number of external jets and other features. We can illustrate this choice for two examples.
+First, a di-tau resonance search typically probes the hard process pp→ µ+µ− +X, where
+X denotes any number of additional, analysis-irrelevant jets. We invert the corresponding
+∗Throughout this paper we only compare to the FCGAN analysis [48], which we fully control. For standard
+unfolding methods used by ATLAS and CMS and for the new Omnifold method [46] we refrain from comments
+which would need to be based on an in-depth comparison.
+16
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+measurements to the partonic processpp→µ+µ−. A similar mono-jet analysis instead probes
+the process pp→ Z′j(j) +X, where Z′ is a dark matter mediator decaying to two invisible
+dark matter candidate. Depending on the analysis, the relevant process to invert is pp→Z′j
+orpp→Z′jj, where a reported missing transverse momentum recoils against one or two hard
+jets. Because our inversion network in trained on Monte Carlo data, we automatically deﬁne
+the appropriate hard process when generating the training data. This covers any combination
+of signal and background matrix elements contributing to such a hard process, even non-SM
+processes to quantify a remaining model dependence. A ﬁnal caveat — in the hard process we
+do not include subjet aspects at this stage. As long as subjet information is used for tagging
+purposes it factorizes from the hard process information and can easily be included in terms
+of eﬃciencies. A problem would arise in unfolding or inverting analyses relying on diﬀerent
+hard processes, like a fat mono-jet analysis, where the above choice of recoil jets is left to a
+sub-jet algorithm.
+4.1 Individual n-jet samples
+In Sec. 3.3 we have shown that our cINN can unfold detector eﬀects for ZW -production at
+the LHC. The crucial new feature of the cINN is that it provides probability distribution in
+parton-level phase space for a given detector-level event. The actual unfolding results are
+illustrated in Fig. 6, focusing on the two critical distribution known from the corresponding
+FCGAN analysis [48]. The event sample used throughout Sec. 3 includes exactly two partons
+from a W -decay with minimal phase space cuts on the corresponding jets. Strictly speaking,
+these phase space cuts are not necessary in this simulation. The correct deﬁnition of a process
+described by perturbative QCD includes a free number of additional jets,
+pp→ZW± + jets→ (𝓁−𝓁+) (jj) + jets, (20)
+Parameter cINN no ISR cINN ISR incl.
+Blocks 24 24
+Layers per block 2 3
+Units per layer 256 256
+Condition/encoder layers 2 8
+Units per condition/encoder layer 1024 1024
+Condition/encoder output dimension 256 256
+Trainable weights ∼ 2 M ∼ 10 M
+Encoder pre training epochs - 300
+Epochs 1000 900
+Learning rate 8· 10−4 8· 10−4
+Batch size 512 512
+Training/testing events 290k / 30k 620k / 160k
+Kernel widths ∼ 2, 8, 25, 67 ∼ 2, 8, 25, 67
+Dp 12 12
+Dd 16 25
+λMMD 0.5 0.04
+λMMD increase - 1.6 / 100 epochs
+Table 2: cINN setup and hyper-parameters, as implemented in PyTorch (v1.2.0) [68].
+17
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+3 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+4 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+3 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 20 40 60 80 100 120
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+4 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 20 40 60 80 100 120
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+3 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+70 75 80 85 90 95
+MW,reco [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+4 jet excl.
+Parton Truth
+Parton cINN
+Detector Truth
+70 75 80 85 90 95
+MW,reco [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+Figure 8: cINNed pT,q and mW,reco distributions. Training and testing events include exactly
+three (left) and four (right) jets from the data set including ISR.
+For the additional jets we need to include for instance a pT cut to regularize the soft and
+collinear divergences at ﬁxed-order perturbation theory. The proper way of generating events
+is therefore to allow for any number of additional jets and then cut on the number of hard jets.
+Since ISR can lead to jets with larger pT than theW -decay jets, an assignment of the hardest
+18
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+jets to hard partons does not work. We simply sort jets and partons by their respective pT
+and let the network work out their relations. We limit the number of jets to four because
+larger jet number appear very rarely and would not give us enough training events.
+Combining all jet multiplicities we use 780k events, out of which 530k include exactly two
+jets, 190k events include three jets and 60k have four or more jets. We split the data into
+80% training data and 20% test data to produce the shown plots. For the network input we
+zero-pad the event-vector for events with less than four jets and add the number of jets as
+additional information. The training samples are then split by exclusive jet multiplicity, such
+that the cINN reconstructs the 2-quark parton-level kinematics from two, three, and four jets
+at the detector level.
+As before, we can start with the sample including exactly two jets. The diﬀerence to the
+sample used before is that now one of the W -decay jets might not pass the jet pT condition
+in Eq.(11), so it will be replaced by an ISR jet in the 2-jet sample. Going back to Fig. 6 we
+see in the right panel how these events are slightly diﬀerent from the sample with only decay
+jet. The main diﬀerence is in pT,q 2, where the QCD radiation produces signiﬁcantly more soft
+jets. Still, the network learns these features, and the unfolding for the sample without ISR
+and the 2-jet exclusive sample has a similar quality. In Fig. 8 we see the same distributions
+for the exclusive 3-jet and 4-jet samples. In this case we omit the secondary panels because
+they are dominated by the statistical uncertainties of the training sample. For these samples
+the network has to extract the parton-level kinematics with two jets only from up to four jets
+in the ﬁnal state. In many cases this corresponds to just ignoring the two softest jets and
+mapping the two hardest jets on the two W -decay quarks, but from the pT,q 2 distributions in
+Fig. 6 we know that this is not always the correct solution. Especially in the critical mjj peak
+reconstruction we see that the network feels the challenge, even though the other unfolded
+distributions look ﬁne.
+4.2 Combined n-jet sample
+The obvious ﬁnal question is if our INN can also reconstruct the hard scattering process with
+its two W -decay quarks from a sample with a variable number of jets. Instead of separate
+samples as in Sec. 4.1 we now interpret the process in Eq.(20) as jet-inclusive. This means that
+the hard process includes only the two W -decay jets, and all additional jets are understood
+as jet radiation, described either by resummed ISR or by ﬁxed-order QCD corrections. The
+training sample consists of the combination of the right panels in Fig. 6 and the two panels in
+Fig. 8. This means that the network has to deal with the diﬀerent number of jets in the ﬁnal
+state and how they can be related to the two hard jets of the partonic ZW →𝓁𝓁jj process.
+The number of jets in the ﬁnal state is not given by individual hard partons, but by the jet
+algorithm and its R-separation.
+In Fig. 9 we show a set of unfolded distributions. First, we see that the pT,j thresholds
+at the detector level are corrected to allow for pT,q values to zero. Next, we see that the
+comparably ﬂat azimuthal angle diﬀerence at the parton level is reproduced to better than
+10% over the entire range. Finally, the mjj distribution with its MMD loss re-generates the
+W -mass peak at the parton level almost perfectly. The precision of this unfolding is not any
+worse than it is for the case where the number of hard partons and jets have to match and
+we only unfold the detector eﬀects.
+19
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+×10−2
+2 jet incl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 25 50 75 100 125 150 175 200
+pT,q 1 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+×10−2
+2 jet incl.
+Parton Truth
+Parton cINN
+Detector Truth
+0 20 40 60 80 100 120
+pT,q 2 [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+1
+σ
+dσ
+dφq1−φq2
+×10−1
+2 jet incl.
+Parton Truth
+Parton cINN
+Detector Truth
+−0.5 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+φq1− φq2
+0.8
+1.0
+1.2
+cINN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+×10−1
+2 jet incl.
+Parton Truth
+Parton cINN
+Detector Truth
+70 75 80 85 90 95
+MW,reco [GeV]
+0.8
+1.0
+1.2
+cINN
+Truth
+Figure 9: cINNed example distributions. Training and testing events include two to four jets,
+combining the samples from Fig. 6 and Fig. 8 in one network. At the parton level there exist
+only two W -decay quarks.
+In Fig. 10 we split the unfolded distributions in Fig. 9 by the number of 2, 3, and 4 jets
+in the detector-level events. In the ﬁrst two panels we see that the transverse momentum
+spectra of the hard partons are essentially independent of the QCD jet radiation. In the
+language of higher-order calculations this means that we can describe extra jet radiation
+with a constant K-factor, if necessary with the appropriate phase space mapping. Also the
+reconstruction of the W -mass is not aﬀected by the extra jets, conﬁrming that the neural
+network correctly identiﬁes the W -decay jets and separates them from the ISR jets. Finally,
+we test the transverse momentum conservation at the unfolded parton level. Independent
+of the number of jets in the ﬁnal state the energy and momentum for the pre-deﬁned hard
+process is conserved at the 10−4 level. The kinematic modiﬁcations from the ISR simulation
+are unfolded correctly, so we can compute the matrix element for the hard process and use it
+for instance for inference.
+20
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+20 40 60 80 100 120 140
+pT,q 1 [GeV]
+10−4
+10−3
+10−2
+1
+σ
+dσ
+dpT,q1
+[GeV−1]
+cINN vs Truth
+2 jet
+3 jet
+4 jet
+10 20 30 40 50 60 70 80
+pT,q 2 [GeV]
+10−4
+10−3
+10−2
+1
+σ
+dσ
+dpT,q2
+[GeV−1]
+cINN vs Truth
+2 jet
+3 jet
+4 jet
+60 65 70 75 80 85 90 95 100
+MW,reco [GeV]
+10−4
+10−3
+10−2
+10−1
+1
+σ
+dσ
+dMW,reco
+[GeV−1]
+cINN vs Truth
+2 jet
+3 jet
+4 jet
+-2.0 -1.5 -1.0 -0.5 0.0 0.5 1.0 1.5 2.0∑
+px
+/∑
+|px| ×10−4
+101
+102
+103
+104
+1
+σ
+dσ
+d∑
+px /∑
+|px|
+[GeV−1]
+cINN
+2 jet
+3 jet
+4 jet
+Figure 10: cINNed example distributions. Training and testing events include two to four
+events, combining the samples from Fig. 6 and Fig. 8 in one network. The parton-level events
+are stacked by number of jets at detector level.
+5 Outlook
+We have shown how an invertible network (INN) and in particular a conditional INN can be
+used to unfold detector eﬀects for the simple example process of ZW → 𝓁𝓁jj production at
+the LHC. The cINN is not only able to unfold the process over the entire phase space, it also
+gives correctly calibrated posterior probability distributions over parton-level phase space for
+given detector-level events. This feature is new even for neural network unfolding.
+Next, we have extended the unfolding to a variable number of jets in the ﬁnal state.
+This situation will automatically appear whenever we include higher-order corrections in
+perturbative QCD for a given hard process. The hard process at parton level is deﬁned
+at the training level. We ﬁnd that the cINN also unfolds QCD jet radiation in the sense that
+it identiﬁes the ISR jets and corrects the kinematics of the hard process to ensure energy-
+momentum conservation in the hard scattering.
+In combination, these features should enable analysis techniques like the matrix element
+method and eﬃcient ways to communicate analysis results including multi-dimensional kine-
+matic distributions. While the ZW production process used in this analysis, we expect these
+21
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+results to carry over to more complex processes with intermediate particles [21] and the im-
+pact of a SM-training hypothesis should be under control [48], the next step will be to test
+this new framework in a realistic LHC example with proper precision predictions and a focus
+on uncertainties. As for any analysis method suitable for the coming LHC runs, the challenge
+will be to control the full uncertainty budget at the per-cent level. †
+Acknowledgments
+We would like to thank Ben Nachman for great discussions and Hans-Christian Schultz-
+Coulon for the experimental encouragement. RW and MB acknowledge support by the
+IMPRS-PTFS. The research of AB, MB, and TP is supported by the Deutsche Forschungsge-
+meinschaft (DFG, German Research Foundation) under grant 396021762 – TRR 257 Particle
+Physics Phenomenology after the Higgs Discovery . GK acknowledges support by the DFG
+under Germany’s Excellence Strategy – EXC 2121 Quantum Universe – 390833306 .
+References
+[1] J. Campbell, J. Huston, and F. Krauss, The Black Book of Quantum Chromodynamics .
+Oxford University Press, 2017.
+[2] K. Kondo, J. Phys. Soc. Jap. 57 (1988) 4126.
+[3] T. Martini and P. Uwer, JHEP 09 (2015) 083, arXiv:1506.08798 [hep-ph].
+[4] A. V. Gritsan, R. R¨ ontsch, M. Schulze, and M. Xiao, Phys. Rev. D94 (2016) 5, 055023,
+arXiv:1606.03107 [hep-ph].
+[5] T. Martini and P. Uwer, JHEP 05 (2018) 141, arXiv:1712.04527 [hep-ph].
+[6] M. Kraus, T. Martini, and P. Uwer, Phys. Rev. D100 (2019) 7, 076010,
+arXiv:1901.08008 [hep-ph].
+[7] S. Prestel and M. Spannowsky, Eur. Phys. J. C79 (2019) 7, 546, arXiv:1901.11035
+[hep-ph].
+[8] K. Cranmer, J. Brehmer, and G. Louppe, arXiv:1911.01429 [stat.ML].
+[9] CMS Collaboration, Eur. Phys. J. C75 (2015) 11, 542, arXiv:1505.04480 [hep-ex].
+[10] ATLAS Collaboration, Eur. Phys. J. C76 (2016) 10, 538, arXiv:1511.04716 [hep-ex].
+[11] L. Ardizzone, J. Kruse, S. Wirkert, D. Rahner, E. W. Pellegrini, R. S. Klessen,
+L. Maier-Hein, C. Rother, and U. K¨ othe, arXiv:1808.04730 [cs.LG].
+[12] L. Dinh, J. Sohl-Dickstein, and S. Bengio, arXiv:1605.08803 [cs.LG].
+[13] D. P. Kingma and P. Dhariwal, arXiv:1807.03039 [stat.ML].
+†We are very happy to share our code upon request, if colleagues are interested in tackling any such open
+questions.
+22
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+[14] M. D. Klimek and M. Perelstein, arXiv:1810.11509 [hep-ph].
+[15] J. Bendavid, arXiv:1707.00028 [hep-ph].
+[16] F. Bishara and M. Montull, arXiv:1912.11055 [hep-ph].
+[17] S. Badger and J. Bullock, arXiv:2002.07516 [hep-ph].
+[18] S. Otten et al. , arXiv:1901.00875 [hep-ph].
+[19] B. Hashemi, N. Amin, K. Datta, D. Olivito, and M. Pierini, arXiv:1901.05282 [hep-ex].
+[20] R. Di Sipio, M. Faucci Giannelli, S. Ketabchi Haghighat, and S. Palazzo, JHEP 08
+(2020) 110, arXiv:1903.02433 [hep-ex].
+[21] A. Butter, T. Plehn, and R. Winterhalder, SciPost Phys. 7 (2019) 075,
+arXiv:1907.03764 [hep-ph].
+[22] Y. Alanazi, N. Sato, T. Liu, W. Melnitchouk, M. P. Kuchera, E. Pritchard,
+M. Robertson, R. Strauss, L. Velasco, and Y. Li, arXiv:2001.11103 [hep-ph].
+[23] A. Butter, T. Plehn, and R. Winterhalder, arXiv:1912.08824 [hep-ph].
+[24] M. Paganini, L. de Oliveira, and B. Nachman, Phys. Rev. Lett. 120 (2018) 4, 042003,
+arXiv:1705.02355 [hep-ex].
+[25] M. Paganini, L. de Oliveira, and B. Nachman, Phys. Rev. D97 (2018) 1, 014021,
+arXiv:1712.10321 [hep-ex].
+[26] P. Musella and F. Pandolﬁ, Comput. Softw. Big Sci. 2 (2018) 1, 8, arXiv:1805.00850
+[hep-ex].
+[27] M. Erdmann, L. Geiger, J. Glombitza, and D. Schmidt, Comput. Softw. Big Sci. 2
+(2018) 1, 4, arXiv:1802.03325 [astro-ph.IM].
+[28] M. Erdmann, J. Glombitza, and T. Quast, Comput. Softw. Big Sci. 3 (2019) 4,
+arXiv:1807.01954 [physics.ins-det].
+[29] ATLAS Collaboration, Tech. Rep. ATL-SOFT-PUB-2018-001, CERN, Geneva, Jul,
+2018.
+[30] ATLAS Collaboration, A. Ghosh, Tech. Rep. ATL-SOFT-PUB-2019-007, CERN,
+Geneva, Jun, 2019.
+[31] D. Belayneh et al. , arXiv:1912.06794 [physics.ins-det].
+[32] E. Buhmann, S. Diefenbacher, E. Eren, F. Gaede, G. Kasieczka, A. Korol, and
+K. Kr¨ uger, arXiv:2005.05334 [physics.ins-det].
+[33] E. Bothmann and L. Debbio, JHEP 01 (2019) 033, arXiv:1808.07802 [hep-ph].
+[34] L. de Oliveira, M. Paganini, and B. Nachman, Comput. Softw. Big Sci. 1 (2017) 1, 4,
+arXiv:1701.05927 [stat.ML].
+23
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+[35] J. W. Monk, JHEP 12 (2018) 021, arXiv:1807.03685 [hep-ph].
+[36] A. Andreassen, I. Feige, C. Frye, and M. D. Schwartz, Eur. Phys. J. C79 (2019) 2, 102,
+arXiv:1804.09720 [hep-ph].
+[37] J. Lin, W. Bhimji, and B. Nachman, JHEP 05 (2019) 181, arXiv:1903.02556 [hep-ph].
+[38] D. J. Rezende and S. Mohamed, arXiv:1505.05770 [stat.ML].
+[39] G. Papamakarios, E. Nalisnick, D. J. Rezende, S. Mohamed, and B. Lakshminarayanan,
+arXiv:1912.02762 [stat.ML].
+[40] I. Kobyzev, S. Prince, and M. A. Brubaker, arXiv:1908.09257 [stat.ML].
+[41] T. M¨ uller, B. McWilliams, F. Rousselle, M. Gross, and J. Nov´ ak, arXiv:1808.03856
+[cs.LG].
+[42] E. Bothmann, T. Janßen, M. Knobbe, T. Schmale, and S. Schumann, arXiv:2001.05478
+[hep-ph].
+[43] C. Gao, J. Isaacson, and C. Krause, arXiv:2001.05486 [physics.comp-ph].
+[44] C. Gao, S. H¨ oche, J. Isaacson, C. Krause, and H. Schulz, Phys. Rev. D 101 (2020) 7,
+076002, arXiv:2001.10028 [hep-ph].
+[45] B. Nachman and D. Shih, arXiv:2001.04990 [hep-ph].
+[46] A. Andreassen, P. T. Komiske, E. M. Metodiev, B. Nachman, and J. Thaler, Phys. Rev.
+Lett. 124 (2020) 18, 182001, arXiv:1911.09107 [hep-ph].
+[47] K. Datta, D. Kar, and D. Roy, arXiv:1806.00433 [physics.data-an].
+[48] M. Bellagente, A. Butter, G. Kasieczka, T. Plehn, and R. Winterhalder, SciPost Phys.
+8 (2020) 4, 070, arXiv:1912.00477 [hep-ph].
+[49] L. Ardizzone, C. L¨ uth, J. Kruse, C. Rother, and U. K¨ othe, arXiv:1907.02392 [cs.CV].
+[50] C. Winkler, D. Worrall, E. Hoogeboom, and M. Welling, arXiv:1912.00042 [cs.LG].
+[51] N. D. Gagunashvili, arXiv:1004.2006 [physics.data-an].
+[52] F. Spano, EPJ Web Conf. 55 (2013) 03002.
+[53] A. Glazov, arXiv:1712.01814 [physics.data-an].
+[54] G. Cowan, Conf. Proc. C 0203181 (2002) 248.
+[55] V. Blobel, Unfolding Methods in Particle Physics . Jan, 2011.
+[56] R. Balasubramanian, L. Brenner, C. Burgard, G. Cowan, V. Croft, W. Verkerke, and
+P. Verschuuren, arXiv:1910.14654 [physics.data-an].
+[57] L. B. Lucy, Astronomical Journal 79(6) (1974) 745.
+24
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+[58] G. Zech, Nuclear Instruments and Methods in Physics Research Section A:
+Accelerators, Spectrometers, Detectors and Associated Equipment 716 (Jul, 2013) 1–9,
+arXiv:1210.5177 [physics.data-an].
+[59] G. D’Agostini, Nucl. Instrum. Meth. A362 (1995) 487.
+[60] J. Alwall et al. , JHEP 07 (2014) 079, arXiv:1405.0301 [hep-ph].
+[61] T. Sj¨ ostrand, S. Ask, J. R. Christiansen, R. Corke, N. Desai, P. Ilten, S. Mrenna,
+S. Prestel, C. O. Rasmussen, and P. Z. Skands, Comput. Phys. Commun. 191 (2015)
+159, arXiv:1410.3012 [hep-ph].
+[62] DELPHES 3, J. de Favereau, C. Delaere, P. Demin, A. Giammanco, V. Lemaˆ ıtre,
+A. Mertens, and M. Selvaggi, JHEP 02 (2014) 057, arXiv:1307.6346 [hep-ex].
+[63] M. Cacciari, G. P. Salam, and G. Soyez, JHEP 04 (2008) 063, arXiv:0802.1189 [hep-ph].
+[64] M. Cacciari, G. P. Salam, and G. Soyez, Eur. Phys. J. C 72 (2012) 1896,
+arXiv:1111.6097 [hep-ph].
+[65] L. Dinh, D. Krueger, and Y. Bengio, arXiv:1410.8516 [cs.LG].
+[66] I. J. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair,
+A. Courville, and Y. Bengio, arXiv:1406.2661 [stat.ML].
+[67] M. Mirza and S. Osindero, arXiv:1411.1784 [cs.LG].
+[68] A. Paszke et al. , arXiv:1912.01703 [cs.LG].
+[69] T. Plehn, D. L. Rainwater, and D. Zeppenfeld, Phys. Rev. Lett. 88 (2002) 051801,
+arXiv:hep-ph/0105325.
+[70] M. R. Buckley, T. Plehn, and M. J. Ramsey-Musolf, Phys. Rev. D 90 (2014) 1, 014046,
+arXiv:1403.2726 [hep-ph].
+25

@@ -1,0 +1,1340 @@
+Unpaired Image Translation to Mitigate Domain
+Shift in Liquid Argon Time Projection Chamber
+Detector Responses
+Yi Huang, Dmitrii Torbunov, Brett Viren, Haiwang Yu, Jin
+Huang, Meifeng Lin, Yihui Ren‡
+Brookhaven National Laboratory, Upton, NY, USA
+{yhuang2,dtorbunov,bviren,hyu,jhuang,mlin,yren}@bnl.gov
+Abstract.
+Deep learning algorithms often are developed and trained on a training dataset
+and deployed on test datasets. Any systematic difference between the training and
+a test dataset may severely degrade the final algorithm performance on the test
+dataset—what is known as the domain shift problem . This issue is prevalent in many
+scientific domains where algorithms are trained on simulated data but applied to
+real-world datasets. Typically, the domain shift problem is solved through various
+domain adaptation methods. However, these methods are often tailored for a specific
+downstream task, such as classification or semantic segmentation, and may not easily
+generalize to different tasks. This work explores the feasibility of using an alternative
+way to solve the domain shift problem that is not specific to any downstream algorithm.
+The proposed approach relies on modern Unpaired Image-to-Image (UI2I) translation
+techniques, designed to find translations between different image domains in a fully
+unsupervised fashion. In this study, the approach is applied to a domain shift problem
+commonly encountered in Liquid Argon Time Projection Chamber (LArTPC) detector
+research when seeking a way to translate samples between two differently distributed
+LArTPC detector datasets deterministically. This translation allows for mapping real-
+world data into the simulated data domain where the downstream algorithms can be
+run with much less domain-shift-related performance degradation. Conversely, using
+the translation from the simulated data to a real-world domain can increase the realism
+of the simulated dataset and reduce the magnitude of any systematic uncertainties.
+To evaluate the quality of the translations, we use both pixel-wise metrics and a
+downstream task to measure the effectiveness of UI2I methods for mitigating the
+domain shift problem. We adapted several popular UI2I translation algorithms to work
+on scientific data and demonstrated the viability of these techniques for solving the
+domain shift problem with LArTPC detector data. To facilitate further development of
+domain adaptation techniques for scientific datasets, the “Simple Liquid-Argon Track
+Samples” (SLATS) dataset used in this study is also published.
+‡ corresponding author. Email: yren@bnl.gov.
+arXiv:2304.12858v4  [hep-ex]  10 Oct 2024
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 2
+photographic images
+scientific data
+Domain A Domain B
+: Neural translator
+Figure 1. Learning to translate without pairing. An unpaired translation
+problem features two domains with samples that are not paired, e.g., cats and dogs.
+For an input image from the source domain, a neural translation algorithm needs
+to produce translations resembling samples in the target domain. In the meantime,
+the translations must retain certain consistency with their input. The first row
+demonstrates that a deep neural network model can be trained to translate cats
+into lifelike yet nonexistent dogs while maintaining features such as fur color patterns
+and facial orientations. Our work investigates if UI2I translation can be adapted to
+translate between two domains of LArTPC images.
+1. Introduction
+Deep Learning (DL) methods are finding widespread and unprecedented applications
+in multiple areas of science and technology. Constructing supervised DL models
+requires access to large volumes of properly labeled, high-quality real-world data.
+However, labeling real-world scientific data is often difficult, costly, or otherwise
+impossible [1, 2, 3, 4]. To workaround the issue, many scientific domains resort to
+using simulation as a means of obtaining large quantities of labeled data. Although this
+approach solves the lack of labeled data problem, it introduces another challenge. As
+there often exists systematic differences between the simulated and real-world data, a
+DL algorithm trained on a simulated dataset can exhibit degraded performance when it
+is applied to real-world data. This issue is known as the domain shift problem [5, 1, 6, 7].
+In this work, we consider tackling the typical domain shift problem in Liquid Argon
+Time Projection Chamber (LArTPC) detector research. LArTPC is a particle tracking
+and calorimetry detector technology [8, 9, 10] that forms the basis for detectors used
+by experiments such as MicroBooNE [11], ProtoDUNE [12], and the next-generation
+DUNE [13]. As with other detector technologies, obtaining human labels for real-
+world detector data is prohibitively costly. Therefore, physicists rely on scientific
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 3
+detector simulations to generate labeled data and develop analysis algorithms. While
+the manually designed analysis algorithms are continuously tested to ensure they are
+minimally affected by the domain shift problem, domain shift remains a serious concern
+for DL algorithms. It has sparked numerous debates, significantly slowed adoption of DL
+methods to LArTPC detector analysis, and driven the search for alternative solutions.
+Typically, the domain shift problem is solved using various domain adaptation
+(DA) algorithms [14, 7, 1, 15]. DA techniques are created to enable DL algorithms
+to perform effectively on novel domains distinct from those where they are trained.
+However, LArTPC data analysis workflows make it difficult to apply traditional DA
+techniques. The primary obstacle is that state-of-the-art DA methods [16, 17, 18] are
+tightly coupled to a specific downstream task affected by the domain shift problem.
+LArTPC data analysis chains can employ dozens of different reconstruction algorithms
+possibly affected by the domain shift. This requires developing and testing dozens more
+DA methods, i.e., one for each downstream algorithm. Moreover, new LArTPC data
+analysis algorithms are constantly being developed, which requires designing even more
+new DA methods. Thus, it is not feasible to directly apply the traditional DA approaches
+to LArTPC data analysis.
+Here, we consider the viability of using Unpaired Image-to-Image (UI2I) translation
+methods to address the domain shift problem on LArTPC data. UI2I translation
+methods are developed for finding translations between different domains of images
+in a fully unsupervised way [19, 20, 21, 22, 23]. For instance, the top row of Figure 1
+illustrates the operation of a UI2I translation algorithm for the cat-to-dog translation.
+In the training phase, a UI2I translation algorithm receives random images from the
+two domains: cats and dogs. Notably, the UI2I translation algorithm is not given what
+exactly the correct translation of a particular cat should look like. Thus, the algorithm
+is called “unpaired.” Instead, the algorithm attempts to find some common “content”
+between the two domains and learns to perform a cat-to-dog translation while preserving
+the “content.” Once the algorithm is trained, it can transform an arbitrary image of a
+cat into an image of a dog where the original cat and generated dog are related on some
+fundamental level (share the same “content”).
+The key question we try to answer is whether the UI2I translation methods are
+capable of learning the proper “content” and finding the “correct” translation between
+two domains of LArTPC data: domain A representing simulation and domain B
+denoting the real-world data. This question is nontrivial as there is an infinite number
+of possible translations between the two domains mathematically, while only a small
+fraction of them is correct. The UI2I translation literature frequently overlooks the
+question of whether or not the image content is preserved during the translation or relies
+on subjective measures of the content [24]. Applying the UI2I translation methods to
+scientific data requires much stronger guarantees of the translation’s correctness. In this
+work, we investigate the ability of several UI2I translation models to learn the LArTPC
+translations and compare their performance.
+If the UI2I translation methods are capable of finding the correct translations
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 4
+between the data domains, then the B→ A translation can be used for DA purposes.
+For instance, if an algorithm ϕ is trained on the A domain and applied to an image b
+from the B domain, the domain shift problem would manifest. However, if image b is
+first translated toward the domain A with the help of a UI2I translation algorithm, ϕ
+can be applied on the translated image, mitigating domain shift effects.
+On the other hand, the correct A→ B translation can be used to enhance the
+realism of the simulated data. Performing such a translation on a simulated A dataset
+will produce a more realistic B′ dataset, which has several potential applications:
+• It can be used to increase the fidelity of the simulation for the subsequent data
+analysis.
+• LArTPC analysis algorithms can be developed on the translated B′ data instead of
+the original simulated A data. This has the potential to make the algorithms less
+affected by the domain shift effects.
+• TheB′ dataset is produced from A by a UI2I translation algorithm. Therefore, for
+each b′ in B′, we know its source image a in A. Comparing b′ to its source a will
+allow for directly observing systematic differences between the simulation and real-
+world data on a sample-by-sample basis. Without such an A→B correspondence,
+scientists can only observe systematic differences by comparing averages over the
+entire dataset.
+• Likewise, an A→ B pairing can be used to estimate the sensitivity of various
+downstream algorithmsϕ to the systematic differences between the simulation and
+real-world data by computing ϕ(a)−ϕ(b′).
+Unfortunately, it is difficult to evaluate UI2I translation methods on real data. For
+this to be possible, for each real detector data image, a matching simulation image
+should be generated with the same physics. Afterwards, the simulated image would be
+translated to see if the outcome matches the matching real image. However, extracting
+the physics ground truth, such as particle momentum, from real-world LArTPC data
+requires meticulous and time-consuming analysis from a large scientific collaboration.
+Thus, we consider a surrogate problem, where both A and B domains are populated
+by the simulated data with controllable differences between the domains . Using the
+simulation will allow for making accurate judgments about the translation quality.
+For this study, we created the Simple Liquid-Argon Track Samples (SLATS) dataset
+featuring two domains: A and B. The A domain is populated by a LArTPC detector
+simulation with a simplified version of the detector response to the particle activity
+within it. The B domain is populated by a LArTPC detector simulation with a more
+realistic version of the detector response. Incorrect simulation of the detector response
+is a known source of systematic errors in the LArTPC detector analysis. Thus, the
+SLATS dataset illustrates a common source of the domain shift problem encountered
+in LArTPC detector research. To facilitate the accurate evaluation of the translation’s
+accuracy, the test portion of the SLATS dataset has an explicit pairing between the A
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 5
+andB domains. That is, for each test image in the A domain, we know exactly how its
+translation should appear in the B domain and vice versa.
+We evaluate the correctness of the resulting UI2I translations via three methods.
+First, we use the explicit pairing of the test part of the SLATS dataset to perform
+pixel-wise comparisons of the translated images to their ground truth. Second, we rely
+on a downstream production-grade signal processing algorithm to extract the physical
+content of the images. This algorithm is especially sensitive to the domain shift problem.
+Finally, we study whether the UI2I methods can improve the performance of a supervised
+DL algorithm affected by the domain shift on the SLATS dataset.
+The remainder of this paper is organized as follows. In Section 2, we briefly describe
+how a LArTPC detector works and the construction of the SLATS dataset. In Section 3,
+we review a selection of UI2I translation algorithms suitable for LArTPC data. In
+Section 4, we evaluate the quality of translated images. Finally, in the discussion section,
+we summarize our findings and suggest future directions of research.
+Main Contributions
+• We show the feasibility of using UI2I translation techniques to perform domain
+translation on LArTPC data. The four UI2I translation algorithms studied in this
+work manage to correctly capture the “content” of the data and preserve it during
+the domain translation.
+• We demonstrate that UI2I translation techniques can be used to reliably mitigate
+the domain shift effects on LArTPC data and can provide up to 80% reduction in
+domain shift error of a downstream signal processing algorithm.
+• Likewise, we show that UI2I translation methods can be used to improve the
+realism of the LArTPC simulation, suggesting the viability of using UI2I translation
+methods as a post-processing step to obtain a more realistic simulation.
+• We release a SLATS dataset demonstrating the common source of the LArTPC
+detector domain shift in a controllable manner. The dataset also displays unique
+features of scientific datasets not commonly shared by natural images, such as signal
+sparsity, lack of upper/lower limits on pixel values, and exact knowledge of the
+correct translations. This dataset is expected to help with the future development
+of additional scientifically sound domain translation algorithms.
+• Finally, we compare the translation performance of four UI2I translation methods
+(CycleGAN [20], ACL-GAN [22], U-GAT-IT [23], UVCGAN [21]) on the SLATS
+dataset. Our results demonstrate that the UVCGAN algorithm significantly
+outperforms other methods across a wide range of metrics, and introduces the least
+amount of artifacts into the translated data. These results suggest that UVCGAN
+may serve as an effective basis for further development of UI2I translation methods
+in scientific data processing.
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 6
+Cathode 
+Plane
+Edrift 
+U V Y
+Liquid Argon TPC
+Y wire plane waveforms
+V wire plane waveforms
+Sense Wires
+t
+Incoming Neutrino
+Charged Particles
+Figure 2. Signal formation in a three-wire plane LArTPC. An illustration
+from [25]. LArTPC detectors enclose a volume of liquid argon. Energetic charged
+particles ionize electrons from nearby argon atoms as they pass through the volume.
+An external electric field causes the electrons to drift toward the detector’s readout.
+The readout consists of three parallel planes of sense wires. Each wire plane generates
+one tomographic view of the tracks. The 3D particle tracks can then be reconstructed
+by combining the three tomographic views.
+2. The two-domain SLATS dataset
+Released with this study, the SLATS dataset has two domains, each populated by a
+variant of a LArTPC detector simulation used in the ProtoDUNE-SP experiment [26,
+27]. The two domains differ in precisely one feature—the response function. This section
+discusses how the SLATS dataset is generated and preprocessed.
+2.1. LArTPC overview
+LArTPC detectors enclose a volume of liquid argon (Figure 2). Energetic charged
+particles, like those produced from the interaction between a neutrino and an argon
+nucleus, pass through the volume. As they move, these particles ionize electrons from
+nearby argon atoms. An external electric field causes these electrons to drift through the
+liquid argon toward the detector’s readout side. The readout of the detector comprises
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 7
+⊗
+⊗
+A. ionization electron
+distribution
+time (µs)
+40
+20
+0
+−20
+−40
+2D response function
+for domain B
+time (µs)
+40
+20
+0
+−20
+−40
+quasi-1D response function
+for domain A
+B. field response function
+ C. ADC waveform
+Figure 3. Response functions and ADC waveforms. The ionization electron
+distribution (Panel A) is convolved with two types of response functions to produce
+the SLATS dataset’s two domains. The 2D response (Panel B top) is used to produce
+domain B samples, while the quasi-1D response (Panel B bottom) is used to create
+domain A samples. The quasi-1D data are constructed by masking the 2D response
+so all contributions from neighboring wires are removed. Panel C shows examples of
+the ADC waveforms used as input to the translation algorithm.
+three parallel planes (U, V, and Y) of parallel sense wires, oriented in complementary
+directions. Each wire plane generates a readout, called an ADC waveform, that can be
+interpreted as one tomographic view of the particle’s tracks. A tomographic view is a
+two-dimensional (2D) image with one dimension in space and the other in time. When
+the three tomographic views are combined, the three-dimensional (3D) tracks of the
+energized charged particles can be reconstructed.
+In this work, the images used to construct the SLATS dataset are the readout from
+one wire plane (the U plane). The pixel value of the images is the digitized measure (or
+ADC value) of the current induced by the ionized electrons. The measure is the result
+of a convolution between the electron distribution and a detector response [28]. The
+real detector response is a complex function of the electrostatic fields of all electrodes
+in the detector’s readout. However, in simulation and signal processing, this response is
+approximated by a simplified model. We call such an approximation aresponse function.
+2.2. Two simulated domains
+The two SLATS dataset domains, A and B, are generated by applying two different
+response functions. More precisely, for a set of simulated simple particle tracks, a low-
+fidelity quasi-one dimensional (1D) response function is applied to produce a domain A
+waveform and a high-fidelity 2D response function to produce a domain B waveform.
+The 2D model is state-of-the-art in the LArTPC community. The quasi-1D model is
+an artificially simplified model obtained by masking all contributions from neighboring
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 8
+A. full U-plane ADC waveform from domain B with center crops and tiling
+channel
+time
+channel
+time
+B1. a domain A tile B2. a domain B tile
+0 200 1000 2000
+104
+105
+106
+threshold
+signal count
+number of tiles
+C. nonzero counts
+A, 74% tiles
+below 200
+B, 72% tiles
+below 200
+Figure 4. Preprocessing for the SLATS dataset. Panel A features an example
+of a full ADC waveform of the U plane from domainB (generated with a 2D response).
+The full image has dimension (channel , time) = (800, 6000). The portion bounded by
+the red box is the center crop of dimension (768 , 5888). The center crop is divided
+into 3× 23 tiles of size (256 , 256) and shown as the gray grid. Panels B1 and B2
+show a pair of tiles in the test dataset from the domain A (generated with a quasi-1D
+response) and the domain B (generated with a 2D response), respectively. The tile in
+B2 corresponds to the highlighted tile in Panel A. The distribution of the number of
+nonzero pixels in the tiles is shown in Panel C. Tiles with less than 200 nonzero pixels
+are discarded from the SLATS dataset.
+wires in the 2D response (Figure 3). Additional information on response functions and
+track generation can be found in Appendix A.1.
+The SLATS dataset’s design was motivated by three considerations. First, in the
+absence of real detector data, the contrast between the 2D model and the quasi-1D
+model is a reasonable proxy for the systematic difference between the real detector
+response and a simulated one. Second, using identical simulation conditions except for
+response functions allows for generating paired test images. With the paired test images,
+we can evaluate a UI2I translation algorithm by directly comparing a translated image
+with its known target. Lastly, the restricted source of difference in the two domains
+facilitates understanding of the capability (and/or potential limitations) of unpaired
+neural translation. The experience gained via such a constructed scenario affords a
+proper foundation for applying UI2I translation between domains with complex sources
+of difference.
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 9
+2.3. Dataset preparation
+This study focuses on one of the three sense wire planes, namely the U plane. Figure 4A
+depicts a full U plane readout of dimension (channel , time) = (800, 6000). Because a
+majority of existing neural translation algorithms take an input size of (256 , 256), we
+use a center (768 , 5888) crop (red box) in the U plane image, and then divide it into
+3× 23 non-overlapping tiles of size (256, 256).
+Figure 4B1 and B2 show a pair of tiles from domains A and B. Two major
+differences appear between them. First, the domain B track exhibits long-range
+induction effects in both the time and space (channel) dimensions, while the A track
+shows variation only in time. This leads to domain B tracks being less compact than
+domain A. In particular, larger lobe structures can be observed at the end of domain
+B tracks, while domain A tracks end more abruptly. This can also lead to features
+in a domain B tile missing from the corresponding domain A tile, such as the small
+red lobe between the two tracks. Second, domain B has a larger neighborhood where
+the electron distribution can lead to interference patterns as evidenced by the red lobe
+above the bottom track.
+Because of the sparseness of events in the generation of SLATS, a majority of
+(256, 256) tiles are fully or nearly empty. According to the distribution of the number
+of nonzero pixels in the tiles (Figure 4C), we choose a threshold of 200 pixels (around
+the first local minimum for domain A) and reject tiles below the threshold. To keep the
+tiles paired for testing, we retain a pair in the test dataset if only both the A and B
+tiles pass the threshold. More details about the preprocessing of LArTPC simulation
+data for neural translator training can be found in Appendix A.2.
+The SLATS dataset can be downloaded from https://zenodo.org/record/
+7809108. The dataset contains both center crops and tiles. The dataset’s test part
+is paired for pairwise translation quality evaluation.
+3. Deep generative models for unpaired image translation
+As previously outlined, our goal is to apply modern UI2I translation methods to mitigate
+the domain shift problem. This section addresses the challenges in designing UI2I
+translation algorithms and describes a family of UI2I translation methods suitable for
+this task. The algorithms discussed herein are based on a Generative Neural Network
+(GAN) architecture (Section 3.1) and rely on a cycle-consistency constraint (Section 3.2)
+to ensure preservation of the important features during the translation.
+3.1. GAN for UI2I
+The first successful models for UI2I translation were built on top of the GAN
+architecture [29]. GAN models are able to learn the particular data distribution and
+synthesize new samples indistinguishable from the real data. Their main component is
+a generator network G that produces realistic-looking data from random noise. To
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 10
+a GA→B btran GB→A acyc
+cycle-consistency loss
+bGB→AatranGA→Bbcyc
+cycle-consistency loss
+DA DBa GB→A aidt
+identity loss
+b GB→A bidt
+identity loss
+generator losses
+discriminator losses
+Translation
+Loss
+Figure 5. Summary of the CycleGAN [20] model. CycleGAN consists of
+two pairs of GANs, (GA→B,DB) and (GB→A,DA). The discriminators, DA andDB,
+distinguish translations from real images, while the generators (or translators), GA→B
+andGB→A, produce realistic translations that are consistent with the source images.
+train the generator network G, GANs employ another neural network known as a
+discriminatorD. In each GAN training iteration, the discriminator D network learns to
+differentiate samples produced by the generator from the real-world data. Then, using
+the discriminator as a guide, the generator G network is trained to produce samples
+that are indistinguishable from the real-world data. In other words, the generator and
+discriminator engage in a game, throughout which the generator progressively improves
+the quality of the generated data.
+3.2. Cycle-consistent GAN
+As noted, GANs can be used to learn data distributions and produce realistic-looking
+samples from random noise. This means, in principle, a GAN can be trained to generate
+real detector data from simulated data. However, when a GAN generates a real detector
+data sample from a simulated one, it is not guaranteed to preserve any information from
+the input. The GAN can completely discard the simulated sample and produce a random
+and unrelated output that looks like real detector data. This creates a challenge for our
+LArTPC detector example as we need to generate not only realistic-looking real data
+samples, but also ensure the generated samples preserve information from the simulated
+ones. The same discussion also applies to the translation in the opposite direction.
+One approach to address this is provided by CycleGAN [20], which employs two
+GANs that work in the opposite directions as illustrated in Figure 5. By using a pair
+of GANs, a CycleGAN-like model creates translation loops, so information loss during
+translation can be properly measured.
+Specifically, we denote the two domains by A and B and the corresponding GANs
+as (GA→B,DB) and (GB→A,DA), respectively. Consider a source image a ∈ A. A
+CycleGAN-like model can translate this sample to look like those from domain B by
+using its generator GA→B. To ensure the generator GA→B preserves information about
+the source image a, CycleGAN imposes a cycle-consistency constraint, requiring that
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 11
+a cyclically translated image acyc ≡ GB→A(GA→B(a)) matches the original image a.
+In practice, this constraint is enforced by the cycle-consistency loss ∥a−acyc∥ that
+encourages the generatorsGA→B andGB→A to preserve the information. A similar loss
+function is applied for the cyclic translation starting from b∈B.
+In addition to the cycle-consistency loss, identity loss may be used to encourage the
+generator to retain features from the source that are also present in the target domain.
+For an image a∈A, the identity loss is defined as
+a−aidt, where aidt≡G B→A(a). A
+parallel formulation applies to domain B.
+3.3. CycleGAN-like UI2I translation models
+Here, we introduce three CycleGAN-like UI2I translation algorithms, ACL-GAN [22],
+U-GAT-IT [23], and UVCGAN [21], with special emphasis on the UVCGAN, or U-Net
+Vision-transformer Cycle-consistent GAN, because of its outstanding performance on
+the SLATS dataset (see Section 4).
+The motivation behind ACL-GAN is that the stringent pixel-wise cycle-consistency
+loss may be a hurdle for generators to produce drastic changes such as large shape
+changes or removing/adding large objects. To solve the problem, ACL-GAN replaces
+strong cycle-consistency loss with a weaker adversarial consistency that does not require
+the cyclically translated image to match the source exactly, merely to match the
+distribution of the source images.
+The authors of U-GAT-IT attack the problem of effective translation from another
+angle, keeping the cycle/identity-consistency loss functions in their original form as
+those in CycleGAN but renovating the generator and discriminator network structure.
+They use the class attention map to guide the generators and discriminators to focus
+on regions distinguishing between source and target domains. U-GAT-IT has achieved
+outstanding performance in translation between selfie photos and anime characters,
+which is a tough image translation task. One downside of U-GAT-IT is its model is
+bulky and slow, which may limit its application to LArTPC research should throughput
+and computing resources become pressing considerations.
+Based on this work, the UVCGAN model performs the best for translations between
+the two SLATS dataset domains. UVCGAN improves CycleGAN by renovating its
+generator network and the training procedure. The UVCGAN generator is a hybrid
+architecture of a U-Net backbone [30] with a Vision-Transformer (ViT) bottleneck [31].
+U-Net is known for its outstanding accuracy in modeling local or short-range patterns
+and its application in the segmentation of medical images. However, it may be less
+effective at capturing long-range dependencies. Conversely, based on its impressive
+performance in image classification [32], ViT excels in capturing long-range dependencies
+and semantic relationships within an image. Nevertheless, relying solely on ViT may
+be insufficient for addressing the complexity of an image translation task, a regression
+problem in nature, as it may struggle to model details. Hence, the hybrid generator
+architecture of UVCGAN amalgamates the strengths of convolution-based networks
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 12
+and ViT, striking a balance between local and long-range pattern recognition.
+3.4. Alternative models for unpaired image translation
+Numerous models have been developed for UI2I translation, primarily on non-scientific
+image datasets. The models can be categorized based on two perspectives: the DL
+paradigm the algorithm is based upon and the way that consistency is enforced. For
+example, based on the paradigm, CycleGAN [20], ACL-GAN [22], U-GAT-IT [23],
+Council-GAN [33], and UVCGAN [21] are GAN-based methods. CUT [34] adopts the
+contrastive learning paradigm. LETIT [35] utilizes the energy transport on the latent
+feature space, while EGSDE [24] and ILVR [36] are diffusion-based models. In terms
+of consistency enforcement, CycleGAN, ACL-GAN, U-GAT-IT, UVCGAN, and CUT
+impose explicit consistency constraints via loss functions, while the other methods do
+so implicitly.
+Another key feature of UI2I translation algorithms is the use of artificial randomness
+in the image generation process. Among the aforementioned models, CycleGAN,
+U-GAT-IT, UVCGAN, and CUT are deterministic, while Council-GAN, EGSDE,
+and ILVR inject randomness into image generation. Although randomness helps
+boost diversity in natural image translation tasks, as there tends to be no single
+correct translation corresponding to an input, its application to SLATS is unnecessary.
+Specifically, for this study of the idealized SLATS dataset, the map between the
+two domains is one-to-one in nature, which makes a deterministic model the more
+appropriate choice.
+Given the limitation on time and computing resources, we focus on four models that
+enforce cycle consistency explicitly because models without explicit cycle consistency
+place virtually no constraints on the output and may generate images unrelated to the
+input.
+4. Evaluation
+As part of this work, the performance of the neural translation algorithms CycleGAN,
+ACL-GAN, U-GAT-IT, and UVCGAN is evaluated on the paired test set of SLATS.
+First, we perform a direct pixel-wise comparison of the translated detector readouts
+(ADC waveform images) with their targets. This comparison will indicate the quality of
+translation on the raw detector readout level. Second, a signal processing algorithm (see
+Appendix D, and [37]) is applied to estimate physically meaningful counts of ionized
+electrons (see Section 2) from the raw detector readouts. The signal processing algorithm
+is designed to perform accurately on domain A, and it exhibits domain-shift-related
+performance degradation when applied to the data from domain B. Using the signal
+processing algorithm allows for estimating the degree to which the UI2I translation
+algorithms alleviate the domain-shift effects on physically meaningful quantities.
+Of note, making CycleGAN, ACL-GAN, U-GAT-IT, and UVCGAN work on the
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 13
+Table 1. Translation performance comparison with ℓ1 and ℓ2 differences on
+the ADC waveform. The differences are produced with the best performer of each
+algorithm. Full results with all HP settings can be found in Appendix Table E1.
+A to B B to A
+Algorithm ℓ1 ℓ2 ℓ1 ℓ2
+CycleGAN 0.074 0 .180 0.061 0 .159
+ACL-GAN 0.083 0 .566 0.039 0 .121
+U-GAT-IT 0.078 1 .187 0.073 1 .161
+UVCGAN 0.030 0 .033 0.025 0 .027
+SLATS dataset required several modifications. To explore their potential, we conducted
+a small-scale hyperparameter (HP) tuning on each of the algorithms. For simplicity, all
+results in this section are produced by the best-performing HP settings of each algorithm.
+The details regarding model modification, HP tuning, and training are available in
+Appendix B for UVCGAN and in Appendix C for the other three CycleGAN-like models.
+4.1. Translation quality evaluated on ADC waveforms
+To quantitatively estimate the quality of the ADC waveform translations, we calculate
+ℓ1 (mean absolute error) andℓ2 (mean squared error) between the translated and ground
+truth images. Table 1 summarizes the best-performing results, while the complete results
+for all HP settings can be found in Appendix Table E1.
+Two samples from the A→ B translation in Figure 6 and another two from
+the B→ A translation in Figure 7 are presented for a qualitative comparison, which
+shows all algorithms manage to reproduce the key features of the target domain in the
+translations to some extent. The features include more extended tracks and “lobe”
+structures at the track tips in the A→ B translation and compactified tracks and
+more abrupt track tips in the B→A translation (see Section 2.3). However, there are
+several noticeable defects in the translations, such as rugged track edges, large errors in
+the track center, missing “lobes” near track tips inA→B translation, and incompletely
+reduced track edges in B→A translation. That said, all of the translation algorithms
+perform reasonably well in maintaining a strong consistency with the input images.
+4.2. Translation quality evaluated on signal processing results
+The raw LArTPC detector readouts are represented as ADC waveforms. These
+waveforms are difficult to interpret and have no direct relation to the physical properties
+of the particles that created them. Therefore, instead of building detector reconstruction
+pipelines directly on such waveforms, a signal processing algorithm is run first. The
+signal processing algorithm is designed to infer the original, physically meaningful,
+distribution of ionized electrons that induced a particular waveform (cf. Section 2).
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 14
+▲
+▼
+▲
+CycleGAN ACL-GAN U-GAT-IT UVCGAN
+translatedℓ1 difference
+A (quasi-1D)B (2D)
+▲
+▼ ♦
+CycleGAN ACL-GAN U-GAT-IT UVCGAN
+translatedℓ1 difference
+A (quasi-1D)B (2D)
+Figure 6. Examples for the A → B translation. Defects appearing in the
+translations are marked as: ▼ for rugged track edge,▲ for big error in the core of the
+track where the signal is strongest, and ♦ for missing the “lobe” structure near the
+track tip.
+The recovered distributions of ionized electrons serve as a basis for the downstream
+reconstruction algorithms.
+The signal processing algorithm involves two main stages: deconvolution of an
+ADC readout and high-pass filtering. The deconvolution operation is designed to act
+as an inverse of the simulated detector response function. Therefore, it is affected
+by the domain shift, as the simulated detector response may differ from the real
+detector response. Since signal processing is the first stage of the detector reconstruction
+pipelines, its domain shift error is then propagated to downstream algorithms.
+The second stage of the signal processing algorithm is high-pass filtering. It is
+required since the bipolar nature of the deconvolution operator tends to amplify low-
+frequency noise. An adaptive high-pass filter, referred to as the signal region-of-interest
+(ROI) selection, is subsequently applied to mitigate the impact of this amplification.
+Further details of this algorithm can be found in Appendix D.
+In this study, where domainB is used as a proxy to real detector data, we naturally
+use the quasi-1D response function to design the signal process procedure and denote
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 15
+▼
+▲ ▲
+CycleGAN ACL-GAN U-GAT-IT UVCGAN
+translatedℓ1 difference
+A (quasi-1D)B (2D)
+♦
+♦
+▲ ▲ ▲
+▲
+CycleGAN ACL-GAN U-GAT-IT UVCGAN
+translatedℓ1 difference
+A (quasi-1D)B (2D)
+Figure 7. Examples for the B → A translation. Defects appearing in the
+translations are marked as: ▼ for rugged track edge,▲ for big error in the core of the
+track where the signal is strongest, and ♦ for incompletely reduced track edges.
+the signal processing as ϕA. Because domain A has a matching simulation and signal
+processing, the electron countsϕA(a) reconstructed froma∈A should match the ground
+truth electron counts (minus the random noise introduced in the signal processing
+procedure). On the contrary, because domain B is simulated and signal processed with
+different response functions, the electron counts ϕA(b) reconstructed from b∈B will be
+less accurate than its counterpart ϕA(a). The difference between ϕA(a) and ϕA(b) is an
+indicator of the severity of the domain shift problem. Consequently, the reduction in
+the difference resulting from the translation can be viewed as the extent to which the
+domain shift problem is mitigated.
+To carry out a quantitative study, we randomly sample 1000 pairs of test SLATS
+tiles. We calculate the baseline ℓ1 error ∥ϕA(a)−ϕA(b)∥1 and translation ℓ1 error
+∥ϕA (GA→B(a))−ϕA(b)∥1 and ∥ϕA (GB→A(b))−ϕA(a)∥1, where GA→B and GB→A are
+neural translators. Figure 8B and Figure 9B reveal the statistics.
+It is worth noting that because ϕA is designed based on the detector response
+function of domain A, only the comparison between ∥ϕA (GB→A(b))−ϕA(a)∥1 and
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 16
+a ∈A b ∈BGA→B(a)
+ϕA(a) ϕA(b)ϕA(GA→B(a))
+ADC
+electrons
+signal
+processing
+neural
+translation
+A. Comparing neural translations with signal processing
+baselineCycleGANACL-GANU-GAT-ITUVCGAN
+0
+5
+10
+15ℓ1 error
+B. ℓ1 on electron count
+ϕA(a) ϕA(GA→B(a)) ϕA(b)
+Translation add the artifact
+Figure 8. Signal processing study for A→ B translation. Panel A features
+a diagram of the signal processing study. A tile a from domain A is translated by
+the UVCGAN generator GA→B toGA→B(a), which resembles a’s counterpart b from
+domain B. To reconstruct the electron count, signal processing ϕA is applied to a,
+GA→B(a), and b. We zoom in on an area where ϕA(b) exhibits an artifact. Because
+the artifact is absent from ϕA(a), we know it is a result of the mismatch between
+the response function and the signal processing procedure. A similar artifact can be
+observed in the signal processed translationGA→B(a), which attests to the effectiveness
+of the translation. Panel B compares the ℓ1 errors on electron count. Comparing the
+result with Table 1 illustrates the translation quality in ADC values correlates strongly
+with post-signal processing performance.
+the baseline ∥ϕA(a)−ϕA(b)∥1 can be used to infer the extent to which a translation
+can reduce the domain-shift effect. However, ∥ϕA (GA→B(a))−ϕA(b)∥1 also is a valid
+indicator of the translation efficacy as it measures the translation’s sensitivity in
+capturing the inaccuracy resulting from the domain shift.
+These comparisons show that translations produced by all algorithms do improve
+upon the baseline with UVCGAN being the best performer in both translation
+directions. Notably, UVCGAN achieves a greater than 80% reduction inℓ1 error over the
+baseline on average for the B→A translation. Comparing the result in Table 1 shows
+that the translation quality measured in electron counts correlates strongly with those
+featuring ADC values. Additional evaluation of post-signal processing performance is
+provided in Appendix E.
+For qualitative comparison, the signal-processed results for one sample SLATS tile
+are shown in Figure 8A for the A→ B translation and Figure 9A for the B→ A
+translation. The translated images in both figures are produced by the best performer,
+UVCGAN. Due to the mismatch in response functions, the signal-processed result for a
+domainB sample may exhibit artifacts along the periphery of the tracks as exemplified
+by the area marked with the blue box. We anticipate an effective A→B translation to
+replicate the artifact, while a B→A translation should eliminate it. This expectation
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 17
+b ∈B a ∈AGB→A(b)
+ϕA(b) ϕA(a)ϕA(GB→A(b))
+ADC
+electrons
+signal
+processing
+neural
+translation
+A. Comparing neural translations with signal processing
+baselineCycleGANACL-GANU-GAT-ITUVCGAN
+0
+5
+10
+15ℓ1 error
+B. ℓ1 on electron count
+ϕA(b) ϕA(GB→A(b)) ϕA(a)
+Translation remove the artifact
+Figure 9. Signal processing study for B→ A translation. Panel A depicts a
+diagram of the signal processing study. A tile b from domain B is translated by the
+UVCGAN generator GB→A to an image GB→A(b), which resembles b’s counterpart
+a from domain A. Signal processing ϕA is applied to b, GB→A(b) and a, so the
+electron count can be reconstructed. As in Figure 8A, we zoom in on the same area
+where ϕA(b) exhibits an artifact. This shows the artifact disappears in the signal
+processed translation GB→A(b), which attests to the effectiveness of the translation.
+Panel B compares the ℓ1 errors on electron count. Comparing the result with Table 1
+demonstrates the translation quality in ADC values correlates strongly with post-signal
+processing performance.
+aligns with the translations generated by UVCGAN, where the artifact is introduced in
+ϕA(GA→B(a)) and is removed in ϕA(GB→A(b)).
+Considering the neural translation algorithm is trained in a purely data-driven
+fashion, i.e., solely based on the ADC waveform images without any input or constraints
+from physics or downstream applications, these are promising results.
+4.3. Domain shift mitigation for a supervised learning algorithm
+In this section, we investigate the effectiveness of UI2I translation techniques in
+mitigating the domain shift problem in a supervised learning context. Specifically,
+we design a supervised DL regression model to predict the number of ionized electrons
+from an ADC waveform. This model exhibits decreased performance when trained on
+domain A and applied to domain B. Then, we test whether the UI2I translations can
+alleviate this degradation of the model performance.
+The experiment proceeds as follows: we train predictive models—EA,EB, andEG—
+to estimate the total count of ionized electrons e in a waveform. Here, G is a neural
+translator that translates ADC waveform images from domain A to domain B, such as
+CycleGAN, ACL-GAN, U-GAT-IT, and UVCGAN. The models EA, EB, and EG are
+trained using waveforms a∈ A, waveforms b∈ B, and translated waveforms GA→B(a)
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 18
+for a∈A, respectively.
+After training, we evaluate all the models on waveforms from domainB. Due to the
+domain shift, we expect that EA will perform worse on B than EB. However, since EG
+is trained on translated waveforms that closely resemble those in domain B, we expect
+that it will outperform EA when tested on B. We use an AlexNet-like [38] architecture
+for the regression model. Further details on the model are provided in Appendix F.
+Table 2. Models trained on translated images mitigate the domain shift
+problem, as measured by MARE (lower is better). EA, trained on domain A
+and applied to domain B, represents the worst-case scenario for domain shift. EB,
+trained and tested on domain B, serves as the performance benchmark. The EG
+models, trained on waveforms translated by a neural translatorG and tested on domain
+B, demonstrate varying degrees of effectiveness in mitigating domain shift through UI2I
+translation methods.
+EA EB ECycleGAN EACL-GAN EU-GAT-IT EUVCGAN
+B 0.390 0 .211 0 .222 0 .223 0 .257 0 .216
+Table 2 summarizes the results of the evaluation of the regression models on domain
+B. The performance is evaluated with mean absolute relative error (MARE), calculated
+as n−1Pn
+i=1|(ˆei−ei)/ei|, where ˆei represents the predicted total electron count and n
+is the number of test examples.
+As expected, EA exhibits the worst performance due to the domain shift. EB
+performs the best, as it was trained and tested on data from the same domain. The four
+EG models, trained on translated waveforms, show varying degrees of effectiveness in
+mitigating the domain shift problem. Notably, EUVCGAN outperforms others, achieving
+comparable MARE to EB. This aligns with our earlier findings from the pixel-wise
+difference analysis in Section 4.1.
+Discussion and future research direction
+Findings from this work highlight the potential of UI2I translation algorithms in
+addressing the challenges of domain shift in LArTPC data. However, several issues
+require attention before these algorithms can be effectively used to translate between
+simulated and real detector data.
+Scaling UI2I algorithms to work on large images. Existing UI2I translation algorithms
+have been developed and tested on images of size (256 , 256). Thus, the same-sized tiles
+are used in this study. However, full LArTPC images of size (800 , 6000) are needed
+for downstream analyses. In applying the model to tiles and assembling them to form
+the full translated image, mismatches did occur along the tile boundaries. Therefore, as
+part of our future work, we need to develop network models and computational pipelines
+capable of handling full images.
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 19
+Performing and Evaluating non-deterministic translations. Another crucial aspect is
+the one-to-one nature of the translation. In this work, we addressed a problem where the
+translation between the two domains is fully deterministic and one-to-one. However, in
+real detectors, multiple stochastic processes are present. These stochastic processes will
+render the domain map non-deterministic, resulting in either one-to-many or even many-
+to-many relationships. The non-determinism of the translation presents two challenges:
+1) how to adapt UI2I translation methods to handle non-deterministic mappings, and
+2) how to evaluate the quality of non-deterministic translations.
+There are multiple ways to make a UI2I translation non-deterministic. ACL-
+GAN [22] presents one such approach, replacing a strong cycle-consistency constraint
+with a weaker adversarial consistency. The DRIT family of models [39] demonstrates
+another method, separating the content (core part of the image that should be preserved)
+and the attributes (part of the image that changes during the translation). This
+separation allows for substituting multiple attributes for a single translation, resulting
+in a variety of output images. BiCycleGAN [40] shows another interesting way to
+construct a one-to-many mapping ( A→ B) by adding an extra latent dimension L to
+theA domain. Then, it constructs a map (A×L→B) which is a one-to-one map. This
+method allows us to obtain a one-to-many translation (A→B) by varying points in the
+latent dimensionL. The approaches presented by ACL-GAN, DRIT, and BiCycleGAN
+demonstrate that developing one-to-many and many-to-many translations is possible,
+indicating a promising direction for future research.
+The shift to non-deterministic translations raises a question of how to evaluate the
+quality of the translation in a non-deterministic case. In this work, we were able to
+construct a paired ground truth evaluation dataset due to the one-to-one nature of the
+problem. This exact pairing allowed us to estimate the translation quality directly by
+comparing translated images to their ground truths. However, in the case of one-to-
+many translation, constructing such a paired evaluation dataset becomes impossible.
+Therefore, more sophisticated metrics are required to judge the quality of these non-
+deterministic translations.
+We believe a robust evaluation protocol should focus on two aspects of the
+translation: 1) realism, a neural translator’s ability to replicate the distinctive features
+of the target domain during translation, and 2) consistency, its capacity to translate
+without altering the underlying physical properties. In non-scientific UI2I translation
+tasks, established metrics such as Fr´ echet Inception Distance (FID) [41] and Kernel
+Inception Distance (KID) [42] are commonly used to assess realism. However, these
+metrics are based on the InceptionV3 network [43] pretrained on the ImageNet
+dataset [44], raising doubts about their applicability to scientific datasets. On the other
+hand, translation consistency remains a relatively unexplored aspect of UI2I translation
+research. The exact definition of consistency in UI2I translation is likely dataset- and
+application-dependent. As far as we know, no established metrics or protocols exist
+for verifying such consistency, making this a critical area for future research in UI2I
+translation for scientific applications.
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 20
+(Re)evaluation of systematic uncertainties in the presence of UI2I translation. High-
+energy physics (HEP) experiments developed complex methods to estimate various
+systematic uncertainties affecting the final results (e.g. [45]). Incorporating UI2I
+translation into the standard simulation chain may present unique challenges specific
+to HEP experiments. These challenges are twofold: 1) estimating the systematic
+uncertainty (if any) stemming from the UI2I translation, and 2) understanding how
+the UI2I translation affects the already established systematic uncertainties.
+While UI2I translation algorithms aim to bring the simulated (A) and experimental
+(B) domains closer, they may introduce artifacts into the translation process. These
+artifacts could be the source of additional systematic uncertainty, which may need to be
+quantified. One possible approach to establishing the magnitude of such uncertainty is
+to train an ensemble of UI2I models and analyze the amount of variance introduced
+in the experimental results by the ensemble. Alternatively, the UI2I translation
+could be treated as a “detector calibration” step, without assigning specific systematic
+uncertainties to it. In this case, the uncertainties associated with UI2I would be
+incorporated into the uncertainties of other detector simulation parameters.
+While UI2I translation techniques show promise in reducing the magnitude of
+systematic uncertainties, these reduced uncertainties still require careful evaluation.
+This evaluation process may involve a substantial effort to understand how UI2I
+translation algorithms interact with established methods of estimating systematic
+uncertainties in HEP experiments. Further research is necessary to determine the most
+effective approaches for handling UI2I-related uncertainties in HEP experiments.
+Conclusion
+In this work, we studied the potential of the UI2I translation algorithms to address
+the domain shift problem between simulation (domain A) and real data (domain B) in
+the LArTPC research. We constructed a surrogate LArTPC problem consisting of two
+simulated domains with a systematic difference in the detector response function. This
+surrogate problem illustrates the typical source of the systematic uncertainty between
+the simulation and real data. The deterministic nature of the detector response function
+allowed us to create a paired test dataset with the known ground truths for translations.
+We tested four UI2I models (CycleGAN, ACL-GAN, U-GAT-IT, UVCGAN) on the
+surrogate LArTPC problem. Our results show that the UI2I methods can successfully
+perform the translation of LArTPC events as judged by pixel-wise metrics between the
+translation and the corresponding ground truth. Notably, UI2I methods can identify
+and preserve the content of each event while translating its appearance. This indicates
+the feasibility of the application of the UI2I methods to translate LArTPC data and
+improve the realism of the LArTPC simulation.
+Furthermore, we tested whether the obtained UI2I translations allow us to reduce
+the domain shift error of detector reconstruction algorithms, which are developed on
+simulation but applied to real data. For this purpose, we employed a production-
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 21
+grade signal processing algorithm designed on simulation (domain A). This algorithm
+experiences domain shift error when applied directly on domain B. However, we found
+that its domain error can be reduced by up to 80% if we perform a UI2I translation
+(B→A) before the application of the signal processing algorithm. These results indicate
+that UI2I methods can be used for domain shift reduction in LArTPC analysis.
+Among the four tested UI2I models (CycleGAN, ACL-GAN, U-GAT-IT,
+UVCGAN), the UVCGAN model achieves the best translation quality and introduces
+the fewest artifacts in the translated images. This finding indicates that the UVCGAN
+model shows promise as a basis for more complex UI2I algorithms on scientific data. To
+promote the reproducibility of our research, we publicly release the SLATS dataset
+(https://zenodo.org/record/7809108) and the code used in this study ( https:
+//github.com/LS4GAN/uvcgan4slats).
+While UI2I methods show promise in reducing the systematic differences between
+distinct domains of LArTPC data and help to alleviate the domain shift error of the
+signal processing algorithm, there are several issues that remain to be addressed before
+their application becomes fully feasible. First, the UI2I methods, currently developed
+on images up to 256 pixels in size, need to be scaled to work with larger images of up to
+10,000 pixels. Second, our work investigated a problem where the relationship between
+two domains is one-to-one. The actual relationship between the LArTPC detector
+simulation and real data is many-to-many. The performance of UI2I methods needs
+to be studied under many-to-many relationships. Moreover, proper translation quality
+metrics need to be developed for the many-to-many case. Finally, while UI2I methods
+may reduce the systematic difference between simulated and real data, one still needs
+to estimate potential systematic uncertainties introduced by these methods. Likewise,
+work needs to be done to ascertain how the inclusion of the UI2I translation into the
+detector simulation pipeline may affect other systematic uncertainties. Exploring these
+directions will be essential to fully leverage the potential of UI2I methods in LArTPC
+research and broader scientific applications.
+Acknowledgment
+This work was supported by the Laboratory Directed Research and Development
+Program of Brookhaven National Laboratory, which is operated and managed for the
+U.S. Department of Energy Office of Science by Brookhaven Science Associates under
+contract No. DE-SC0012704.
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 22
+[1] Mei Wang and Weihong Deng. Deep visual domain adaptation: A survey. Neurocomputing,
+312:135–153, 2018.
+[2] Riccardo Miotto, Fei Wang, Shuang Wang, Xiaoqian Jiang, and Joel T Dudley. Deep learning for
+healthcare: review, opportunities and challenges. Briefings in Bioinformatics, 19(6):1236–1246,
+05 2017.
+[3] Seonwoo Min, Byunghan Lee, and Sungroh Yoon. Deep learning in bioinformatics. Briefings in
+bioinformatics, 18(5):851–869, 2017.
+[4] Nicolae Sapoval, Amirali Aghazadeh, Michael G Nute, Dinler A Antunes, Advait Balaji, Richard
+Baraniuk, CJ Barberan, Ruth Dannenfelser, Chen Dun, Mohammadamin Edrisi, et al. Current
+progress and open challenges for applying deep learning across the biosciences. Nature
+Communications, 13(1):1728, 2022.
+[5] Joaquin Quionero-Candela, Masashi Sugiyama, Anton Schwaighofer, and Neil D. Lawrence.
+Dataset Shift in Machine Learning . The MIT Press, 2009.
+[6] Carla C Takahashi and Antonio P Braga. A review of off-line mode dataset shifts. IEEE
+Computational Intelligence Magazine , 15(3):16–27, 2020.
+[7] Yuqi Fang, Pew-Thian Yap, Weili Lin, Hongtu Zhu, and Mingxia Liu. Source-free unsupervised
+domain adaptation: A survey. arXiv preprint arXiv:2301.00265 , 2022.
+[8] Carlo Rubbia. The liquid-argon time projection chamber: a new concept for neutrino detectors.
+Technical report, European Organization for Nuclear Research, 1977.
+[9] W.J. Willis and V. Radeka. Liquid-argon ionization chambers as total-absorption detectors.
+Nuclear Instruments and Methods , 120(2):221–236, 1974.
+[10] D. R. Nygren. The Time Projection Chamber: A New 4 pi Detector for Charged Particles. eConf,
+C740805:58, 1974.
+[11] Roberto Acciarri, C Adams, R An, A Aparicio, S Aponte, J Asaadi, M Auger, N Ayoub, L Bagby,
+B Baller, et al. Design and construction of the microboone detector. Journal of Instrumentation,
+12(02):P02017, 2017.
+[12] B Abi, R Acciarri, MA Acero, M Adamowski, C Adams, DL Adams, P Adamson, M Adinolfi,
+Z Ahmad, CH Albright, et al. The single-phase protodune technical design report. arXiv
+preprint arXiv:1706.07081, 2017.
+[13] B Abi, R Acciarri, MA Acero, M Adamowski, C Adams, D Adams, P Adamson, M Adinolfi,
+Z Ahmad, CH Albright, et al. The dune far detector interim design report volume 1: physics,
+technology and strategies. arXiv preprint arXiv:1807.10334 , 2018.
+[14] Gabriela Csurka. Domain adaptation for visual applications: A comprehensive survey. arXiv
+preprint arXiv:1702.05374, 2017.
+[15] Garrett Wilson and Diane J Cook. A survey of unsupervised deep domain adaptation. ACM
+Transactions on Intelligent Systems and Technology (TIST) , 11(5):1–46, 2020.
+[16] Licong Guan and Xue Yuan. Iterative loop learning combining self-training and active learning
+for domain adaptive semantic segmentation. arXiv preprint arXiv:2301.13361 , 2023.
+[17] Lukas Hoyer, Dengxin Dai, Haoran Wang, and Luc Van Gool. Mic: Masked image consistency
+for context-enhanced domain adaptation. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition , pages 11721–11732, 2023.
+[18] Geoffrey French, Michal Mackiewicz, and Mark Fisher. Self-ensembling for visual domain
+adaptation. arXiv preprint arXiv:1706.05208 , 2017.
+[19] Ming-Yu Liu, Thomas Breuel, and Jan Kautz. Unsupervised image-to-image translation networks.
+Advances in neural information processing systems , 30, 2017.
+[20] Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A Efros. Unpaired image-to-image
+translation using cycle-consistent adversarial networks. In Proceedings of the IEEE international
+conference on computer vision, pages 2223–2232, 2017.
+[21] Dmitrii Torbunov, Yi Huang, Haiwang Yu, Jin Huang, Shinjae Yoo, Meifeng Lin, Brett Viren, and
+Yihui Ren. Uvcgan: Unet vision transformer cycle-consistent gan for unpaired image-to-image
+translation. arXiv preprint arXiv:2203.02557 , 2022.
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 23
+[22] Yihao Zhao, Ruihai Wu, and Hao Dong. Unpaired image-to-image translation using adversarial
+consistency loss. In European Conference on Computer Vision , pages 800–815. Springer, 2020.
+[23] Junho Kim, Minjae Kim, Hyeonwoo Kang, and Kwanghee Lee. U-gat-it: Unsupervised generative
+attentional networks with adaptive layer-instance normalization for image-to-image translation.
+arXiv preprint arXiv:1907.10830 , 2019.
+[24] Min Zhao, Fan Bao, Chongxuan Li, and Jun Zhu. Egsde: Unpaired image-to-image translation
+via energy-guided stochastic differential equations. arXiv preprint arXiv:2207.06635 , 2022.
+[25] R. Acciarri et al. Design and construction of the microboone detector. JINST, 12(02):P02017,
+2017.
+[26] B. Abi et al. The single-phase protodune technical design report, 2017.
+[27] B. Abi et al. First results on protodune-sp liquid argon time projection chamber performance
+from a beam test at the cern neutrino platform. Journal of Instrumentation , 15(12):P12004,
+dec 2020.
+[28] S. Ramo. Currents induced by electron motion. Proceedings of the IRE, 27(9):584–585, 1939.
+[29] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair,
+Aaron Courville, and Yoshua Bengio. Generative adversarial networks. Communications of the
+ACM, 63(11):139–144, 2020.
+[30] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for
+biomedical image segmentation. In International Conference on Medical image computing and
+computer-assisted intervention, pages 234–241. Springer, 2015.
+[31] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas
+Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. An
+image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint
+arXiv:2010.11929, 2020.
+[32] Ivan Anokhin, Kirill Demochkin, Taras Khakhulin, Gleb Sterkin, Victor Lempitsky, and Denis
+Korzhenkov. Image generators with conditionally-independent pixel synthesis. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 14278–14287,
+2021.
+[33] Ori Nizan and Ayellet Tal. Breaking the cycle-colleagues are all you need. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7860–7869, 2020.
+[34] Taesung Park, Alexei A Efros, Richard Zhang, and Jun-Yan Zhu. Contrastive learning for
+unpaired image-to-image translation. In European conference on computer vision , pages 319–
+345. Springer, 2020.
+[35] Yang Zhao and Changyou Chen. Unpaired image-to-image translation via latent energy transport.
+In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages
+16418–16427, 2021.
+[36] Jooyoung Choi, Sungwon Kim, Yonghyun Jeong, Youngjune Gwon, and Sungroh Yoon.
+Ilvr: Conditioning method for denoising diffusion probabilistic models. arXiv preprint
+arXiv:2108.02938, 2021.
+[37] C. Adams et al. Ionization electron signal processing in single phase LArTPCs. part i.
+algorithm description and quantitative evaluation with MicroBooNE simulation. Journal of
+Instrumentation, 13(07):P07006–P07006, jul 2018.
+[38] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. Imagenet classification with deep
+convolutional neural networks. In F. Pereira, C.J. Burges, L. Bottou, and K.Q. Weinberger,
+editors, Advances in Neural Information Processing Systems , volume 25. Curran Associates,
+Inc., 2012.
+[39] Hsin-Ying Lee, Hung-Yu Tseng, Jia-Bin Huang, Maneesh Singh, and Ming-Hsuan Yang. Diverse
+image-to-image translation via disentangled representations. In Proceedings of the European
+conference on computer vision (ECCV) , pages 35–51, 2018.
+[40] Jun-Yan Zhu, Richard Zhang, Deepak Pathak, Trevor Darrell, Alexei A Efros, Oliver Wang, and
+Eli Shechtman. Toward multimodal image-to-image translation. Advances in neural information
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 24
+processing systems, 30, 2017.
+[41] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter.
+Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances
+in neural information processing systems , 30, 2017.
+[42] Miko laj Bi´ nkowski, Danica J Sutherland, Michael Arbel, and Arthur Gretton. Demystifying mmd
+gans. arXiv preprint arXiv:1801.01401 , 2018.
+[43] Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jonathon Shlens, and Zbigniew Wojna.
+Rethinking the inception architecture for computer vision. CoRR, abs/1512.00567, 2015.
+[44] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, Sanjeev Satheesh, Sean Ma, Zhiheng
+Huang, Andrej Karpathy, Aditya Khosla, Michael Bernstein, et al. Imagenet large scale visual
+recognition challenge. International journal of computer vision , 115:211–252, 2015.
+[45] P Abratenko, R An, J Anthony, L Arellano, J Asaadi, A Ashkenazi, S Balasubramanian, B Baller,
+C Barnes, G Barr, et al. Search for an anomalous excess of inclusive charged-current ν e
+interactions in the microboone experiment using wire-cell reconstruction. Physical Review D ,
+105(11):112005, 2022.
+[46] X. Qian, C. Zhang, B. Viren, and M. Diwan. Three-dimensional imaging for large LArTPCs.
+Journal of Instrumentation , 13(05):P05032–P05032, may 2018.
+[47] Wire-Cell Team. Wire-Cell Toolkit. https://wirecell.bnl.gov/, 2023. [Online; accessed 06-
+Feb-2023].
+[48] Yichen Li, Thomas Tsang, Craig Thorn, Xin Qian, Milind Diwan, Jyoti Joshi, Steve Kettell,
+William Morse, Triveni Rao, James Stewart, Wei Tang, and Brett Viren. Measurement of
+longitudinal electron diffusion in liquid argon. Nuclear Instruments and Methods in Physics
+Research Section A: Accelerators, Spectrometers, Detectors and Associated Equipment, 816:160–
+170, 2016.
+[49] P. Cennini et al. Performance of a three-ton liquid argon time projection chamber. Nuclear
+Instruments and Methods in Physics Research Section A: Accelerators, Spectrometers, Detectors
+and Associated Equipment, 345(2):230–243, 1994.
+[50] Rob Veenhof. Garfield, recent developments, 1998.
+[51] C. Adams et al. Ionization electron signal processing in single phase LArTPCs. part II.
+data/simulation comparison and performance in MicroBooNE. Journal of Instrumentation ,
+13(07):P07007–P07007, jul 2018.
+Appendix A. More details concerning the Simple Liquid-Argon Track
+Samples (SLATS) dataset
+Liquid Argon Time Projection Chamber (LArTPC) detectors enclose a volume of liquid
+argon. As illustrated in Figure 2 in the main text, energetic charged particles traversing
+the volume will ionize electrons from nearby argon atoms. Once these electrons are
+freed, they are made to drift to the readout side of the detector due to an applied
+uniform electric field. A LArTPC detector readout is composed of several Anode
+Plane Assemblies (APAs). Each APA contains three sensitive wire planes. Each wire
+plane consists of an array of uniformly spaced parallel wires oriented at a unique angle.
+Electrons drift past the first two wire planes and are collected on the last wire plane.
+In this process, they induce electric current [28] in all nearby wires. These currents are
+amplified, and the induced current waveforms are digitized to produce the Analog-to-
+Digital Converter (ADC) waveform images.
+The two-dimensional (2D) ADC waveform image from each wire plane provides a
+unique tomographic view of the distribution of ionized electrons. The horizontal axis of
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 25
+this image is the waveform sample time dimension, while the vertical axis is the wire
+channel dimension. The pixel value of this image is the ADC value after the per-wire
+median ADC value has been subtracted.
+Appendix A.1. Idealization and simulated responses for SLATS
+A fully realistic simulation requires a long chain of models for the following components:
+1) the initial flux of neutrinos or other particles of interest; 2) the interaction cross
+sections, nuclear transport, and final state particle tracking through the volume; 3)
+the production and drift of ionization electrons; 4) the induction in the sensitive wire
+electrodes; and 5) the final effects of electronic amplification and digitization.
+The models up to the production of ionized electrons form the first stage of the
+simulation, which encodes our understanding of particle physics. The remaining models
+form the second stage of the simulation, which encodes our understanding of detector
+physics. In constructing the SLATS dataset, the difference between the two domains is
+designed to be caused by applying different detector response functions in the second
+stage. However, with the full simulation model chain, the resulting topology of ionized
+electron tracks is intricate. This intricacy can complicate the interpretation of subtle
+variations resulting from different detector response functions.
+To avoid this complication and simplify the software processing chain required to
+produce the SLATS dataset, the full particle physics model chain (first stage) is replaced
+with a simplified, ideal-track model. This ideal-track model begins with the production
+of straight-line tracks randomly distributed in space and direction throughout the
+detector volume. Each track is made to ionize electrons at a rate corresponding to
+a minimum-ionizing muon. The result mimics the activity of cosmic muons traversing
+the detector.
+After the simplified first stage, the latter stage employs the full detector physics
+model as implemented by the Wire-Cell toolkit [46, 47] with an additional simplification
+that electronics noise (otherwise inescapable) is omitted. Though artificial, this choice
+allows for a focus on systematic differences due to disparate detector response functions.
+The Wire-Cell toolkit software provides current state-of-the-art LArTPC detector
+simulation and signal processing and is used by most LArTPC experiments and
+prototype detectors either under construction or in operation today. The simulation
+components apply the effects of electron diffusion and absorption while transporting
+the ionization electrons through a uniform drift field in the bulk of the detector
+volume [48, 49]. Near the wire planes, ionization electrons are drifted through a far
+more complex electric field governed by the locations, sizes, and applied voltages of the
+sense wires. This detailed drift field and the associated Ramo weight fields [28] are
+provided to the toolkit as input. Here, we use fields calculated by the GARFIELD [50]
+software package via a 2D model [37] of the detector electrode arrays.
+As illustrated in Figure 3 in the main text, the SLATS dataset’s two domains are
+made unique by the diverse nature of these fields (quasi-one dimensional (1D) versus
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 26
+2D). This work defines samples in domainB as being produced with the aforementioned
+full 2D response function. On the other hand, samples from domain A are produced
+with a related yet different response function. The response function is obtained by
+masking the 2D response so that all contributions from regions near neighboring wires
+are removed. Comparing the illustration of the quasi-1D response with the 2D one in
+Figure 3B shows the quasi-1D response still is 2D in the remaining narrow region near
+the central wire, which explains the term “quasi” in the name.
+Finally, after the electric current response, an electronics response and digitization
+model (linear scaling and truncation to 12-bit integer) are applied. The final output
+from the simulation is the ADC waveform images that serve as the input to neural
+translators after passing through a few preprocessing steps.
+Appendix A.2. Data generation and preprocessing
+To generate the SLATS dataset, the simulation runs produced 10010 events, each with
+10 ideal line sources at the minimum-ionization energy equivalent for muons. Each event
+results in a 2D ADC waveform image for each wire plane. This work focuses only on the
+U plane, the first one the electrons encounter during their drift. The simulation employs
+a model of the ProtoDUNE-SP [27] detector, which has six APAs at the readout. Hence,
+across the entire detector, the simulation produced a total of 60060 U-plane images.
+The image from the U plane is 800 pixels in height and 6000 pixels in width.
+The image height spans the electronics readout channels and provides a transverse
+tomographic view at a given time. The width denotes these samples over time.
+From each full readout image of shape (800 , 6000), we take a center crop of shape
+(768, 5888). The center crop shape is chosen so it can be divided into tiles of shape
+(256, 256), which typically are used as input to a neural translator.
+In the conventional practice of analyzing LArTPC readout images, it is common to
+apply similar center crops for various reasons, such as removing activity from background
+interactions originating outside the detector or providing a size more optimal for fast-
+Fourier transforms. Nevertheless, future work will investigate how to avoid this loss of
+information at the edge of the readout image.
+In some instances, the randomness of placing 10 ideal particles across the entire
+detector leads to one or more of the six APAs containing no ionization electrons. The
+resulting “empty” center crops of readout images are neglected, leaving 56 , 253 non-
+empty center crops (93 .7%). From these non-empty center crops, 55 , 253 crops are
+reserved for training and 1, 000 for testing.
+Similarly, the sparseness of activity leads to a majority of 256×256 tiles being fully
+or nearly empty. We choose a threshold of 200 pixels around the first local minimum of
+the distribution for domain A. To keep the tiles paired, we drop a pair if either domain
+A tile or its domain B counterpart falls below the set threshold. After filtering, we have
+1, 065, 870 tile pairs for training and 18 , 887 for testing.
+Of note, although the training dataset is paired, the UI2I translation training
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 27
+procedures shuffle both domains of the training dataset independently. Shuffling breaks
+the pairing, making the UI2I translation algorithms unable to benefit from the fact that
+the original dataset was paired.
+Appendix B. UVCGAN pretraining and training
+The UVCGAN model used for SLATS is identical to the one described in [21] except
+for three minor modifications: 1) reducing the number of input/output channels to 1,
+2) removing all the normalization layers in the convolution blocks, and 3) removing the
+output sigmoid activation from the generators.
+Training the UVCGAN model on the SLATS dataset consists of two stages: self-
+supervised pretraining and translation training. Although it is common practice to start
+the translation training directly with randomly initialized generators, there is evidence
+showing that initializing the generators by pretraining them on a simpler task provides
+an advantage over random initialization [21]. This study uses an image inpainting task
+to pretrain the generators. First, each SLATS tile is subdivided into a grid of patches
+of size (32, 32). Then, each patch is randomly masked by zeros with a probability of
+.4. The generators are pretrained to recover the masked regions, allowing them to learn
+nontrivial dependencies between different parts of a SLATS image.
+Here, both generators are pretrained for 16 , 384, 000 iterations on the image
+inpainting task, configured similarly to [21]. A smaller learning rate of 6 .25× 10−6 is
+used because SLATS data have a larger range compared to natural images. Nonetheless,
+generators pretrained with this method failed to recover the full width of the tracks.
+Instead, they fill masked regions with very narrow tracks. We speculate this happens
+because pixel values away from the track cores are quite small compared to those near the
+cores. Therefore, their proper reconstruction gives a small benefit in terms of the ℓ2 loss.
+On the other hand, before the network learns to reconstruct these small-valued pixels
+properly, it is going to make many mistakes, which are costly in terms of the ℓ2 loss.
+The high cost of the mistakes compared to the small benefit of proper reconstruction
+creates a potential barrier to learning the full width of the tracks.
+To lessen that learning barrier, we modify the ℓ2 loss function and reduce the
+penalty for the network to overwrite zeros incorrectly by α. More precisely, let y be an
+image from either domain A or B and ˆy be the inpainting output. The reconstruction
+loss then is defined as follows:
+Lreco (ˆy,y ) =
+α·P
+yi,j=0 ˆy2
+i,j +P
+yi,j̸=0 (ˆyi,j−yi,j)2
+H×W , (B.1)
+whereH andW are the image height and width. During pertaining, we keep α at 0 for
+the first 819, 200 iterations, allowing the network to freely overwrite the empty space
+without penalty. Then, we linearly anneal α to 1 during the subsequent 2 , 457, 600
+iterations. When α = 1, the loss function in Equation (B.1) reduces to the normal ℓ2
+and is kept that way until the end of pretraining. An ablation study shows the modified
+ℓ2 loss expedited learning of the reconstruction of small-valued pixels. The generators
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 28
+trained with the modified ℓ2 loss also achieve a ∼ 10% lower reconstruction error than
+generators trained with the normal ℓ2.
+The translation on the SLATS dataset was trained for 200 epochs with 5000
+randomly selected tiles per epoch (10 6 iterations in total). We note that using slightly
+unequal initial learning rates for the generators (10−5) and the discriminators (5×10−5)
+improves performance. The learning rates are kept constant for the first 100 epochs and
+linearly annealed to zero during the second 100 epochs.
+We also perform a hyperparameter (HP) optimization on coefficients of cycle-
+consistency loss, λa and λb, and the discriminator gradient penalty parameters, λGP
+andγ. The evaluation results presented in the work have been produced using the best
+model found in the optimization with λa =λb = 1, λGP = 1, and γ = 10. Identity loss
+also is used for translation training with coefficients kept at half of λa and λb. A more
+detailed discussion about loss coefficients and gradient penalty can be found in [21].
+Appendix C. Modification and hyperparameter tuning for other
+CycleGAN-like models
+This work required model modification and HP tuning of three other CycleGAN-like
+UI2I translation algorithms: CycleGAN [20], ACL-GAN [22], and U-GAT-IT [23].
+Because all three algorithms originally were designed for photographic image translation,
+they use tanh at the final layer to limit the pixel value within [ −1, 1]. To adapt the
+models for the integer-valued SLATS data, the final tanh activations are removed.
+For CycleGAN, we conduct a grid search on two key HP values: generator
+architecture and the coefficient for the cycle consistency loss. We evaluate the ResNet
+generator with nine blocks and the U-Net generator with size 256 input. We chose three
+cycle-consistency loss coefficient levels: 1, 5, and 10 (default). As CycleGAN trains
+both generators jointly, we train six models (in total), one for each generator type and
+cycle consistency level. For each model, we train on 5000 images (with batch size 4) for
+200 epochs, which means a total of one million images are used for training.
+For ACL-GAN, we employ three HP settings, one for each of the three unpaired
+translation tasks (selfie-to-anime, male-to-female, and eye-glasses removal) studied
+in [22]. Because ACL-GAN does not train translations in both directions jointly, we
+train a total of six models, one for each translation direction and HP setting. Each
+model is trained with a batch size of 4 for 250000 iterations. Again, a total of one million
+images are used for training. ACL-GAN can generate a variable number of outputs, each
+with a randomly generated style. To compare directly with other algorithms, we have
+generated only one output and used 1 for the random seed.
+For U-GAT-IT, we tune the cycle-consistency loss coefficient ( λcyc) at three
+levels: 1, 5, and 10 (default). Following the U-GAT-IT default, we retain the identity
+consistency loss coefficients equal to those for the cycle consistency. Because U-GAT-IT
+also trains both translation directions jointly, we train three models (in total). Each
+model is trained with a batch size of 4 for 250000 iterations, so one million total images
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 29
+are used for training.
+Appendix D. More details regarding signal processing
+As detailed in Appendix A, the LArTPC detects particles by recording ionization
+electrons produced along the particles’ trajectories. These electron counts serve as the
+basis for deriving various parameters of the original particles, including momentum and
+mass. It is important to note that the LArTPC readout, represented as ADC waveforms,
+does not directly provide the electron counts. Instead, it captures the digitized electric
+current they induce on the APA wires.
+In practice, the bipolar nature of LArTPC ADC waveforms obscures an accurate
+and precise measurement of the underlying distribution of ionization electrons. To reveal
+this distribution so physically meaningful parameters about the original particles can
+be reconstructed (e.g., their momentum and mass), a procedure generically called signal
+processing is applied.
+Briefly, signal processing has two stages: deconvolution and high-pass filtering.
+First, it performs a deconvolution of an ADC readout image with a model of the same
+detector response used in the simulation but averaged over each region near a wire.
+The bipolar nature of the response inevitably causes the deconvolution to amplify low-
+frequency noise. To counter that, the second stage applies an adaptive high-pass filter
+known as signal region-of-interest (ROI) selection.
+Due to the inevitable amplification of noise, signal processing is designed to contend
+with realistic detector noise by applying various filters. The interplay of the input noise,
+filters, and thresholds to define ROI makes signal processing especially sensitive to the
+presence of noise or the lack thereof. The absence of noise in the SLATS dataset causes
+the signal processing algorithm to fail. Thus, post-processing of the noise-free SLATS
+ADC waveforms is performed to add a realistic noise component. To do this, we linearly
+scale ADC pixel values to be consistent with the voltage levels originally produced by the
+amplifiers in the electronics prior to digitization. We then add noise generated from a
+model that has been previously developed to match observations of LArTPC detectors.
+Finally, we rescale (re-digitize) the result back to ADC levels, and the signal processing
+can then be correctly applied.
+Please refer to [37, 51] for a more in-depth understanding of the signal processing
+procedure.
+Appendix E. More evaluation of translation quality
+Here, we provide two additional evaluations of the translation quality. First, Table E1
+depicts the ℓ1 and ℓ2 errors on ADC values for all HP settings discussed in Appendix
+C. The best performers for each algorithm are highlighted.
+Second, we evaluate signal processing results with pixel-wise percentage difference
+(PD). PD is especially useful for post-signal processing translation quality evaluation
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 30
+Table E1. Translation quality on ADC waveforms is evaluated in terms of ℓ1 and ℓ2
+errors.
+A to B B to A
+algorithm HP variant ℓ1 ℓ2 ℓ1 ℓ2
+CycleGAN
+(ResNet, 1) 0.266 6 .123 0.202 5 .180
+(ResNet, 5) 0.171 2 .947 0.235 5 .449
+(ResNet, 10) 0.147 2 .469 0.322 10 .451
+(UNet, 1) 0.089 0 .177 0.056 0 .114
+(UNet, 5) 0.078 0 .178 0.062 0 .147
+(UNet, 10) 0.074 0.180 0.061 0.159
+ACL-GAN
+anime HP 0.219 5 .476 0.180 5 .188
+gender HP 0.079 0 .727 0.065 0 .330
+glasses HP 0.083 0.566 0.039 0.121
+U-GAT-IT
+λcyc = 1 0.086 1 .367 0.069 0 .997
+λcyc = 5 0.078 1.187 0.073 1.161
+λcyc = 10 0.079 1 .404 0.075 1 .217
+UVCGAN 0.030 0 .033 0.025 0 .027
+Table E2. Translation quality on electron counts obtained from applying a signal
+processing procedure is evaluated in terms of mean absolute percentage difference (%).
+A to B B to A
+baseline 1.904
+CycleGAN 1.220 0.735
+ACL-GAN 1.014 0.582
+U-GAT-IT 0.998 0.713
+UVCGAN 0.549 0.391
+because the electron count distribution has a much broader range than ADC values
+along with a long heavy tail. Mathematically, for two scalars x, ¯x≥ 0,
+PD(x, ¯x) =
+(
+¯x−x
+(¯x+x)/2× 100% if ¯x +x> 0,
+0 if ¯ x +x = 0,
+and the mean absolute PD between two tensors is defined as the average of the absolute
+value of entry-wise PDs.
+Table E2 shows the mean absolute PD averaged over 1000 randomly selected test
+examples from SLATS. Denote the signal processing procedure as ϕ and let a∈A and
+b∈B bea’s counterpart. The baseline is defined as the mean absolute PD between ϕ(a)
+
+=== PAGE BREAK ===
+
+UI2I translation to Mitigate Domain Shift in LArTPC Detector Responses 31
+andϕ(b). For a UI2I translation algorithm, we calculate the mean absolute PD between
+ϕ (GA→B(a))) and ϕ(b) for A→ B translation and between ϕ (GB→A(b))) and ϕ(a) for
+theB→A translation. Table E2 indicates all neural translators offer an improvement
+over the baseline with those translations produced by UVCGAN achieving the best
+performance.
+Appendix F. Training details of the electron-count estimator E
+We designed the electron count predictorE with the following architecture. The neural
+network consists of 5 convolutional blocks followed by 2 linear blocks. Each convolutional
+block includes a convolutional layer with a kernel size of 3 and padding of 1, followed by
+a leaky rectified linear unit (Leaky ReLU) activation function and an average pooling
+layer that halves the spatial dimensions (width and height). The first convolutional layer
+has 1 input channel and 16 output channels. In the subsequent convolutional layers, the
+number of output channels doubles with each block until it reaches 64. The output of
+the convolutional blocks is then flattened before being passed through the linear blocks.
+Each linear block starts with a dropout layer with a probability of 0 .2, followed by
+a linear layer and an activation function. The Leaky ReLU activation is used for the
+first linear block, while the identity activation is used for the final output. The first
+linear layer transforms the 8 × 8× 64 = 4096 input features into 128 output features,
+and the second linear layer maps these 128 features to a single output.
+To ensure a fair comparison across different predictors, we initialized all models
+using a random number generator with seed 2024. Each model was trained for 500
+epochs with a batch size of 4, utilizing 80% of the 1000 samples from Section 4.2 for
+training and the remaining 20% for testing. The learning rate was initially set to 0.0001
+and was reduced by a factor of 0 .95 every 10 epochs. We used the mean absolute error
+(ℓ1) as the loss criterion and optimized the models using the AdamW optimizer with
+parameters β1 = 0.9, β2 = 0.999, and a weight decay of 0.01.

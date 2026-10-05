@@ -1,0 +1,149 @@
+Chu-Cheng Pan (潘楚铖)
+Learning Detector-Level Probability Distributions with 
+Sliced Wasserstein Distance
+
+
+=== PAGE BREAK ===
+
+High Dimensional Distributions in High Energy Physics
+Truth-level physics
+Detector Response
+Detector-level data / MC
+Signal & background PDFs
+Cut/Modeling
+Fit / Unfolding
+Physics result
+We need faster and more realistic tools to deal with high-dimensional 
+distributions in both simulation and real data!!!
+
+
+=== PAGE BREAK ===
+
+Optimal Transport(OT)
+Optimal transport theory, provides a natural way to compare high-dimensional 
+probability, but its direct computation becomes expensive in high dimensions.
+
+=== PAGE BREAK ===
+
+Low Dimensional Optimal Transport
+1D WD
+2D WD
+But low dimensional optimal transport is Computationally efficient, especially 1D OT
+For two 1D samples with the same number of events, the Wasserstein distance is 
+simply obtained by sorting and averaging the differences between the ordered values.
+
+=== PAGE BREAK ===
+
+Sliced Wasserstein Distance(SWD)
+Kolouri, Soheil & Rohde, Gustavo & Hoffmann, 
+Heiko. (2018). Sliced Wasserstein Distance for 
+Learning Gaussian Mixture Models. 
+10.1109/CVPR.2018.00361.
+Idea: Compute 1D Wasserstein distance 
+for infinite projection and average
+1. Stable in high dimensions
+2. Computationally efficient
+3. Differentiable
+Advantage
+
+=== PAGE BREAK ===
+
+Application 1——SWD Event Generation
+arXiv:2106.00643
+Truth-level distribution is relatively straightforward by physics
+But detector-level distributions are much harder 
+Why?
+• Detector Response
+• Acceptance
+• Resolution
+• Reconstruction efficiency
+• High-dimensional correlations
+How to learn detector-level distributions?
+
+=== PAGE BREAK ===
+
+Application 1—— SWD Event Generation
+Phys. Rev. D 111, 096017
+Random inputs are transformed by the generative model into 
+multi-variable event samples, while the network learns the target 
+high-dimensional distribution using SWD loss function.
+Usage
+• Fast detector level event generation
+• Reduce mc statistics related systematic uncertainties
+• Do pull study and toy study
+
+=== PAGE BREAK ===
+
+Application 2—— SWD Consistency test
+Phys. Rev. D 111, 096017
+Idea: SWD + permutation test provides a 
+model-independent way to quantify whether 
+two high-dimensional distributions are 
+statistically compatible.
+Given two samples:
+𝑋 ~ 𝑃, 𝑌 ∼ 𝑄 
+1. Compute the observed distance: 𝑆𝑊𝐷 𝑋, 𝑌
+2. Randomly permute sample labels many times.
+3. Build the null distribution of SWD under 𝑃 = 𝑄.
+4. Convert the observed SWD into a p-value.
+Usage
+• Check event generator performance 
+• Test MC agreement with real data 
+
+=== PAGE BREAK ===
+
+Application 3—— SWD Reweighting and Unfolding
+arxiv:2406.01635
+Application to toy dataset with rich resonance but low detector effects
+Phys. Rev. Lett. 124, 182001 (2020)
+
+
+=== PAGE BREAK ===
+
+Application 3—— SWD Reweighting and Unfolding
+arxiv:2406.01635
+Application to CMS jet toy dataset with high detector effects
+Bins based reweighting
+Classifier based reweighting
+Optimal Transport based reweighting (Ours)
+Usage
+• Reweight MC to more realistic MC or calibration data
+• Unfolding real data to truth level
+
+=== PAGE BREAK ===
+
+Application 4—— SWD Resolution Effect simulation
+Generator Level MC 
+Momentum
+Detector Level MC
+Momentum
+Full Simulation MC
+Momentum
+Usage
+• Fast estimation of untrained MC shape
+• Particularly useful during MC production delays and Early-stage 
+analysis
+• Improves veto selection and fit model without full simulation MC
+Other Untrained same-final state MC
+Momentum
+Learn Resolution Effect from full simulation once, and use in other untrained 
+same-final state generator level MC to get the shape
+ 
+Report in LHCb Simulation Meeting[link]
+
+=== PAGE BREAK ===
+
+Next step?
+Now
+• Event generation
+• Consistency test
+• Reweighting
+• Unfolding
+• Shape Fast Simulation
+Next
+• Model-Independent Fit
+• Acceptance and reconstruction Efficiency 
+learning
+• Incorporate into more simulation and analysis 
+framework
+• More high dimensional distributions related work

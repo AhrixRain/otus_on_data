@@ -1,0 +1,133 @@
+# Run_H_SR: the conditional-spread (log-score) term. Phase 1 of the plan.
+#
+# Single controlled change versus Run_H_D3b: the stage declares kappa > 0, so the
+# training loss gains
+#
+#     kappa * gaussian_log_score(mu(x_score), sigma(x_score), x_score)
+#
+# where the moments come from `scoring_rule.draws` independent decodes of the
+# same truth slice the realised values belong to (scripts_joint/scoring_rules.py,
+# wired in joint_trainer.train_joint_epoch). Everything else - the frozen physics
+# kernel, the stage-1 channel at 1.0/0.25, native-noise validation and final
+# evaluation, the honest component priors, the 20/80/80 schedule, beta/lamb/tau/
+# nu_e/nu_d - is inherited from D3b unchanged. With kappa = 0 in a stage the term
+# is not built and not registered, so D3b's history rows are byte-identical.
+#
+# WHY THE AMPLITUDE IS UNFROZEN IN THIS ARM. The first preflight of this config
+# kept D3b's `freeze_noise_amplitude: true` and added only the score term, and a
+# 15-epoch probe showed the learned scale parameters are *discarded* in that mode
+# (decoder sigma = the physics floor, verified by inspecting the checkpoint: the
+# core/tail scale buffers are byte-identical to D3b's). A score term whose
+# gradient cannot reach the amplitude cannot test whether the amplitude is
+# learnable. This arm therefore also drops the freeze, which is exactly the
+# "learned amplitude" configuration A2.2/A2.3 parted ways over, now with the
+# missing instrument attached. The two edits are one intervention: give the
+# channel its amplitude back AND give the objective the term that can see it.
+# The kernel stays declared as `core_sigma_floor_spec`, so in unfrozen mode it is
+# a floor (`sigma = max(learned, kernel)`) rather than a pinned value.
+#
+# WHY THIS TERM. Every objective in the D3b chain is blind to the conditional
+# spread: a marginal-matching loss constrains only the law of x, and a
+# deterministic decoder can reproduce any marginal by transporting the prior, so
+# there is no barrier at sigma(z) = 0. The log score is strictly proper and is
+# evaluated at each event's OWN realised x, which is the structural difference.
+# Measured on a planted 1-D problem (scripts_joint/toy_identifiability.py, 5
+# seeds): the marginal/reconstruction objective alone recovers 0.314x the true
+# spread (0/5 seeds in band) while the log score recovers 1.033x (5/5).
+#
+# THE RISK, AND WHY STAGE 1 IS THE DECISION POINT. The score cannot identify the
+# spread when the mean map can hit its own observation: then mu = x and only
+# `log sigma` is left, so sigma -> 0 wins (measured for the log score, CRPS and
+# the energy score alike in scripts_joint/single_observation_limits.py; repeated
+# observations do not rescue it). Our model has 830k parameters against 3.0M
+# (J/psi) and 4.2M (Z) training events, so whether it is in that regime is an
+# empirical question. This arm is the measurement of that question, and the stage-1
+# checkpoint at global epoch 20 answers it in ~25 minutes: if the learned
+# core/tail scales rise above the kernel floor, proceed; if they sit on the floor
+# and the zero-noise spread collapses toward the prior width, the arm is in the
+# degenerate regime and must be stopped rather than run to 180 epochs. Note the
+# sign convention: for a *learned* amplitude a zero-noise spread that falls
+# BELOW the prior width (~14.9 MeV, D3b measured 17.6-19.3) is the collapse
+# signature, not an improvement.
+#
+# PRE-DECLARED READOUT (before the run, so the call is not made after the fact).
+# Mechanism, D3b's own check: zero-noise decoded J/psi mass spread <= 20 MeV
+# (D3b 17.6-19.3; channel-off baseline 29.2; prior std 14.9).
+# Target: native-noise J/psi width_rel_error <= 0.15 and
+#   width_rel_error_vs_identity <= 0.5 (D3b 0.152 / 0.322), Axis C native slice
+#   median <= 12 (D3b 18.6-23.4, gate 3).
+# Calibration (the point of the term): the predicted per-event scale matches the
+#   spread of held-out targets around the mean map, and the 68% conditional
+#   coverage is within +/-0.10 of nominal.
+# OOD, report only: Upsilon 1S median within +/-30 MeV of the CMS fit and the 1S
+#   std moving toward the primary-source band (96 +/- 2 MeV all-eta, 69 +/- 2 MeV
+#   |eta| < 1; arXiv:1012.5545).
+# Refuted if: sigma collapses (stage-1 decision point) or the mechanism check
+#   fails while the calibration numbers do not move.
+#
+# COST CONTROL. Two gradient-carrying decodes of a 512-event subset per region per
+# step, against the current 4096-event batch: target <= 2x the D3b epoch time
+# (72-75 s/epoch, so <= ~8 h for 180 epochs). If the smoke shows more, reduce
+# score_batch before draws (the within term needs >= 2 draws).
+extends: cms_Joint_runH_D3b.yaml
+
+run_label: Run H SR - conditional-spread log score with a learned amplitude
+run_name: Run_H_SR
+
+model:
+  decoder_noise_overrides:
+    # Inherit the kernel spec (eta-binned linear, fitted on the A1 stage-2 best)
+    # but stop pinning the amplitude to it: in this mode the spec is a floor.
+    freeze_noise_amplitude: false
+
+scoring_rule:
+  kind: gaussian_log
+  draws: 2
+  # 2048 events scored per region per step (4096 draws). Chosen so the per-event
+  # scale estimate is not dominated by two-draw noise, which is what forces a
+  # large relative floor and hence a large score magnitude.
+  score_batch: 2048
+  # Relative floor on the predicted per-event scale, in units of the target
+  # sample's per-coordinate standard deviation. Needed because the log score's
+  # first term, 0.5 r^2 / sigma^2, diverges as the scale underflows: without a
+  # floor the first smoke run produced train losses of 1e9-1e10.
+  scale_floor: 0.1
+
+stages:
+  # Same channel as D3b's stage 1; the only new key is kappa. kappa is calibrated
+  # from the FIRST epoch, not from the outcome: history.json records
+  # <region>_energy_score_raw and <region>_energy_score_weighted, and the weight is
+  # set so the weighted term is about a tenth of the total training loss rather
+  # than an order of magnitude above it (at kappa = 0.5 the raw score of ~335
+  # against x_loss ~ 0.19 made the score the entire objective). The same kappa is
+  # used in all three stages; it is not tuned per stage or against any physics
+  # readout.
+  - name: runH_stage1_deterministic_warmup
+    core_noise_multiplier: 1.0
+    tail_noise_multiplier: 0.25
+    kappa: 0.004
+  - name: runH_stage2_stochastic_core
+    kappa: 0.004
+  - name: runH_stage3_stochastic_tail
+    kappa: 0.004
+
+comparison:
+  baseline_run: Run_H_D3b
+  controlled_change: >-
+    One intervention with two coupled edits: (1) the decoder amplitude is
+    unfrozen, so `core_sigma_floor_spec` becomes a floor instead of a pinned
+    value and the learned scales are live again; (2) the strictly proper Gaussian
+    log score on the decoded conditional is added to the training loss at weight
+    kappa in all three stages, scored on a 2048-event subset with 2 independent
+    decodes per event. The frozen-amplitude variant was preflighted first and
+    rejected because in that mode the learned scales are discarded, so the score
+    term has no amplitude to act on. Everything else - the kernel spec itself, the
+    stage-1 channel at 1.0/0.25, native-noise validation and final evaluation, the
+    honest component priors, the 20/80/80 schedule and all other loss weights - is
+    D3b's, unchanged.
+  not_claimed: >-
+    This arm does not claim that the amplitude is learnable: it measures whether a
+    strictly proper score can keep a learned amplitude alive and calibrated where
+    the marginal/reconstruction objective drives it to the floor (ten previous
+    arms). The stage-1 decision point exists precisely because the answer may be
+    no.

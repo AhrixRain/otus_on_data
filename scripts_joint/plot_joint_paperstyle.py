@@ -66,6 +66,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interop-threads", type=int, default=4)
     parser.add_argument("--seed", type=int, default=20260821)
     parser.add_argument("--counts", action="store_true")
+    parser.add_argument(
+        "--noise",
+        choices=("native", "zero", "both"),
+        default="native",
+        help="noise multipliers used for the encode/decode passes: 'native' "
+        "(the checkpoint's recorded multipliers, the default and the old "
+        "behaviour), 'zero' (the deterministic map), or 'both' (two labelled "
+        "sub-directories so the response channel can be switched on and off in "
+        "the same figure set).",
+    )
     return parser.parse_args()
 
 
@@ -353,6 +363,25 @@ def main() -> int:
     restore_joint_checkpoint(model, checkpoint)
     model.eval()
 
+    recorded = checkpoint.get("noise_multipliers") or {}
+    shared_core = float(recorded.get("core", 1.0))
+    shared_tail = float(recorded.get("tail", 1.0))
+    native_multipliers = {
+        "encoder_core": float(recorded.get("encoder_core", shared_core)),
+        "encoder_tail": float(recorded.get("encoder_tail", shared_tail)),
+        "decoder_core": float(recorded.get("decoder_core", shared_core)),
+        "decoder_tail": float(recorded.get("decoder_tail", shared_tail)),
+    }
+    if args.noise == "native":
+        conditions = [("native", native_multipliers)]
+    elif args.noise == "zero":
+        conditions = [("zero", dict.fromkeys(native_multipliers, 0.0))]
+    else:
+        conditions = [
+            ("native", native_multipliers),
+            ("zero", dict.fromkeys(native_multipliers, 0.0)),
+        ]
+
     manifest = {
         "run": str(config.get("run_label", checkpoint_path.parent.name)),
         "config": str(config_path),
@@ -360,26 +389,43 @@ def main() -> int:
         "checkpoint_epoch": checkpoint.get("global_epoch"),
         "stage": (checkpoint.get("stage") or {}).get("name"),
         "density": density,
+        "noise_requested": args.noise,
+        "checkpoint_noise_multipliers": recorded,
+        "conditions": {},
         "regions": {},
     }
-    for offset, region in enumerate(config["region_order"]):
-        print(f"Generating paper-style plots for {manifest['run']} / {region} ...", flush=True)
-        manifest["regions"][region] = _make_region_plots(
-            model=model,
-            arrays=arrays[region],
-            region=region,
-            region_config=config["regions"][region],
-            run_label=manifest["run"],
-            output_dir=output_dir / region,
-            device=device,
-            split=args.split,
-            max_events=args.max_events,
-            batch_size=args.batch_size,
-            component_bins=args.component_bins,
-            seed=args.seed + 1000 * offset,
-            density=density,
-            daughter_masses=config["model"].get("daughter_masses"),
-        )
+    for condition_name, multipliers in conditions:
+        model.set_component_noise_multipliers(**multipliers)
+        condition_dir = output_dir if len(conditions) == 1 else output_dir / condition_name
+        condition_manifest = {
+            "noise_multipliers": multipliers,
+            "regions": {},
+        }
+        for offset, region in enumerate(config["region_order"]):
+            print(
+                f"Generating paper-style plots for {manifest['run']} / {region} "
+                f"({condition_name} noise) ...",
+                flush=True,
+            )
+            report = _make_region_plots(
+                model=model,
+                arrays=arrays[region],
+                region=region,
+                region_config=config["regions"][region],
+                run_label=manifest["run"] + f" [{condition_name} noise]",
+                output_dir=condition_dir / region,
+                device=device,
+                split=args.split,
+                max_events=args.max_events,
+                batch_size=args.batch_size,
+                component_bins=args.component_bins,
+                seed=args.seed + 1000 * offset,
+                density=density,
+                daughter_masses=config["model"].get("daughter_masses"),
+            )
+            condition_manifest["regions"][region] = report
+            manifest["regions"].setdefault(region, {})[condition_name] = report
+        manifest["conditions"][condition_name] = condition_manifest
 
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "paperstyle_manifest.json"
@@ -387,7 +433,10 @@ def main() -> int:
         json.dumps(pplot.json_safe(manifest), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    total = sum(len(region["files"]) for region in manifest["regions"].values())
+    total = sum(
+        len(region["files"]) for condition in manifest["conditions"].values()
+        for region in condition["regions"].values()
+    )
     print(f"Wrote {total} paper-style plots to {output_dir}")
     return 0
 

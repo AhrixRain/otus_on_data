@@ -1,0 +1,1233 @@
+Learning to Simulate High Energy Particle Collisions
+from Unlabeled Data
+Jessica N. Howard 1,*, Stephan Mandt 2, Daniel Whiteson 1, and Yibo Yang 2
+1Department of Physics & Astronomy, UC Irvine, Irvine, CA, USA.
+2Department of Computer Science, UC Irvine, Irvine, CA, USA.
+*jnhoward@uci.edu
+Authors are listed alphabetically.
+ABSTRACT
+In many scientiﬁc ﬁelds which rely on statistical inference, simulations are often used to map from theoretical models
+to experimental data, allowing scientists to test model predictions against experimental results. Experimental
+data is often reconstructed from indirect measurements causing the aggregate transformation from theoretical
+models to experimental data to be poorly-described analytically. Instead, numerical simulations are used at great
+computational cost. We introduce Optimal-Transport-based Unfolding and Simulation (OTUS), a fast simulator
+based on unsupervised machine-learning that is capable of predicting experimental data from theoretical models.
+Without the aid of current simulation information, OTUS trains a probabilistic autoencoder to transform directly
+between theoretical models and experimental data. Identifying the probabilistic autoencoder’s latent space with the
+space of theoretical models causes the decoder network to become a fast, predictive simulator with the potential
+to replace current, computationally-costly simulators. Here, we provide proof-of-principle results on two particle
+physics examples, Z-boson and top-quark decays, but stress that OTUS can be widely applied to other ﬁelds.
+1 Introduction
+From measuring masses of particles to deducing the likelihood of life elsewhere in the Universe, a common goal
+in analyzing scientiﬁc data is statistical inference — drawing conclusions about values of a theoretical model’s
+parameters, θ, given observed data, x. The likelihood model of observed data, p(x|θ ), is a central ingredient in
+both frequentist and Bayesian approaches to statistical inference; however, it is typically intractable, due to the
+complexity of a full probabilistic description of the data generation process. One way to circumvent this difﬁculty is
+to simulate experimental data for a given value of the theoretical parameters, θ, from which a probability model of
+the likelihood, p(x|θ ), can be constructed and used for downstream statistical inference regarding θ. This is known
+as simulation-based inference, and has found application across scientiﬁc disciplines ranging from particle physics
+to cosmology [1].
+However, traditional approaches to simulation, which attempt to faithfully model complex physical phenomena,
+can be computationally expensive — a limitation we aim to overcome in this work. In simulation-based inference,
+experimental data arising from a physical system typically depend on an initial conﬁguration of the system, z, that is
+unobserved, or belonging to a latent space, while the parameters θ govern the underlying mechanistic model. In
+many cases, the transformation from the latent state to experimental data is non-trivial, involving complex physical
+interactions that cannot be described analytically, but can be simulated numerically by Monte-Carlo algorithms.
+In particle physics, for example, the parameters θ govern theoretical models that describe fundamental particle
+interactions. These fundamental interactions produce secondary particles, z, which are not directly observable
+and often transform in ﬂight before passing through layers of detectors whose indirect measurements, x, can help
+reconstruct their identities and momenta. The transformation from the unobserved latent space, particles produced in
+the initial interaction, to the experimental data, is stochastic, governed by quantum mechanical randomness, and has
+no analytical description.
+Instead, Monte-Carlo-based numerical simulations of in-ﬂight and detection processes generate samples of pos-
+arXiv:2101.08944v2  [hep-ph]  5 Jul 2022
+
+=== PAGE BREAK ===
+
+sible experimental data for a given latent space conﬁguration [2–6]. This approach is computationally expensive [5,
+6] because it requires the propagation and simulation of every individual particle, each creating subsequent showers
+of thousands of derivative particles. Additionally, these simulations contain hundreds of parameters which must be
+extemporaneously tuned to give reasonable results in control regions of the data where the latent space has been
+well-established by results from previous experiments.
+In particle physics, like many other ﬁelds in the physical sciences [7–10], the computational cost of numerical
+simulations has become a central bottleneck. A fast, interpretable, ﬂexible, data-driven generative model which
+can transform between the latent space and the experimental data would be signiﬁcant for these ﬁelds. Recent
+advances in the ﬂexibility and capability of machine learning (ML) models have allowed for their application as
+computationally inexpensive simulators [11–19]. Applications of these techniques have made progress towards this
+goal but fall short in crucial ways. For example, approaches leveraging Generative Adversarial Networks (GANs)
+are able to mimic experimental data for ﬁxed distributions in the latent space [11–13], but are unable to generate
+predictions for new values of latent variables, a crucial requirement for a simulator. Other efforts condition on latent
+variables [14] but require training with labeled pairs generated by slow Monte-Carlo generators, incurring some of
+the computational cost they seek to avoid.
+We lay the foundations and provide a proof-of-principle demonstration for Optimal-Transport-based Unfolding
+and Simulation (OTUS). We use unsupervised learning to build a ﬂexible description of the transformation from
+latent space, Z, to experimental data space, X, relying on theoretical priors, p(z), where z∈ Z and a set of samples
+of experimental data{x∈ X} but, crucially, no labeled pairs, (z, x). Our model applies a type of probabilistic
+autoencoder [20, 21], which learns two mappings: encoder (data→ latent, pE(z| x)) and decoder (latent→ data,
+pD(x| z)). Typical probabilistic autoencoders (i.e. variational autoencoders (V AEs) [13, 22]) use a simple,
+unphysical latent space, Y, for computational tractability during learning. However, this causes V AEs to suffer
+from the same weakness as GANs: doomed to mimic the data distribution, p(x), for a ﬁxed physical latent space,
+p(z), unless the model compromises to requiring expensive simulated pairs (e.g. a conditional V AE approach [23]).
+OTUS’s innovation is to align the probabilistic autoencoder’s latent space,Y, with that of our inference task, Z. With
+this change, our decoder becomes a computationally inexpensive, conditional simulator mapping Z→ X as well as a
+tractable transfer function, pD(x| z). See Fig. 1 for a visual description.
+For V AEs, identifyingY with Z is difﬁcult because the training objective requires the ability to explicitly compute
+the latent space prior, p(y) for y∈ Y. In particle physics, such explicit computations are intractable. We therefore
+turn to a new form of probabilistic autoencoder: the Sliced Wasserstein Autoencoder (SWAE) [20, 21], which
+alleviates this, and other, issues by reformulating the objective using the Sliced Wasserstein distance and other ideas
+from optimal transport theory. This reformulation lets us identify Y with Z and also allows the encoder and decoder
+network mappings to be inherently stochastic.
+We suggest that an SW AE [20] can be used to achieve the broad goal of simulators: learning the mapping from
+the physical latent space to experimental data directly from samples of experimental data{x∼ p(x)} and theoretical
+priors{z∼ p(z)} in control regions. The resulting decoder ( Z→ X) can be applied as a simulator, generating
+samples of experimental data from latent variables in a fraction of the time, and probed and visualized to ensure a
+physically meaningful transformation. Additionally, the decoder’s numerically tractable detector response function,
+pD(x| z), would be useful in other applications, such as direct calculation of likelihood ratios via integration [24].
+The encoder network’sX→ Z mapping can also be used in unfolding studies [25, 26]. Lastly, the mathematical
+attributes of the SW distance allow for the inclusion of informed constraints on the mappings.
+In this work, we ﬁrst present background on the problem, the objective, and discuss related work. In Proposed
+Solution, we present the foundations for the OTUS method and discuss steps toward scaling OTUS to a full
+simulation capable of replacing current Monte-Carlo methods in particle physics analyses. In Results, we give initial
+proof-of-principle demonstrations on Z-boson and semileptonic top-quark decays. In Methodology, we discuss the
+details of our methods. We then conclude by discussing directions for future work and also brieﬂy discuss how
+OTUS might be applied to problems in other scientiﬁc ﬁelds.
+2/32
+
+=== PAGE BREAK ===
+
+2 Theoretical Background
+The primary statistical task in particle physics, as in many areas of science, is inferring the value of a model
+parameter, θ, based on a set of experimental data,{x}. For example, physicists inferred the mass of the Higgs boson
+from Large Hadron Collider data [27, 28]. Inference about θ requires a statistical model, p(x| θ ), which can be used
+to calculate the probability to make an observation, x, given a parameter value, θ. Unfortunately, such analytical
+expressions are unavailable due to the indirect nature of observations and the complexity of detectors. Previous
+solutions to this problem have relied on numerical Monte-Carlo-based simulations [2–4].
+Fundamental particle interactions, like the decay of a Higgs boson, produce a set of particles which deﬁne an
+unobserved latent space, Z. The statistical model p(z| θ ) is usually well-understood and can often be expressed
+analytically or approximated numerically. However, experimenters only have access to samples of experimental
+data,{x}. Therefore, calculating p(x| θ ) requires integrating over the unobserved{z∼ p(z| θ )}; namely, p(x|
+θ ) =
+∫
+dz p (x| z) p(z| θ ).
+The transfer function, p(x| z), represents the multi-staged transformation from the unobserved latent space, Z,
+to the experimental data space, X. As latent space particles travel they may decay, interact, or radiate to produce
+subsequent showers of hundreds of secondary particles. These particles then pass through the detector, comprising
+many layers and millions of sensors resulting in a high-dimensional response of order O(108). Finally, the full set of
+detector measurements are used to reconstruct an estimate of the identities and momenta of the original unobserved
+particles in the latent space. For the vast majority of analyses this ﬁnal, experimental data space, X, has a similar
+dimensionality1 to that of Z, usually O(101). However, the complex, stochastic, and high-dimensional nature of
+the transformation makes it practically impossible to construct a closed-form expression for the transfer function
+p(x| z). Instead, particle physicists use simulations as a proxy for the true transfer function.
+To arrive at p(x| θ ), samples of {z∼ p(z| θ )} are transformed via simulations into effective samples of
+{x∼ p(x| θ )}, approximating the integral above. Current state-of-the-art simulations strive to faithfully model the
+details of particle propagation and decay via Monte-Carlo techniques. This approach is computationally expensive
+and limited by our poor understanding of the processes involved. Ad-hoc parameterizations often ﬁll gaps in our
+knowledge but introduce arbitrary parameters which must be tuned to give realistic results using data from control
+regions, where the underlying p(z| θ ) is well-established from previous experiments, freeing p(x| θ ) of surprises.
+Examples of control regions include decays of heavy bosons (e.g. Z) or the top quark (t).
+The computational cost of current simulations is the dominant source of systematic uncertainties and the largest
+bottleneck in testing new models of particle physics [29]. A computationally-inexpensive, ﬂexible simulator which
+can map from Z to X such that it effectively approximates p(x| z) would be a breakthrough.
+3 Objective and Related Work
+The development of OTUS was guided by the goals of the simulation task and the information available for training.
+Speciﬁcally, the simulator has access to samples from model priors, p(z| θ ) control, and experimental data samples,
+{x control}. Critically,{x control} samples come from experiments, where the true{z control} are unknown, such that
+no (z control, x control) pairs exist. Instead, the distribution of {z control} are known to follow p(z| θ ) control and the
+distribution of{x control} is observed.
+The simulator should learn a stochastic transformation Z→ X such that samples{z} drawn from p(z| θ ) control
+can be transformed into samples{x} whose distribution matches that of the experimental data{x control}. Additionally,
+these control regions should be robust so that the simulator can approximate p(x| θ ) for different, but related, values
+of θ. Traditional Monte-Carlo simulators such as GEANT4 [2] face related challenges.
+The ﬂexibility of ML models at learning difﬁcult functions across a wide array of contexts suggests that these
+tools could be used to develop a fast simulator. The objectives described above translate to four constraints on the
+class of ML model and methods of learning. Generating samples of{x∈ X} requires a (1) generative ML method.
+For z∈ Z, the simulator maps z→ x such that the output x depends on the input z, meaning the mapping is (2)
+1The dimensionality is not necessarily equal due to the imperfect nature of the detection process. For example, Z may represent four
+quarks but X may only contain three jets.
+3/32
+
+=== PAGE BREAK ===
+
+Figure 1. Schematic of the problem and the solution. Current simulations map from a physical latent space, Z,
+to data space, X, attempting to mimic the real physical processes at every step. This results in a computationally
+intensive simulation. Previous Machine Learning (ML) solutions can reproduce the distributions in X but are not
+conditioned on the information in Z; instead they map from unphysical noise to X, which limits their scope. We
+introduce a new method which provides the best of both worlds. OTUS provides a simulation Z→ X (Decoder)
+which is conditioned on Z yet is computationally efﬁcient. Advantageously, it also inadvertently provides an
+equivalently fast unfolding mapping from X→ Z (Encoder).
+conditional. The problem’s inherent and unknown randomness prevents us from assuming any particular density
+model, suggesting that our simulator should preferably be (3) inherently stochastic. The lack of (z, x) pairs mandates
+an (4) unsupervised training scheme. Additionally, the chosen method should produce a simulation mapping (Z→ X)
+which is inspectable and physically interpretable.
+Generative ML models can produce realistic samples of data in many settings, including natural images.
+Generative Adversarial Networks (GANs) transform noise into artiﬁcial data samples and have been adapted to
+particle physics simulation tasks for both high-level and raw detector data, which can resemble images [11–14,
+17]. However, while GANs have successfully mimicked existing datasets,{x}, for a ﬁxed set of{z}, they have not
+learned the general transformation z→ x prescribed by p(x| z), and so cannot generate fresh samples{x′} for a new
+set of{z′}, thus failing condition (2). Other GAN-based approaches [14] condition the generation of{x} on values
+of{z}, but in the process use labeled pairs (x, z), which are only obtained from other simulators, rather than from
+experiments, thus failing condition (4). Relying on simulated (x, z) pairs incurs the computational cost we seek to
+avoid, and limits the role of these fast simulators to supplementing traditional simulators, rather than replacing them.
+An alternative class of unsupervised, generative ML models are variational autoencoders (V AEs). While GANs
+leverage an adversarial training scheme, V AEs instead optimize a variational bound on the data’s likelihood by
+constructing an intermediate latent space, Y, which is distributed according to a prior, p(y) [30]. An encoder (X→ Y)
+4/32
+
+=== PAGE BREAK ===
+
+network transforms x→ ˜y, where the ~ distinguishes a mapped sample from those drawn from p(y). Similarly,
+a decoder ( Y→ X) network transforms a sample produced by the encoder back to the data space, ˜y→ ˜x. The
+autoencoder structure is the combined encoder-decoder chain, x→ ˜y→ ˜x. During training, the distribution of the
+encoder output, pE(y| x), is constrained to match the latent space prior, p(y), via a latent loss term which measures
+the distance between the distributions. At the same time, the output of the autoencoder, ˜x, is constrained to match
+the input, x, which are compared pairwise. New samples from X following the distribution of the data, p(x), can
+then be produced by decoding samples,{y}, drawn from p(y), via y→ ˜x′.
+The form of p(y) is usually independent of the nature of the problem’s underlying theoretical model, and is often
+chosen to be a multi-dimensional Gaussian for simplicity. This choice provides sufﬁcient expressive power even
+for complex datasets (i.e. natural images). However, in the particle physics community, optimizing the encoding
+mapping to match this latent space is seen as an extra, unnecessary hurdle in training [12]. Therefore, GANs have
+been largely favored over V AEs in the pursuit of a fast particle physics simulator. Some studies investigated V AEs in
+this context, but retained the unphysical form of p(y) (i.e. multi-dimensional Gaussian) [13, 15, 16], preventing
+them from being conditional generators, failing requirement (2).
+4 Proposed Solution
+4.1 Our Approach: OTUS
+In this work, we aim to align the probabilistic autoencoder’s latent space,Y, with that of our inference task, Z. This
+will allow us to learn a conditional simulation mapping from our theoretical model latent space to our data space,
+Z→ X. Therefore, we construct a probabilistic autoencoder where the latent space prior, p(y), is identical to the
+physical latent space, p(y)≡ p(z) = p(z| θ ), for the choice of particular parameters, θ. The decoder then learns
+pD(x| z) providing precisely the desired conditional transformation, z→ x. Additionally, pD(x| z) can act as a
+tractable transfer function in approaches which estimate p(x| θ ) via direct integration [24]. The encoder’s learned
+pE(z| x) is of similar interest in unfolding applications [25, 26].
+This is not possible with V AEs because optimizing the variational objective requires explicit computation of
+the densities p(y), pE(y| x), and pD(x| y). Therefore, p(y) is often assumed to be a standard isotropic Gaussian
+for its simplicity and potential for uncovering independent latent factors of the data generation process. However,
+in particle physics the true prior, p(z), which is governed by quantum ﬁeld theory, is highly non-Gaussian and
+computing its density explicitly requires an expensive numerical procedure. Similarly, as we have little knowledge
+about the true underlying stochastic transforms, assuming any particular parametric density model for pE(y| x) or
+pD(x| y), like a multivariate Gaussian, would be inappropriate and overly restrictive. These concerns led us to use
+inherently stochastic (i.e. implicit) models for p(z), pE(z| x), and pD(x| z) that are fully sample-driven.
+Additionally, the V AE objective’s use of KL-divergence introduces technical disadvantages. The KL-divergence,
+DKL(·‖·), is not a true distance metric, and will diverge for non-overlapping distributions often leading to unusable
+gradients during training [20, 31]. Moreover, the speciﬁc use of DKL(pE(z| x)‖p(z)) within the V AE loss forces
+pE(z| x) to match p(z) for every value of x∼ p(x) [21]. This term must be carefully tuned (e.g. with a β-V AE
+approach [13, 32]) to avoid the undesirable effect of the encoder mapping different parts ofX to the same overlapping
+region in Z, which can be particularly problematic if Z represents a physically meaningful latent space.
+We resolve these issues by applying an emerging class of probabilistic autoencoders, based instead on the
+Wasserstein distance, which is a well-behaved distance metric between arbitrary probability distributions rooted in
+concepts from optimal transport theory [20, 21].
+The original Wasserstein Autoencoder (W AE) [21] loss function is
+LW AE(p(x), pD(x| z), pE(z| x)) = Ex∼p(x)EpE (z|x)E ˜x∼pD(x|z)[c(x, ˜x)]
+1A
++ λ dz(pE(z), p(z))
+1B
+, (1)
+where E denotes the expectation operator and c(·,·) is a cost metric. For the optimal pE(z| x), LW AEbecomes
+an upper bound on the Wasserstein distance between the true data distribution, p(x), and the decoder’s learned
+distribution, pD(x) =
+∫
+dzp D(x| z)p(z); the bound is tight for deterministic decoders.
+5/32
+
+=== PAGE BREAK ===
+
+Term A of Equation (1) constrains the output of the encoder-decoder mapping, ˜x, to match the input, x, while
+term B of Equation (1) constrains the encoder mapping. The hyperparameterλ provides a relative weighting between
+the two terms. The difference between the marginal encoding distribution, pE(z) =
+∫
+dxp E(z| x)p(x), and the latent
+prior, p(z), is measured by dz(·,·).2 Unfortunately, the originally proposed options for dz(·,·) [21] had undesirable
+features which made them ill-suited for this particle physics problem (see Model Choice).
+The more recent Sliced Wasserstein Autoencoder (SWAE) [20] uses the Sliced Wasserstein (SW) distance as
+the dz(·,·) metric. The SW distance, dSW(·,·), is a rigorous approximation to the Wasserstein distance, dW (·,·).
+The SWAE completely grounds the loss function in optimal transport theory as each term and the total loss can
+be identiﬁed as approximating the Wasserstein distances between various distributions and allows p(y) to be any
+sampleable distribution, including the physical, p(z). Additionally, the (S)WAE method allows the encoder and
+decoder to be implicit probability models, while avoiding an adversarial training strategy which can lead to problems
+like mode collapse [33].
+Both dW and dSW are true distance metrics [20]. The KL-divergence and adversarial schemes lack this property
+resulting in divergences and meaningless loss values which lead to problems during training and make it difﬁcult to
+include additional, physically-motivated constraints. The Wasserstein distance is the cost to transport probability mass
+from one probability distribution to another according to a cost metric, c(·,·), following the optimal transportation
+map. However, it is difﬁcult to calculate for multivariate probability distributions when pairs from the optimal
+transportation map are unknown. However, for univariate probability distributions, there is a closed-form solution
+involving the difference between the inverse Cumulative Distribution Functions (CDF−1s) of the two probability
+distributions. The SW distance approximates the Wasserstein distance by averaging the one-dimensional Wasserstein
+distance over many randomly selected slices — one-dimensional projections of the full probability distribution [20]
+(see Training).
+The SW AE loss takes the general form of the W AE loss
+LSW AE(p(x), pD(x| z), pE(z| x)) = Ex∼p(x)EpE (z|x)E ˜x∼pD(x|z)[c(x, ˜x)]
+2A
++ λ dSW(pE(z), p(z))
+2B
+. (2)
+Term A of Equation (2) compares pairs (x, ˜x), where ˜x is the output of the encoder-decoder mapping. In term B of
+Equation (2), matched pairs are not available so we instead use the SW distance approximation. Both loss terms use
+the cost metric c(u, v) =||u− v||2 [20].
+The SW AE allows us to train a probabilistic autoencoder that transforms betweenX and Z with a physical prior
+p(z). However, since we are in an unsupervised setting, the true p(x| z) is unknown. It is therefore crucial to ensure
+that the learned transformation is plausible and represents a series of physical interactions. To encourage this, we
+can easily impose supplemental physically-meaningful constraints on the SW AE model. These constraints can be
+relations between Z and X spaces or constraints on the internal properties of these respective spaces. In this work,
+we use one constraint from each category.
+From the ﬁrst category, we add a term comparing the unit vector parallel to the momentum of an easily
+identiﬁable particle in the latent and experimental spaces. This can be thought of as analogous to choosing a
+consistent basis and can be helpful for problems containing simple inversion symmetries. An example of such an
+inversion symmetry exists in the Z→ e+e− study below. In particle experiments, misidentiﬁcation of lepton charge
+in the process of data reconstruction is known to be extremely rare. This means a learned mapping which frequently
+maps electron/positron (e∓) information in Z to positron/electron (e±) information in X, and vice versa, would be
+unphysical.. For a generative mapping G : U→ V, this anchor term takes the general form
+LA(p(u), pG(v| u)) = Eu∼p(u)Ev∼pG(v|u)[cA(u, v)]. (3)
+2Comparing pE (z) and p(z) rather than pE (z| x) and p(z) is the crucial innovation which allows different parts of Z to remain disjoint.
+6/32
+
+=== PAGE BREAK ===
+
+We chose cA(u, v) = 1− ˆpu· ˆpv, where ˆp is the unit vector of the electron’s momentum. We add the anchor loss inZ
+space, LA(p(x), pE(z| x)), and in X space, LA(p(z), pD(x| z)), to the SW AE loss with hyperparameter weightings
+βE and βD respectively.
+From the second category, we enforce the Minkowski metric constraint internally forZ and X spaces respectively.
+A particle’s nature, excluding discrete properties such as charge and spin, is described by four quantities related
+by the Minkowski metric. Arranging these quantities into a 4-vector deﬁned as pµ = (p, E) where E is a particle’s
+energy and p is a vector of its momentum in the ˆx, ˆy, ˆz direction respectively, the constraint becomes
+pµ pµ = E2− p2 = m2, (4)
+where m is the particle’s mass. We directly enforce this relationship in the model for all particles.3
+Adding more physically-motivated constraints would be straightforward, however, in this work we only assume
+this minimal set and recommend that more robust data structures be considered ﬁrst, as such constraints may become
+unnecessary (see Conclusion).
+4.2 OTUS in Practice
+In this section we brieﬂy outline how OTUS might eventually be applied to problems in particle physics such as
+searches for new particles. However, we emphasize that this work only demonstrates a proof-of-principle version of
+OTUS. Follow-up work will be necessary to overcome some technical hurdles before OTUS could be applied to
+such a problem (see Conclusion).
+A main goal of particle physics is to discover the complete set of fundamental units of matter: particles.
+Therefore, searches for exotic particles are common practice in this ﬁeld. These searches typically proceed by
+looking for anomalies in data which are better described by simulations which assume the existence of a new particle.
+It is therefore phrased as a hypothesis test between two theoretical models, θSM, which assumes only the particles in
+the Standard Model (SM), and θBSM, which assumes the existence of one or more new particles that lie Beyond the
+Standard Model (BSM). These distinct models will generate distinct latent signatures,{zSM| θ} and{zBSM| θ},
+which lie in Z. As particle physics experiments do not observe the latent{z} directly, the hypothesis test is performed
+in the observed space X, see Introduction and Objective and Related Work for more details.
+The goal for OTUS is to learn a simulation mapping from Z→ X which is independent of the underlying model,
+θ, and can be applied to any z. This is achieved by carefully selecting control regions,{zi| θi} , which span Z and
+for which observed data,{x}, is available for training. See Fig. 2 for a visual description. These control regions have
+known distributions of outcomes in X, which allows us to properly match distributions in Z to distributions in X for
+training OTUS. Since these control regions are chosen to span Z, OTUS will then be able to interpolate to unseen
+signal regions. Neural networks in general are known to perform well at interpolation tasks [34], and recent work
+has shown that autoencoders in particular are proﬁcient at learning manifold interpolation [35]. Still more work has
+suggested there might be a deeper connection to the structure of this manifold and optimal transport [36]. Therefore,
+it is reasonable to expect that OTUS will be able to interpolate well in this space. However, these claims should be
+thoroughly investigated in future work.
+A signal region is a region inZ space where signatures of new particles might occur. SM predictions,{zSM| θSM},
+and BSM predictions,{zBSM| θBSM}, would then be passed to OTUS to produce two simulated data samples{xSM}
+and{xBSM} which would be compared with observed data, {x}, via a hypothesis test to calculate the relative
+likelihood of the SM and BSM theories. This technique, simulation-based inference, is standard practice in particle
+physics and is applied to existing simulation methods.
+As a concrete example, let our BSM theory be the SM with the addition of a new particle, Z′, with a mass of
+0.030 [TeVc−2], which decays into a pair of leptons, a ﬂagship search for the Large Hadron Collider [37]. The latent
+space Z would include the two leptons produced by the decay of the Z′, and the observed space X would include
+3We note that initial experiments lacked this constraint yet the networks automatically learned this relationship from the data. However,
+directly including this constraint in the model architecture improved performance overall.
+7/32
+
+=== PAGE BREAK ===
+
+Figure 2. Schematic diagram of how OTUS can be used in an abstract analysis. The gray surface represents
+Z. Different theoretical models, θi, will produce different signatures{zi| θi} which lie in Z. The goal of OTUS is to
+learn a general mapping from Z→ X which is independent of the underlying theory, θ, and only depends on the
+information contained in{z∈ Z}. One trains OTUS using control region data which span Z and have known
+outcomes in X. These allow us to pair distributions in Z with distributions in X. From these examples, OTUS
+interpolates to the rest of Z and can then be used to generate{xi} from samples{zi| θi} from regions not used
+during training, including the blinded signal region. This can then be used to search for new particles.
+the leptons identiﬁed and measured by the detector. For OTUS to be able to predict the observed signatures from
+this latent space, it would need to interpolate between control regions which have similar relationships. Decays of
+existing particles to leptons, such as the 0.091 [TeVc−2] Z and the 0.002 [TeVc−2] J/ψ would allow OTUS to learn
+the mapping from latent leptons to observed leptons. Our theoretical Z′ has a mass which lies between those of the
+particles in our control regions. OTUS would need to interpolate along this axis; control regions at various masses
+provided by the Z and J/ψ decays are therefore essential to describe and determine the nature of the interpolation.
+To verify the interpolation, one might compare the prediction of OTUS to observed data in the intermediate range
+between the Z′ and the Z.
+Alternatively, the Z′ could have a heavier mass, e.g. 1 [TeVc−2]. In this scenario, OTUS would be required to
+extrapolate along the mass axis. Naively, this sounds problematic as extrapolation is generally much less sound than
+interpolation, however this task is also required of current simulations for this scenario. Simulations succeed in such
+tasks when they have inductive biases which control their behavior even outside of training (tuning) regions. These
+inductive biases are based on physics principles and scale to the signal regions of interest. For neural networks, it
+has been shown that architectures with inductive bias constraints succeed at such extrapolation tasks [38]. Since a
+mature version of OTUS will manifestly include such inductive biases (see Conclusion) it is reasonable to assume it
+can achieve this task as well as current simulation methods can.
+5 Results
+5.1 Demonstration in Z→ e+e− decays
+We ﬁrst test OTUS on an important control region: leptonic decays of the Z-boson to electron-positron pairs,
+Z→ e+e−. The theoretical prior is well-known, and its parameters{θ}, like the Z-boson’s mass and its interaction
+strengths, are tightly constrained by precision experiments. We identify Z with the Z-boson’s decay products: the
+electron, e−, and positron, e+, whose four-momenta span the space. We compose these into an eight-dimensional
+vector
+z :={ze−, ze+} ={pe−
+, Ee−
+, pe+
+, Ee+
+}. (5)
+This simplistic vector description excludes categorical properties such as charge.
+8/32
+
+=== PAGE BREAK ===
+
+The model prior p(z) can be simply expressed with quantum ﬁeld theory and sampled. The subsequent step,
+where the electron and positron travel through the layers of detectors, depositing energy and causing particle showers,
+cannot be described analytically; a model will be learned by OTUS from data in control regions. Here we use
+simulated data samples, but speciﬁc (z, x) pairs are not used to mimic the information available when training from
+real data. The complex intermediate state with many low-energy particles and high-dimensional detector readouts is
+reduced and reconstructed yielding estimates of the electron and positron four-momenta. Therefore, X has the same
+structure and dimensionality as Z, though the distribution p(x) reﬂects the impact of the ﬁnite resolution of detector
+systems (see Data Generation).
+Figure 3 shows distributions of testing data, unpaired samples from X and Z in several projections, and the
+results of applying the trained encoder and decoder to transform between the two spaces. Visual evaluation indicates
+qualitatively good performance, and quantitative metrics are provided. Measuring overall performance, the SW
+distances are as follows: dSW(p(z), pE(˜z)) = 0.984 [GeV2], dSW(p(x), pD( ˜x)) = 1.33 [GeV2], dSW(p(x), pD( ˜x′)) =
+3.03 [GeV2]. Additionally, several common metrics are reported for each projection in Supplementary Tables 1 and
+2. Details of the calculations are provided in Evaluation.
+To ensure that the learned decoder reﬂects the physical processes being modeled, we inspect the transformation
+from Z→ X in Figure 4. The learned transfer function, pD(x| z), shows reasonable behavior, mapping samples
+from Z to nearby values of X. This reﬂects the imperfect resolution of the detector while avoiding unphysical
+transformations such as mapping information on the far-end distribution tails in Z to the distribution peaks in X.
+Finally, we examine the distribution of a physically important derived quantity, the invariant mass of theZ-boson,
+see Figure 5. This quantity was not used as an element of the loss function, and so provides an alternative measure
+of performance. The results indicate a high-quality description of the transformation from Z to X. The performance
+of the transformation from X to Z is less well-described, likely because this relation is more strict in Z causing a
+sharper peak in the distribution. Such strict rules are difﬁcult for networks to learn when not penalized directly
+or hard-coded as inductive biases, again signaling that a robust data representation will be crucial to improving
+performance (see Conclusion).
+5.2 Demonstration in semileptonic top-quark decays
+The Z-boson control region is valuable for calibrating simulations of leptons such as electrons or muons, which tend
+to be stable and well-measured. We next test OTUS on the challenging task of modeling the decay and detection of
+top-quark pairs featuring more complex detector signatures. This control region has more observed particles and
+introduces additional complexities: unstable particles decaying in ﬂight, signiﬁcantly degraded resolution relative to
+leptons, undetected particles, and a stochastically variable number of observed particles.
+The initial creation of top-quark pairs, their leading-order decay t ¯t→ W +b W− ¯b, and the subsequent W-boson
+decays are well-described using quantum ﬁeld theory, so p(z| θ ) can be sampled. We select the modes W−→ e− ¯νe
+and W +→ u ¯d as examples and assign our latent space to describe the four-momenta of these six of particles:
+z :={ze−, z ¯νe, zb, z¯b, zu, z ¯d} ={pe−
+, Ee−
+, p ¯νe, E ¯νe, pb, Eb, p
+¯b, E
+¯b, pu, Eu, p
+¯d, E
+¯d} (6)
+with a total of twenty-four dimensions.
+Unlike in the Z→ e+e− study, the X space’s structure is considerably different from that of theZ space. While
+the electron e− is stable and readily identiﬁable, the other particles are more challenging. The neutrino, ¯νe, is
+stable, yet invisible to our detectors, providing no estimate of its direction or momentum; instead its presence is
+inferred using momentum conservation pν =− ∑ pobserved. Unfortunately, soft initial state radiation and detector
+inefﬁciencies also contribute to missing momentum. The aggregate quantity is labeled pmiss. The four quarks ¯b, u, ¯d
+and b are strongly-interacting particles each producing complex showers of particles that are clustered together into
+jets to estimate the original quark momenta and directions. Unfortunately, despite signiﬁcant recent progress [39–41],
+we cannot assume a perfect identiﬁcation of the source particle in Z for a given jet observed in X, causing signiﬁcant
+ambiguity.
+9/32
+
+=== PAGE BREAK ===
+
+Figure 3. Performance of OTUS for Z→ e+e− decays. a Matching of the positron’s px, py, and E distributions
+in Z. It shows distributions of samples from the theoretical prior,{z∼ p(z)} (solid black), as well as the output of
+the encoder,{˜z}; the encoder transforms samples of testing data in experimental space, X, to the latent space, Z,
+and is shown as x→ ˜z (dashed cyan). b Matching of the positron’s px, py, and E distributions in X. It shows the
+testing sample{x∼ p(x)} (solid black) in the experimental space, X, as well as output from the decoder applied to
+samples drawn from p(z), labeled as z→ ˜x′ (dashed purple). Also shown are samples passed through both the
+decoder and encoder chain, x→ ˜z→ ˜x (dotted green). Dotted green and solid black distributions are matched
+explicitly during training. Enhanced differences between dashed purple and solid black indicate the encoder’s output
+needs improvement, as pE(z) does not fully match p(z). If performance were ideal, the distributions in every plot
+would match up to statistical ﬂuctuations. Residual plots show bin-by-bin ratios with statistical uncertainties
+propagated accordingly (see Evaluation).
+10/32
+
+=== PAGE BREAK ===
+
+Figure 4. Visualization of the transformation from Z→ X in the Z→ e+e− study for positron energy. a
+The learned transformation of the decoder, pD(x| z). b The true transformation from the simulated sample, for
+comparison, though the true (z, x) pairs are not typically available and were not used in training. Colors in the X
+projection indicate the source bin in Z for a given sample.
+Additionally, a complete description of the Z→ X transformation should include the possibilities for the number
+of jets in X to exceed the number of quarks, due to radiation and splitting, or to fail to match the number of quarks,
+due to jet overlap or detector inefﬁciency. We leave this complexity for future work and restrict our X space to
+contain exactly four jets.
+The ﬁnal complexity introduced in this study is the presence of a sharp lower threshold in transverse momentum,
+pT. Experimental limitations require that jets with pT < 20 [GeVc−1] be discarded and therefore are not represented
+in the training dataset, as they would be unavailable in control region data. Mimicking this experimental effect, we
+directly impose this threshold on the decoder’s output instead of the network learning it. Paralleling reality, such
+events are discarded before computing losses. This strategy requires modiﬁcations to both the model and training
+strategy (see Methodology).
+Our experimental data is the vector
+x :={xe−, xmiss, xjet1, xjet2, xjet3, xjet4} (7)
+={pe−
+, Ee−
+, pmiss, Emiss, pjet1, Ejet1, pjet2, Ejet2, pjet3, Ejet3, pjet4, Ejet4}, (8)
+with a total of twenty-four dimensions. If quark-jet assignment were possible, it would be natural to align the order
+of the observed jets with the order of their originating quarks in Z space. Lacking this information, it is typical to
+order jets by descending|pT| =
+√
+p2x + p2y, where jet 1 has the largest|pT|.
+Figure 6 shows distributions of testing data, unpaired samples from X and Z in several projections, and the
+results of applying the trained encoder and decoder to transform between the two spaces. Visual evaluation indicates
+qualitatively good performance, and quantitative metrics are also provided. Measuring overall performance the SW
+distances are as follows: dSW(p(z), pE(˜z)) = 22.3 [GeV2], dSW(p(x), pD( ˜x)) = 232 [GeV2], dSW(p(x), pD( ˜x′)) =
+120 [GeV2]. Additionally, several common metrics are reported for each projection in Supplementary Table 3 and 4.
+Details of the calculations are provided in Evaluation.
+To probe the Z→ X transformation, we inspect the learned transfer function, pD(x| z) in Figure 7. While
+the overall performance is worse in this more complex case, it still shows reasonable behavior, mapping samples
+11/32
+
+=== PAGE BREAK ===
+
+Figure 5. Performance of OTUS for Z→ e+e− decays in a physically important derived quantity, the
+invariant mass of the electron-positron pair, MZ. a Matching of the MZ distribution in Z. It shows distributions
+of samples from the theoretical prior,{z∼ p(z)} (solid black), as well as the output of the encoder,{˜z}; the encoder
+transforms samples of testing data in experimental space, X, to the latent space, Z, and is shown as x→ ˜z (dashed
+cyan). b Matching of the MZ distribution in X. It shows the testing sample{x∼ p(x)} (solid black) in the
+experimental space, X, as well as output from the decoder applied to samples drawn from p(z), labeled as z→ ˜x′
+(dashed purple). Also shown are samples passed through both the decoder and encoder chain, x→ ˜z→ ˜x (dotted
+green). Dotted green and solid black distributions are matched explicitly during training. Enhanced differences
+between dashed purple and solid black indicate the encoder’s output needs improvement, aspE(z) does not fully
+match p(z). If performance were ideal, the distributions in every plot would match up to statistical ﬂuctuations.
+Note that this projection was not explicitly used during training, but was inferred by the networks. Residual plots
+show bin-by-bin ratios with statistical uncertainties propagated accordingly (see Evaluation).
+12/32
+
+=== PAGE BREAK ===
+
+from Z to nearby values of X and avoiding unphysical transformations such as mapping information on the far-end
+distribution tails in Z to the distribution peaks in X. Additionally, cross-referencing with the true simulation’s
+mapping shows the similar nature of the mappings.
+Finally, we examine the distribution of physically important derived quantities, the invariant masses of the
+top-quarks and W-bosons estimated by combining information from pairs and triplets of objects, see Figure 8. No
+exact assignments are possible due to the ambiguity of the jet assignment and the lack of transverse information for
+the neutrino, but a comparison can be made between the experimental sample in X and the mapped samples Z→ X.
+As in the Z→ e+e− case, we see imperfect but reasonable matching on such derived quantities which the network
+was not explicitly instructed to learn.
+6 Methodology
+This section provides details on the methods used to produce the results in the previous section. We ﬁrst describe
+the data generation process. We then describe the machine learning models used and strategies for how they were
+trained. Finally, we give details on the qualitative and quantitative evaluation methods used in the visualizations of
+the results.
+6.1 Data Generation
+The data for this work was generated with the programs Madgraph5 v.2.6.3.2 [42], Pythia v.8.240 [3], and Delphes
+v.3.4.1 [4]. ROOT v.6.08/00 [43] was used to interface with the resulting Delphes output ﬁles. We used the default
+run cards for Pythia, Delphes, and Madgraph. Where relevant, jets were clustered using the anti-kt algoritm [44]
+with a jet radius of 0.5. The card ﬁles can be found with the code for this analysis (see Code Availability).
+Samples of the physical latent space, Z, were extracted from the Madgraph LHE ﬁles to form the 4-momenta of
+the particles. Samples of the data space, X, were extracted from Delphes’ output ROOT ﬁles. We selected for the
+appropriate ﬁnal state: e+, e− in the Z→ e+e− study and e−, missing 4-momentum (i.e. MET = (pmiss, Emiss)), and
+4 jets in the semileptonic t¯t study. If an event failed this selection, the corresponding Z event was also removed.
+Reconstructed data in X was extracted by default as (pT, η, φ ) of the object and converted into (p, E) via the
+following relations
+p := (px, py, pz) =(pT cos(φ ), pT sin(φ ), pT sinh(η)) (9)
+E =
+√
+(pT cosh(η))2 + m2, (10)
+where m is the particle’s deﬁnite mass and is zero for massless particles. Note that we are assuming natural units
+where the speed of light, c, is equal to unity. This equates the units of energy, E, momentum, p, and mass, m. In
+our case, me+ = me− = 0 [GeVc−2] is a standard assumption given that the true value is very small compared to
+the considered energy scales. We additionally set m = 0 [GeVc−2] for the 4 jets and MET since these objects have
+atypical deﬁnitions of mass.
+In total, we generated 491,699 events for Z→ e+e− and 422,761 events for semileptonic t¯t. The last 160,000
+events in each case were reserved solely for statistical tests after training and validation of OTUS.
+6.2 Model
+6.2.1 Model Choice
+In this section, we brieﬂy survey the literature of machine learning methods which might be considered for this task.
+We discuss their features and whether they are compatible choices for this application.
+We will primarily focus on OT-based probabilistic autoencoder methods (i.e. WAE [21] and its derivatives)
+but ﬁrst we brieﬂy address a derivative of V AEs,β-V AE. This method appears similar to W AE in the form of loss
+function that is used. Both have a data-space loss and a latent-space loss with a relative hyperparameter weighting β
+(or λ for the W AE). However, theβ-V AE method is not principled in OT and thus is distinct from the W AE method
+and its derivatives. Most importantly for our application, the β-V AE (like its predecessor V AE) is likelihood-based
+13/32
+
+=== PAGE BREAK ===
+
+Figure 6. Performance of OTUS for semileptonic t¯t decays. a Matching of the b quark’s px, py, and E
+distributions in Z. It shows distributions of samples from the theoretical prior,{z∼ p(z)} (solid black), as well as
+the output of the encoder, {˜z}; the encoder transforms samples of the testing data in experimental space, X, to the
+latent space, Z, and is shown as x→ ˜z (dashed cyan). b Matching of the leading jet’s px, py, and E distributions in
+X. It shows the testing sample{x∼ p(x)} (solid black) in the experimental space, X, as well as output from the
+decoder applied to samples drawn from the prior p(z), labeled as z→ ˜x′ (dashed purple). Also shown are samples
+passed through both the decoder and encoder chain, x→ ˜z→ ˜x (dotted green). Dotted green and solid black
+distributions are matched explicitly during training. Enhanced differences between dashed purple and solid black
+indicate the encoder’s output needs improvement, aspE(z) does not fully match p(z). If performance were ideal, the
+distributions in every plot would match up to statistical ﬂuctuations. Residual plots show bin-by-bin ratios with
+statistical uncertainties propagated accordingly (see Evaluation).
+14/32
+
+=== PAGE BREAK ===
+
+Figure 7. Visualization of the transformation from Z→ X in the t¯t study for the energy of the b quark in Z
+to energy of the leading jet in X. a The learned transformation of the decoder, pD(x| z). b The true transformation
+from the simulated sample, for comparison, though the true (z, x) pairs are not typically available and were not used
+in training. Note that the b quark will not always correspond to the leading jet, see the text for details. Colors in the
+X projection indicate the source bin in Z for a given sample.
+which precludes it from applications where the latent prior is not analytically known. The interested reader can ﬁnd
+more information on these distinctions in the following reference [45].
+The W AE method [21] provides a general framework for an autoencoder whose training is based on ideas from
+OT theory, namely the Wasserstein distance. This work deﬁned a large umbrella under which a rich amount of
+subsequent literature falls (e.g. SW AE [20], Sinkhorn Autoencoders [46], CW AE [47]). The key difference between
+these methods and the original W AE method is the fact that each chooses a differentdz(·,·) cost function. Therefore,
+the choice of method largely comes down to ﬁnding a suitable dz for the given problem.
+The original W AE work proposes two speciﬁc options for thedz, deﬁning two versions of W AE: GAN-W AE and
+MMD-W AE. The ﬁrst is an adversarial approach in whichdz is the Jensen-Shannon divergence estimated using a
+discriminator network. The second chooses dz to be the Maximum Mean Discrepancy (MMD) [21].
+The GAN-WAE strategy suffers from the same practical issues as other adversarial methods such as GANs
+(i.e. mode collapse). This possibility of training instability makes it an undesirable choice. The MMD-W AE does
+not have this training instability issue but requires an a priori choice of a kernel for the form of latent space prior,
+p(z). This implies that we analytically know the desired prior form ahead of time, which is not the case for particle
+physics in general. Therefore, this option will not work for the applications explored in this work.
+We now explore WAE derivatives which choose other choices for dz that might be more amenable to our
+application. CWAE [47] chooses the Cramer-Wold distance as the dz cost function. For a Gaussian latent space
+prior, this provides a computationally efﬁciency boost due to the existence of a closed-form solution. However, this
+assumption makes it unsuitable for our current application because our latent prior, p(z), is non-Gaussian and often
+does not have a form which is known analytically a priori.
+Two other derivatives allow for a ﬂexible prior form which would be suitable for the task at hand. SW AE [20]
+chooses the dz cost function to be the SW distance and Sinkhorn Autoencoder (SAE) [46] chooses it to be the
+Sinkhorn divergence which is estimated via the Sinkhorn algorithm. Both have comparable performance with
+trade-offs in performance and computational efﬁciency. SAE claims superior performance to SW AEs for Gaussian
+priors, while it is slightly more computationally intensive (O(M2) as opposed to SWAEs best case O(M) or worst
+case O(MlogM)). However, both methods are valid choices for this application. Therefore, we suggest that SAE
+15/32
+
+=== PAGE BREAK ===
+
+Figure 8. Performance of OTUS for semileptonic t¯t decays in physically important derived quantities in X.
+a Matching of the invariant mass of the combined t¯t pair. b Matching of the invariant mass of the hadronically
+decaying W-boson, MW . c Matching of the invariant mass of the top-quark, Mt, reconstructed using information
+from the leptonically decaying W-boson. d Matching of the invariant mass of the top-quark, Mt, reconstructed using
+information from the hadronically decaying W-boson. These show the testing sample{x∼ p(x)} (solid black) in
+the experimental space, X, as well as output from the decoder applied to samples drawn from p(z), labeled as z→ ˜x′
+(dashed purple). Also shown are samples passed through both the decoder and encoder chain, x→ ˜z→ ˜x (dotted
+green). Dotted green and solid black distributions are matched explicitly during training. Enhanced differences
+between dashed purple and solid black indicate the encoder’s output needs improvement, aspE(z) does not fully
+match p(z). Residual plots show bin-by-bin ratios with statistical uncertainties propagated accordingly (see
+Evaluation). 16/32
+
+=== PAGE BREAK ===
+
+performance on this task be explored in future work.
+We also note the existence of other WAE-derivative methods which generalize the underlying OT framework.
+In our application, the dz metric always compares distributions in the same ambient space Z. Additionally, the
+overall loss function also approximates the Wasserstein distance between two distributions in the same ambient
+space X, namely Wc(p(x), pD(x)). However, recent work using the Gromov-Wasserstein distance [48] extends the
+underlying Optimal Transport (OT) framework to situations where the two probability measures µ and ν are not
+deﬁned on the same ambient space (e.g. Rn and Rm with different dimensions n and m). For this application, this is
+an over-powered tool since by construction p(z) and pE(z) (p(x) and pD(x)) always lie in the same ambient space.
+However, if one were attempting to study the optimal transportation between different spaces, this would be ideal.
+This would be an interesting direction to follow-up recent related work which connects OT and particle physics [36,
+49].
+6.2.2 Base Model
+Both the encoder and decoder models of OTUS are implicit conditional generative models, and operate by concate-
+nating the input with random noise and passing the resulting vector through feedforward neural networks.
+For a model, G, mapping from a space, U, to a space, V, the steps are as follows. (1) A sample of raw input data,
+u∈ U, is standardized by subtracting the mean and dividing by the standard deviation resulting in the standardized
+data vector, ¯u. (2) A noise neural network computes a conditional noise distribution pN(ε| u), where the noise
+vector ε∼ pN(ε| u) has the same dimensionality as the core network prediction ¯w (deﬁned in the next step). (3)
+The standardized data vector, ¯u, and noise vector, ε, are then concatenated and fed into a core neural network. This
+network outputs the 3-momentum, p, information of each particle in the standardized space, collected into a vector
+¯w. (4) The vector ¯w is then unstandardized by inverting the relationship in step 1, creating a vector w. (5) The
+Minkowski relation ( see Our Approach: OTUS) is then enforced explicitly to reinsert the energy information of
+each particle, transforming w into the ﬁnal v∈ V which is distributed according to pG(v| u).
+Both the encoding and decoding model’s noise networks produce Gaussian-distributed noise vectors with mean
+and diagonal covariances [µ(x), σ 2(x))] and [µ(z), σ 2(z))] respectively. For the Z→ e+e− study, the core and noise
+networks for both the encoder and decoder each used a simple feed-forward neural network architecture with a
+single hidden layer, with 128 hidden units and ReLU activation.
+6.2.3 Model for semileptonic top-quark decay study
+To better model the complexities in the semileptonic t¯t data, we introduced a restriction to the decoder model and
+modiﬁed the training procedure accordingly (see Training). With these modiﬁcations, the base model encountered
+difﬁculty during training, so we introduced the following three changes to the architecture for more effective training.
+First, the conditionality of the noise network is removed and the noise is instead drawn from a ﬁxed standard
+normal distribution, pN(ε| u) = pN(ε) = N(0, I). Second, the model now has a residual connection such that the
+core network now predicts the change from the input u. The 3-momentum sub-vector of u is added to w before
+proceeding to imposing the Minkowski relation in step 5. This input-to-output residual connection provides an
+architectural bias towards identity mapping, when the model is initialized with small random weights.
+Lastly, the core network itself is augmented with residual connections [50] and batch normalization [51]. An
+input vector to the core network is processed as follows: (A) A linear transform layer withK units maps the input to a
+vector r∈ RK. (B) Two series of [BatchNorm, ReLU, Linear] layers are applied sequentially to r, without changing
+the dimensionality, resulting in s∈ RK. (C) A residual connection from r is introduced, so that s→ s + r. (D) The
+resulting s is then transformed by a ﬁnal linear layer with J units to obtain the output vector t∈ RJ. For the t¯t study,
+the input vector [ ¯u, ε] is 24 + 18 = 42 dimensional, the output dimension J = 18, and we set K = 64 for the core
+network, in both the encoder and decoder models.
+6.3 Training
+6.3.1 Base Training Strategy
+As described in Our Approach: OTUS, the model is trained by minimizing the SW AE loss function augmented with
+anchor terms
+17/32
+
+=== PAGE BREAK ===
+
+LSW AE(p(x), pD(x| z), pE(z| x)) = Ex∼p(x)Ez∼pE (z|x)E ˜x∼pD(x|z)[c(x, ˜x)] +λ dSW(pE(z), p(z))
++ βELA(p(x), pE(z| x)) +βDLA(p(z), pD(x| z)),
+(11)
+with respect to parameters of the encoder pE(z| x) and decoder pD(x| z) distributions.
+As each term in the loss function has the form of an expectation, we approximate each with samples and compute
+the following Monte-Carlo estimate of the loss:
+ˆLSW AE= 1
+M
+M
+∑
+m=1
+c(xm, ˜xm) +λ 1
+L∗ M
+L
+∑
+l=1
+M
+∑
+m=1
+c((θl· zm)sorted, (θl· ˜zm)sorted)
++ βE
+1
+M
+M
+∑
+m=1
+cA(xm, ˜zm) +βD
+1
+M
+M
+∑
+m=1
+cA(zm, ˜x′
+m),
+(12)
+where{xm}M
+m=1 and{zm}M
+m=1 are M instances of X and Z samples,{˜zm∼ pE(·| xm)}M
+m=1 are drawn from the encoder,
+{ ˜x′
+m∼ pD(·| zm)}M
+m=1 are drawn from the decoder, and{ ˜xm∼ pD(·| ˜zm)}M
+m=1 are drawn from the auto-encoding
+chain x→ ˜z→ ˜x.4 The estimation of dSW(p(z), pE(z)) uses L random slicing directions{θl}L
+l=1 drawn uniformly
+from the unit sphere, along which the samples zm∼ p(z) and ˜zm∼ pE(z) are compared; this involves estimating
+each CDF−1 by sorting the two sets of projections in ascending order as{(θl· zm)sorted}M
+m=1 and{(θl· ˜zm)sorted}M
+m=1,
+for each direction θl; we refer interested readers to [20] for more technical details of the Sliced Wasserstein distance.
+We use the squared norm as the cost metric c(u, v) =||u− v||2 in the SW AE loss [20]. The anchor cost,cA, between
+two observation vectors u, v (which can reside in either X or Z space) is deﬁned as cA(u, v) := 1− ˆpu· ˆpv, where
+ˆpu is the unit vector of the coordinates of u corresponding to the momentum of a pre-speciﬁed particle, and ˆpv is
+deﬁned analogously with respect to the same particle; this is chosen as the electron in our experiments. For example,
+cA(x, ˜z) would be computed as
+cA(x, ˜z) = 1− ˆpe−
+x · ˆpe−
+˜z = 1− pe−
+x
+‖pe−x ‖· pe−
+˜z
+‖pe−
+˜z ‖ . (13)
+At a higher level, the computation of ˆLSW AEbased on a mini-batch proceeds as follows. Following the path through
+the full model, a batch of samples X∼ p(x) from X space is passed to the encoder model, E, producing ˜Z∈ Z
+distributed according to pE(z| x). The encoding anchor loss term LA,E(X, ˜Z)≡ LA(p(x), pE(z| x)) is then computed
+along with the SW distance latent loss, ˆdSW(Z, ˜Z)≡ ˆdSW(p(z), pE(z)). The samples ˜Z and Z∼ p(z) are then passed
+independently in parallel through the decoder model, D, producing ˜X and ˜X′, respectively. The decoding anchor loss
+term LA,D(Z, ˜X′)≡ LA(p(z), pD(x| z)) is then computed. Finally, the data space loss, chosen to be MSE(X, ˜X), is
+computed. See Supplementary Figure 1 for a visual representation. We can then minimize the tractable Monte-Carlo
+estimate of the objective, ˆLSW AE, by stochastic gradient descent with respect to parameters of the encoder and
+decoder networks.
+Since the original (S)WAE aimed to ultimately minimize dW (p(x), pD(x)) via an approximate variational
+formulation,5 we also consider an auxiliary strategy of directly minimizing the more computationally convenient
+SW distance dSW(p(x), pD(x)) to train a decoder, or minimizing dSW(p(z), pE(z)) to train an encoder. This can be
+done by simply optimizing the Monte-Carlo estimates
+4This is equivalent to drawing a sample (x, ˜z, ˜x) from the joint distribution p(x)pE (˜z| x)pD( ˜x| ˜z).
+5When minimized over all pE (z| x) that satisﬁes the constraint pE (z) = p(z), term A of Equation (1) becomes an upper bound on
+dW (p(x), pD(x)); the bound is tight for deterministic decoders [21]. The overall WAE loss LW AEis a relaxation of the exact variational
+bound, and recovers the latter as λ→ ∞.
+18/32
+
+=== PAGE BREAK ===
+
+ˆdSW(p(x), pD(x)) = 1
+L∗ M
+L
+∑
+l=1
+M
+∑
+m=1
+c((θl· xm)sorted, (θl· ˜x′
+m)sorted) (14)
+ˆdSW(p(z), pE(z)) = 1
+L∗ M
+L
+∑
+l=1
+M
+∑
+m=1
+c((θl· zm)sorted, (θl· ˜zm)sorted), (15)
+where the samples{xm, zm, ˜x′
+m, ˜zm}M
+m=1 are deﬁned the same way as before. Auxiliary training of the encoder was
+found helpful for escaping local minima when optimizing the joint loss ˆLSW AE, and auxiliary ﬁne-tuning of the
+decoder in post-processing also improved the decoder’s ﬁt to the data.
+Note that the idea of training a decoder by itself is similar in spirit to GANs, but again with the major distinction
+and innovation that we use samples from a physically meaningful prior p(z) instead of an uninformed generic one
+(e.g. Gaussian), as we are also interested in a physical conditional mapping pD(x| z) in addition to achieving good
+ﬁt to the marginal p(x).
+6.3.2 Training an (S)WAE with a restricted decoder
+As was previously explained, experimental limitations in the semileptonic t¯t study require a minimum threshold, so
+that jets which have pT < 20 [GeVc−1] are discarded and therefore are not represented in the training dataset, as
+they would not be available in control region data. Denoting the region of X space which passes this threshold by S,
+we are faced with the task of ﬁtting a distribution pD(x) over X while only having access to data samples in the valid
+subset S⊂ X.
+We propose a general method for ﬁtting an (S)W AE such that its marginal data distributionpD(x), when restricted
+to the valid set S, matches that of the available data. We ﬁrst deﬁne the restricted marginal data distribution,
+¯pD(x) = pD(x)1S(x)
+PD(S) , (16)
+where 1S(x) is the indicator function of S so that it equals 1 if x∈ S, and 0 otherwise, and PD(S) :=
+∫
+dt pD(t)1S(t)
+normalizes this distribution. Note that PD(S) depends on the decoder parameters, and can be identiﬁed as the
+probability that the data model pD(x) yields a valid sample x∈ S.
+Our goal is then to minimize dW (p(x), ¯pD(x)). This can be done by minimizing the same variational upper
+bound as in a typical (S)WAE, but with an adjustment to the data loss function in term A of Equation (1), so it
+becomes
+Ex∼p(x)EpE (z|x)E ˜x∼ ¯pD(x|z)[c(x, ˜x)]→ Ex∼p(x)EpE (z|x)E ˜x∼pD(x|z)[ 1S( ˜x)
+PD(S) c(x, ˜x)]. (17)
+Letting θ denote the parameters of the model, it can be shown that the gradient of the modiﬁed cost function has the
+simple form
+∇θ
+1S( ˜x)
+PD(S) c(x, ˜x) = 1S( ˜x)
+PD(S) ∇θ c(x, ˜x). (18)
+This means that training an (S)WAE with a restricted decoder by stochastic gradient descent proceeds as in the
+unrestricted base training strategy, except that only the valid samples in S contribute to the gradient of the data
+loss term, with the contribution scaled inversely by the factor PD(S), which can be estimated by drawing samples
+˜x′
+m∼ pD(x)6 and forming the Monte-Carlo estimate
+PD(S)≈ 1
+M
+M
+∑
+m=1
+1S( ˜x′
+m). (19)
+6This is equivalent to passing zm∼ p(z) through the decoder to produce ˜x′m.
+19/32
+
+=== PAGE BREAK ===
+
+6.3.3 Parameter Optimization
+For the Z→ e+e− study, we used the base training strategy. We optimized ˆLSW AEfor 80 epochs with anchor
+penalties βE = βD = 50, followed by another 800 epochs with the anchor penalties set to 0. For the semileptonic t¯t
+study, we modiﬁed the base training strategy to accommodate a restricted decoder, substituting all appearances of
+pD(x) in the loss ˆLSW AEby ¯pD(x) (e.g. using the modiﬁed data loss term Equation (17)). We optimized the resulting
+loss ˆLSW AEtill convergence, for about 1000 epochs. Then we froze the encoder and ﬁne-tuned the decoder by
+minimizing ˆdSW(p(x), ¯pD(x)) for 10 epochs, with a reduced learning rate. The input-to-output residual connection
+(see Model) in the t¯t model allowed for sufﬁciently high PD(S)≈ 0.6 and reliable gradient estimates during training,
+and the architectural bias towards identity mapping made the anchor losses redundant, so we set βE = βD = 0.
+In both studies, we found that a sufﬁciently large batch size signiﬁcantly improved results. This is likely do
+to increasing the accuracy of gradient estimates for stochastic gradient descent and also the CDF−1 in the SWAE
+latent loss. In all of our experiments, we used the Adam optimizer [52] with L = 1,000 number of slices, a batch
+size of M = 20,000, and learning rate of 0.001. We tuned the λ hyperparameter of the (S)W AE lossˆLSW AEon the
+validation set; we set λ = 1 for the Z→ e+e− model, and λ = 20 for the t¯t model.
+6.4 Evaluation
+This section provides details on the various qualitative and quantitative evaluation techniques used in this work.
+As common in the literature [11, 12, 14], we visualize our results along informative one-dimensional projections
+using histograms (e.g. Figure 3 and Figure 5). We choose the bin sizes such that the error on the counts can be
+approximated as Gaussian distributed. These histograms are accompanied by residual plots, showing the ratio
+between the histograms from generated samples and the histogram from true samples, with accompanying statistical
+errors [53]7. We also visualize the generative mappings using transportation plots (e.g. Figure 4) that allow us to
+conﬁrm the physicality of the learned mappings. ]
+In addition to qualitative comparisons, we also evaluated the results using several quantitative metrics. To
+this end, we calculate the Monte-Carlo estimate of the SW distance, ˆdSW(·,·), using L = 1,000 slices according
+to the cost metric c(u, v) =||u− v||2. The results are reported for each study in the text. In addition, we apply
+several statistical tests on the considered one-dimensional projections, which we report in Supplementary Tables 1-4.
+First, we calculate the reduced χ2, χ2
+R, for each comparison and report it along with the degrees-of-freedom (dof).
+Second, we calculate the unbinned two-sample, two-sided Kolmogorov-Smirnov distance. Lastly, we calculate the
+Monte-Carlo estimate of the Wasserstein distance, ˆdW (·,·), according to the cost metric c(u, v) =||u− v||2. All
+statistical tests were carried-out using two separate test sets not used during training or validation of the networks.
+The number of samples in each test set were 80,000 in the Z→ e + e− study and 47,856 in the semileptonic t¯t
+study.8
+7 Conclusion
+OTUS is a data-driven, machine-learned, predictive simulation strategy which suggests a possible new direction
+for alleviating the prohibitive computational costs of current Monte-Carlo approaches, while avoiding the inherent
+disadvantages of other machine-learned approaches. We anticipate that the same ideas can be applied broadly outside
+of the ﬁeld of particle physics.
+In general, OTUS can be applied to any process where unobserved latent phenomena Z can be described in
+the form of a prior model, p(z), and are translated to an empirical set of experimental data, X, via an unknown
+transformation. For example, in molecular simulations in chemistry observations could be measurements of real-
+world molecular dynamics, p(z) would represent the model description of the system, and p(x| z) would model
+the effects of real-world complications [7]. In cosmology, X could be the distribution of mass in the observed
+universe, p(z) could describe its distribution in the early universe, and p(x| z) would model the universe’s unknown
+7Speciﬁcally, for a bin with counts h1 and h2, respectively, the error on the ratio, r = h2/h1 is σr = r
+√
+1
+h2
++ 1
+h1
+.
+8Note that the number of samples in the semileptonic t¯t study is lower due to the hard pT cutoff constraint as described in section 5.2.The
+events present are ones that passed this cutoff constraint.
+20/32
+
+=== PAGE BREAK ===
+
+expansion dynamics (e.g. due to inﬂation) [9, 54]. In climate simulations, p(z) could correspond to the climate
+due to a physical model, while p(x| z) takes unknown geography-speciﬁc effects into account [8]. Additionally, an
+immediate and promising application of OTUS is in medical imaging, which uses particle physics simulations to
+model how the imaging particles (e.g x-rays) interact with human tissue and suffers from the great computational
+cost of these simulations [10]. We note that our method assumes a high degree of mutual information between Z and
+X in the desired application. Therefore, in situations where such mutual information is low (e.g. chaotic turbulent
+ﬂows) the transformations learned by this method would likely be less reliable.
+Moreover, features of this method can be adapted to suit the particular problem’s needs. For example, in this work
+we were interested in low-dimensional data, however the method could also be applied to high-dimensional datasets.
+Moreover, the encoding and decoding mappings can be stochastic, as in this work, or deterministic. Lastly, while this
+work aimed to be completely unsupervised, and thus data-driven, OTUS can be easily extended to a semi-supervised
+setting. In this case, the data would consist mostly of unpaired samples but would have a limited number of paired
+examples (z, x) (e.g. from simulation runs). These pairs sample the joint distribution, p(z, x), which, combined with
+the decoder pD( ˜x| z), yields a transportation map γ between p(x) and pD( ˜x), γ(p(x), pD( ˜x)) :=
+∫
+dzp (z, x)pD( ˜x| z).
+Since calculating the Wasserstein distance between p(x) and pD( ˜x) involves ﬁnding the optimal transportation map,
+this particular choice yields an upper bound on the Wasserstein distance. We can similarly construct a transportation
+map between p(z) and pE(˜z) using p(z, x) and pE(z| x). This makes directly optimizing the Wasserstein distances
+dW (p(x), pD(x)) and dW (p(z), pE(z)) tractable in this high-dimensional setting. Therefore, we get the alternative
+objectives
+Lpaired(pD(x| z), p(z, x)) = E(z,x)∼p(z,x)E ˜x∼pD(x|z)[c(x, ˜x)] (20)
+Lpaired(pE(z| x), p(z, x)) = E(z,x)∼p(z,x)E˜z∼pE (z|x)[c(z, ˜z)], (21)
+which are upper bounds on dW (p(x), pD(x)) and dW (p(z), pE(z)) respectively. These terms can be incorporated
+alongside the unsupervised SW AE loss, to leverage paired examples{(z, x)∼ p(z, x)} in a semi-supervised setting.
+We have demonstrated the ability of OTUS to learn a detector transformation in an unsupervised way. The
+results, while promising for this initial study, leave room for improvement. Several directions could lead to higher
+ﬁdelity descriptions of the data and latent spaces.
+First, the structure of the latent and data spaces can signiﬁcantly affect the performance and physicality of the
+resulting simulations. Particle physics data has rich structures often governed by group symmetries and conservation
+laws. Our current vector format description of the data omits much of this complicated structure. For example, we
+omitted categorical characteristics of particles like charge and type. Knowledge of such properties and the associated
+rules likely would have excluded the necessity of terms like the anchor loss. Therefore, future work should explore
+network architectures and losses that can better capture the full nature of these data structures [38, 55].
+The next technical hurdle is the ability to handle variable input and output states. The same p(z) can lead to
+different detected states as was described, but not explored, in the semileptonic t¯t study where the number of jets can
+vary. Additionally, it should be possible to handle mixtures of underlying priors in the latent space. This can cause
+the number and types of latent-space particles to vary from one sample to another. For example, the Z boson can
+decay into Z→ µ +µ− in addition to Z→ e+e−; a simulator should be able to describe these two cases holistically.
+Finally, an essential feature of a predictive simulator is that it learns a general transformation, allowing it to make
+predictions for points in the latent space which lie outside of the control regions. This would require structuring
+the latent and data spaces to accommodates data from several control regions, such that the network may learn to
+interpolate between them. Since networks excel at interpolation we expect that this will be a straightforward step.
+8 Data Availability
+The datasets generated and analysed during the current study are available in the DRY AD repository, doi: 10.7280/D1WQ3R.
+21/32
+
+=== PAGE BREAK ===
+
+9 Code Availability
+The code used during the current study are available in the Zenodo repository and are linked to the dataset, doi:
+10.5281/zenodo.4706055.
+References
+1. Cranmer, K., Brehmer, J. & Louppe, G. The frontier of simulation-based inference. Proceedings of the National
+Academy of Sciences 117, 30055-30062 (2020).
+2. Agostinelli, S., et al. GEANT4 — a simulation toolkit. Nuclear Instruments and Methods in Physics Research
+Section A: Accelerators, Spectrometers, Detectors and Associated Equipment 506, 250-303 (2003).
+3. Sjostrand, T., Mrenna, S. & Skands, P. Z. PYTHIA 6.4 physics and manual. Journal of High Energy Physics 05
+2006, 026 (2006).
+4. de Faverea, J., et al. DELPHES 3, A modular framework for fast simulation of a generic collider experiment.
+Journal of High Energy Physics 02 2006, 057 (2014).
+5. Aad, G., et al. The ATLAS simulation infrastructure. The European Physical Journal C 70, 823–874 (2010).
+6. CMS Collaboration., CMS Collaboration (Participants are listed in alphabetical order.)., Bayatian, G. L., et al.
+CMS physics: technical design report volume 1: detector performance and software (2006).
+7. Noé, F., Tkatchenko, A., Müller, K.R. & Clementi, C. Machine learning for molecular simulation. Annual
+Review of Physical Chemistry 71, 361-390 (2020).
+8. Rolnick, D., et al. Tackling climate change with machine learning. Preprint at https://arxiv.org/abs/1906.05433
+(2019).
+9. Delaunoy, A., et al. Lightning-fast gravitational wave parameter inference through neural amortization. Preprint
+at https://arxiv.org/abs/2010.12931 (2020).
+10. Zhou, J., Huang, B., Yan, Z. & Bünzli J.C.G. Emerging role of machine learning in light-matter interaction.
+Light: Science & Applications 8, 84 (2019).
+11. Paganini, M., de Oliveira, L. & Nachman, B. CaloGAN: simulating 3D high energy particle showers in
+multilayer electromagnetic calorimeters with generative adversarial network. Physical Review D 97, 014021
+(2018).
+12. Butter, A., Plehn, T. & Winterhalde, R. How to GAN LHC events.SciPost Physics 7, 75 (2019).
+13. Otten, S., et al. Event generation and statistical sampling for physics with deep generative models and a density
+information buffer. Nature Communications 12, 2985 (2021).
+14. de Oliveira, L., Paganini, M. & Nachman, B. Learning particle physics by example location-aware generative
+adversarial networks for physics synthesis. Computing and Software for Big Science 1, 4 (2017).
+15. Buhmann, E., et al. Getting High: High Fidelity Simulation of High Granularity Calorimeters with High Speed.
+Computing and Software for Big Science 5, 13 (2021).
+16. Deja, K., Dubi´nski, J., Nowak, P., Wenzel, S. & Trzci´nski, T. End-to-end Sinkhorn Autoencoder with Noise
+Generator. IEEE Access 9, 7211-7219 (2021).
+17. Hashemi, B., Amin, N., Datta, K., Olivito, D. & Pierini, M. LHC analysis-speciﬁc datasets with generative
+adversarial networks. Preprint at https://arxiv.org/abs/1901.05282 (2019).
+18. Lu, Y ., Collado, J., Whiteson, D. & Baldi, P. Sparse autoregressive models for scalable generation of sparse
+images in particle physics. Physical Review D 103, 036012 (2021).
+19. Andreassen, A., Feige, I., Frye, C. & Schwartz, M. JUNIPR: a framework for unsupervised machine learning in
+particle physics. European Physical Journal C 79, 2 (2019).
+22/32
+
+=== PAGE BREAK ===
+
+20. Kolouri, S., Pope, P.E., Martin, C.E. & Rohde G.K. Sliced-wasserstein autoencoder: an embarrassingly simple
+generative model. Preprint at https://arxiv.org/abs/1804.01947 (2018).
+21. Tolstikhin, I., Bousquet, O., Gelly, S. & Schoelkopf, B. Wasserstein auto-encoders. Preprint at
+https://arxiv.org/abs/1711.01558 (2017).
+22. Kingma, D.P. & Welling M. Auto-encoding variational bayes. Preprint at https://arxiv.org/abs/1312.6114 (2013).
+23. Pagnoni, A., Liu, K. & Li, S. Conditional Variational Autoencoder for Neural Machine Translation. Preprint at
+https://arxiv.org/abs/1812.04405 (2018).
+24. D∅ Collaboration., D∅ Collaboration (Participants are listed in alphabetical order.)., Abazov, V ., et al. A
+precision measurement of the mass of the top quark. Nature 429, 638–642 (2004).
+25. Bellagente, M., et al. Invertible networks or partons to detector and back again. SciPost Physics 9, 74 (2020).
+26. Andreassen, A., Komiske, P.T., Metodiev, E.M., Nachman, B. & Thaler, J. OmniFold: a method to simultane-
+ously unfold all observables. Physical Review Letters 124, 182001 (2020).
+27. ATLAS Collaboration., ATLAS Collaboration (Participants are listed in alphabetical order.)., Aad, G., et al.
+Observation of a new particle in the search for the Standard Model Higgs boson with the ATLAS detector at the
+LHC. Physics Letters B 716, 1-29 (2012).
+28. CMS Collaboration., CMS Collaboration (Participants are listed in alphabetical order.)., Chatrchyan, S., et al.
+Observation of a New Boson at a Mass of 125 GeV with the CMS Experiment at the LHC. Physics Letters B
+716, 30-61 (2012).
+29. Castro, A. (on behalf of the ATLAS and CMS Collaborations). Top Quark Mass Measurements in ATLAS and
+CMS. Preprint at https://arxiv.org/abs/1911.09437 (2019).
+30. Zhang, C., Bütepage, J., Kjellström, H. & Mandt, S. Advances in variational inference. IEEE transactions on
+pattern analysis and machine intelligence. 41, 2008–2026 (2018).
+31. Arjovsky, M., Chintala, S. & Bottou L. Wasserstein GAN. Preprint at https://arxiv.org/abs/1701.07875 (2017).
+32. Burgess, C.P., et al. Understanding disentangling in β-V AE. Preprint at https://arxiv.org/abs/1804.03599 (2018).
+33. Salimans, T., et al. Improved Techniques for Training GANs. Preprint at https://arxiv.org/abs/1606.03498 (2016).
+34. Baldi, P., Cranmer, K., Faucett, T., Sadowski, P. & Whiteson, D. Parameterized neural networks for high-energy
+physics. European Physical Journal C 76, 235 (2016).
+35. Batson, J., Haaf, C.G., Kahn, Y . & Roberts, D.A. Topological obstructions to autoencoding.Journal of High
+Energy Physics 2021, 280 (2021).
+36. Komiske, P.T., Metodiev, E.M. & Thaler, J. The hidden geometry of particle collisions.Journal of High Energy
+Physics 2020, 6 (2020).
+37. LHCb Collaboration., LHCb Collaboration (Participants are listed in alphabetical order.)., Aaij, R., et al.
+Searches for low-mass dimuon resonances. Journal of High Energy Physics 10, 156 (2020).
+38. Battaglia, P.W., et al. Relational inductive biases, deep learning, and graph networks. Preprint at
+https://arxiv.org/abs/1806.01261 (2018).
+39. Fenton, M.J., et al. Permutationless Many-Jet Event Reconstruction with Symmetry Preserving Attention
+Networks. Preprint at https://arxiv.org/abs/2010.09206 (2020).
+40. Erdmann, J., Kallage, T., Kröninger, K. & Nackenhorst, O. From the bottom to the top—reconstruction of t ¯t
+events with deep learning. Journal of Instrumentation 14, P11015 (2019).
+41. Erdmann, J., et al. A likelihood-based reconstruction algorithm for top-quark pairs and the KLFitter framework.
+Nuclear Instruments and Methods in Physics Research Section A: Accelerators, Spectrometers, Detectors and
+Associated Equipment 748, 18–25 (2014).
+23/32
+
+=== PAGE BREAK ===
+
+42. Alwall, J., Herquet, M., Maltoni, F., Mattelaer, O. & Stelzer, T. MadGraph 5: going beyond.Journal of High
+Energy Physics 06 2011, 128 (2011).
+43. Brun, R. & Rademakers, F. ROOT — an object oriented data analysis framework. Nuclear Instruments and
+Methods in Physics Research Section A: Accelerators, Spectrometers, Detectors and Associated Equipment 389,
+81-86 (1997).
+44. Cacciari, M., Salam, G. & Soyez, G. The anti-kt jet clustering algorithm. Journal of High Energy Physics 04,
+063 (2008).
+45. Bousquet, O., Gelly, S., Tolstikhin, I., Simon-Gabriel, C. & Schoelkopf, B. From optimal transport to generative
+modeling: the VEGAN cookbook. Preprint at https://arxiv.org/abs/1705.07642 (2017).
+46. Patrini, G., et al. Sinkhorn AutoEncoders Preprint at https://arxiv.org/abs/1810.01118 (2018).
+47. Knop, S., Tabor, J., Spurek, P., Podolak, I., Mazur, M. & Jastrze ¸bski, S. Cramer-Wold AutoEncoder Preprint at
+https://arxiv.org/abs/1805.09235 (2018).
+48. Vayer, T., Flamary, R., Tavenard, R., Chapel, L. & Courty, N. Sliced Gromov-Wasserstein Preprint at
+https://arxiv.org/abs/1905.10124 (2019).
+49. Cai, T., Cheng, J., Craig, K. & Craig, N. Linearized Optimal Transport for Collider Events. Physical Review D
+102, 116019 (2020).
+50. He, K., Zhang, X., Ren, S. & Sun, J. Deep residual learning for image recognition. Preprint at
+https://arxiv.org/abs/1512.03385 (2015).
+51. Ioffe, S. & Szeged, C. Batch normalization: accelerating deep network training by reducing internal covariate
+shift. Preprint at https://arxiv.org/abs/1502.03167 (2015).
+52. Kingma, D.P. & Ba, J.L. Adam: a method for stochastic optimization. Preprint at https://arxiv.org/abs/1412.6980
+(2014).
+53. Bevington, P.R. & Robinson, D.K. Data Reduction And Error Analysis F or The Physical Sciences 3rd ed. Ch. 3
+(McGraw-Hill, New York, 2003).
+54. Seljak, U., Aslanyan, G., Feng, Y . & Modi, C. Towards optimal extraction of cosmological information from
+nonlinear data. Journal of Cosmology and Astroparticle Physics 12, 009 (2017).
+55. Bogatskiy, A., et al. Lorentz group equivariant neural network for particle physics. Preprint at
+https://arxiv.org/abs/2006.04780 (2020).
+56. Nocedal, J. & Wright, S. Numerical Optimization Second Edition (Springer, New York, 2006).
+10 Acknowledgments
+J.N.H. acknowledges support by the National Science Foundation under grants DGE-1633631 and DGE-1839285,
+and U.S. Department of Energy, Ofﬁce of Science under the grant DE-SC0009920. Y .Y . acknowledges funding
+from the Hasso Plattner Foundation. S.M. acknowledges support by the National Science Foundation under Grants
+2047418, 1928718, 2003237 and 2007719, Intel, Disney, Qualcomm, the U.S. Department of Energy, Ofﬁce of
+Science under the grant SC0022331, and the Defense Advanced Research Projects Agency (DARPA) under Contract
+No. HR001120C0021. Any opinions, ﬁndings and conclusions or recommendations expressed in this material are
+those of the author(s) and do not necessarily reﬂect the views of the Defense Advanced Research Projects Agency
+(DARPA) or the National Science Foundation.
+11 Author Contributions Statement
+Using the CASRAI CRediT Contributor Roles Taxonomy: Conceptualization, J.N.H., S.M., D.W., Y .Y .; Data
+curation, J.N.H.; Formal analysis, J.N.H., Y .Y .; Funding acquisition, J.N.H., S.M., D.W.; Investigation, J.N.H.,
+24/32
+
+=== PAGE BREAK ===
+
+S.M., D.W., Y .Y .; Methodology, J.N.H., Y .Y .; Project administration, J.N.H., S.M., D.W.; Software, J.N.H., Y .Y .;
+Supervision, S.M., D.W.; Validation, Y .Y .; Visualization, J.N.H.; Writing – original draft, J.N.H., D.W.; Writing –
+review & editing, J.N.H., S.M., D.W., Y .Y ..
+Competing Interests Statement
+The authors declare no competing interests.
+12 Supplementary Information
+12.1 Supplementary Statistics
+z vs ˜z
+W [GeV2] (χ2
+R, dof) KS
+Figure 3a ( py) 1.34× 10+00 (50.583, 23) 1.61× 10−02
+Figure 3a ( pz) 1.59× 10+00 (1.325, 26) 4.90× 10−03
+Figure 3a (E) 1.29× 10+00 (8.814, 26) 1.47× 10−02
+Figure 5a 2.73× 10+01 (822.762, 39) 2.46× 10−01
+Supplementary Table 1. Table showing Z space statistical test results for the Z→ e+e− dataset. These tests
+were performed on the distributions in the referenced ﬁgures in the main text. W is the Wasserstein distance, χ2
+R is
+the reduced χ2 and dof is the degrees-of-freedom, and KS is the value of the Kolmogorov-Smirnov statistical test.
+See the Evaluation section in the main text for detailed information about the calculations of these statistics.
+x vs ˜x x vs ˜x′
+W [GeV2] (χ2
+R, dof) KS W [GeV2] (χ2
+R, dof) KS
+Figure 3b ( py) 4.22× 10−01 (1.391, 23) 3.48× 10−03 1.05× 10+00 (37.560, 23) 1.22× 10−02
+Figure 3b ( pz) 3.71× 10+00 (1.523, 26) 1.03× 10−02 9.53× 10+00 (4.775, 26) 7.49× 10−03
+Figure 3b (E) 6.64× 10−01 (0.489, 26) 3.19× 10−03 3.64× 10+00 (9.370, 26) 2.00× 10−02
+Figure 5b 7.28× 10−01 (5.055, 39) 2.61× 10−02 7.15× 10−01 (12.821, 39) 3.14× 10−02
+Supplementary Table 2. Table showing X space statistical test results for the Z→ e+e− dataset. These tests
+were performed on the distributions in the referenced ﬁgures in the main text. W is the Wasserstein distance, χ2
+R is
+the reduced χ2 and dof is the degrees-of-freedom, and KS is the value of the Kolmogorov-Smirnov statistical test.
+See the Evaluation section in the main text for detailed information about the calculations of these statistics.
+z vs ˜z
+W [GeV2] (χ2
+R, dof) KS
+Figure 6a ( py) 1.58× 10+01 (7.418, 49) 1.25× 10−02
+Figure 6a ( pz) 5.52× 10+01 (4.613, 55) 1.65× 10−02
+Figure 6a (E) 6.20× 10+01 (31.228, 31) 4.04× 10−02
+Supplementary Table 3. Table showing Z space statistical test results for the semileptonic t¯t dataset. These tests
+were performed on the distributions in the referenced ﬁgures in the main text. W is the Wasserstein distance, χ2
+R is
+the reduced χ2 and dof is the degrees-of-freedom, and KS is the value of the Kolmogorov-Smirnov statistical test.
+See the Evaluation section in the main text for detailed information about the calculations of these statistics.
+25/32
+
+=== PAGE BREAK ===
+
+x vs ˜x x vs ˜x′
+W [GeV2] (χ2
+R, dof) KS W [GeV2] (χ2
+R, dof) KS
+Figure 6b ( py) 2.40× 10+01 (2.395, 49) 1.66× 10−02 1.23× 10+02 (34.021, 49) 4.59× 10−02
+Figure 6b ( pz) 1.08× 10+02 (0.828, 55) 9.90× 10−03 3.42× 10+02 (1.980, 55) 6.94× 10−03
+Figure 6b (E) 4.11× 10+01 (1.281, 30) 1.02× 10−02 3.24× 10+02 (50.072, 30) 4.80× 10−02
+Figure 8a 1.60× 10+02 (1.192, 43) 7.63× 10−03 1.03× 10+03 (54.598, 43) 1.03× 10−01
+Figure 8b 9.30× 10−01 (3.974, 35) 1.66× 10−02 1.04× 10+02 (68.392, 35) 1.09× 10−01
+Figure 8c 8.83× 10+00 (1.579, 30) 5.91× 10−03 7.41× 10+01 (92.533, 30) 1.31× 10−01
+Figure 8d 2.21× 10+01 (2.455, 41) 1.72× 10−02 1.11× 10+03 (160.712, 41) 2.35× 10−01
+Supplementary Table 4. Table showing X space statistical test results for semileptonic t¯t dataset. These tests
+were performed on the distributions in the referenced ﬁgures in the main text. W is the Wasserstein distance, χ2
+R is
+the reduced χ2 and dof is the degrees-of-freedom, and KS is the value of the Kolmogorov-Smirnov statistical test.
+See the Evaluation section in the main text for detailed information about the calculations of these statistics.
+26/32
+
+=== PAGE BREAK ===
+
+12.2 Supplementary Schematic Diagram of Network Model
+Supplementary Figure 1. Schematic diagrams of the network and loss structures used in this study for
+the base training strategy. a Diagram showing the full OTUS model where gray indicates information used in the
+calculation of losses only. b Diagram showing the internal structure present in both the encoder and decoder models.
+c Diagram showing the setup used for the post processing decoder network loss. See the text for more details.
+27/32
+
+=== PAGE BREAK ===
+
+12.3 Supplementary Ablation Study
+In this section we show the results of an ablation study to demonstrate the effect of the various hyperparameters. As
+seen in our ﬁnal loss function Equation (11),the main hyperparameters of our approach are the λ coefﬁcient in front
+of the latent space loss, as well as the βE and βD coefﬁcients weighing the anchor losses for the encoder and decoder,
+respectively. For the semileptonic t¯t study the only hyperparameter is λ, as the anchor loss is redundant with the
+choice of a ResNet [50] architecture (see Section 6.2.3). We performed ablations by retraining the models as in
+Section 6.3.3 but with different values of the hyperparameters on a grid, and comparing the results on validation
+data.
+For studying the effect of λ, we reran both the Z→ e+e− and the semileptonic t¯t studies with λ in{0.001, 0.01,
+0.1, 1, 10, 100, 1000}, while keeping all other hyperparamters unchanged (speciﬁcally, in the Z→ e+e− study we
+kept βE = βD = 50). For the effect of the anchor loss coefﬁcients, we always assume that βE = βD and deﬁne a
+shared hyperparameter β := βE = βD. We reran the Z→ e+e− study with β in{0, 10, 20, 50, 100, 200}, while
+keeping λ = 1 as in the original experiment. We did not repeat this for the semileptonic t¯t study as it did not use an
+anchor loss.
+We ﬁrst consider how the hyperparameters on the anchor loss terms, βE = βD, affect performance. The
+anchor losses are direct constraints on the learned encoding and decoding mappings which are based on physical
+concerns. Namely, the anchor loss penalizes networks which would map electron/positron ( e∓) information in
+Z to positron/electron ( e±) information in X, and vice versa. We impose this constraint because we know that
+misidentiﬁcation of charge in the process of data reconstruction is extremely rare in particle experiments. Therefore,
+for our simulation to be physical, it should not make these unphysical inversions. Unsurprisingly, without this
+constraint we can see that these inversions can occur during training (see Supplementary Figure 2). On the other
+hand, if the values of βE = βD are too high we observe unphysical behavior. This is likely due to the fact that the
+anchor loss is only a proxy for enforcing charge conservation.
+We next consider the hyperparameter λ which is present in both case studies. The behavior of λ has theoretical
+motivations. The WAE method aims to minimizeWc(p(x), pD(x)) by converting its calculation into a constrained
+optimization problem. It was shown [21] thatWc(p(x), pD(x)) = infpE (z|x):pE (z)=p(z) E[c(X, D(Z))] for a deterministic
+decoder pD(x|z) = δD(z)(x)9. Namely, we need to minimize a reconstruction error over all probabilistic encoders,
+pE(z|x), satisfying the latent-space matching condition, p(z) != pE(z) =:
+∫
+x pE(z|x)p(x)dx. To make the constrained
+optimization computationally tractable, the WAE method only softly enforces this constraint via a penalty term
+λ dz(p(z), pE(z)), and considers minimizing the surrogate penalty loss Ep(x)pE (z|x)pD( ˜x|z)[c(x, ˜x)] +λ dz(p(z), pE(z))
+instead.
+By standard results on penalty methods [56], for a ﬁxed decoder, pD(x|z), globally minimizing the penalty loss
+with respect to the encoder pE(z|x) results in a lower bound on Wc(p(x), pD(x)), and solving a sequence of such
+penalized problems while annealing λ towards inﬁnity results in the exact Wc(p(x), pD(x)). However, when training
+a W AE, it is expensive to repeat this inner optimization procedure after every decoder update, so in practice both the
+encoder and decoder are optimized jointly on a penalty loss, keeping λ ﬁxed throughout the entire training [21].
+While the theoretical guarantees of the penalty method no longer applies to the joint Stochastic Gradient Descent
+training procedure used in practice, it does suggest that λ should be set to be as large as possible (and perhaps
+annealed during training) to better enforce the latent space matching, and consequently offer a better approximation
+of the ideal objective Wc(p(x), pD(x)). Indeed, recently it was proven [46] that perfect latent space matching
+pE(z) == p(z) is a necessary condition for W (p(x), pD(x)) = 0.
+Overall, our ablation experiments conﬁrmed this notion and showed that whenλ is too small and thus the penalty
+on latent space matching too week, neither the encoder or the decoder’s marginal distribution (pE(z), pD(x)) could
+capture the ground truth p(z) or p(x) well, despite minimal reconstruction error.
+We see this behavior in both test cases, however we note that in the semileptonict¯t the behavior is somewhat
+less dramatic because of the heavy initial bias towards an identity mapping due to the ResNet [50] architecture (see
+9We can show that more generally, for a stochastic decoder, we have an upper bound Wc(p(x), pD(x)) ≤
+infpE (z|x):pE (z)=p(z) Ep(x)pE (z|x)pD( ˜x|z)[c(X, ˜X)].
+28/32
+
+=== PAGE BREAK ===
+
+Supplementary Figure 2. Results of anchor loss ablation study in the Z→ e+e− study. For βE = βD = 0
+we can see that unphysical transformations can arise. In px, negative values in Z are being mapped to positive values
+in X. This is a result of e± information being swapped in the learned transformation. For βE = βD = 50, this effect
+goes away; we also see more physical behavior in E as well. For βE = βD = 100, we observe that high values of βE
+and βD inadvertently encourage unphysical behavior in E. This is likely due to the fact that the anchor loss is only a
+proxy for enforcing charge conservation.
+29/32
+
+=== PAGE BREAK ===
+
+Supplementary Figure 3).
+We see performance in matching principal axes improve as λ grows larger, possibly plateauing in the case of the
+semileptonic t¯t study. This plateau is potentially due to issues with optimization and poor numerical conditioning
+with overly large λ. However, we ﬁnd that too large of a value of λ results in unphysical mappings.
+Speciﬁcally, we ﬁnd unphysical behavior when we view the transport plots and derived quantities (see Fig 4).
+Again, we note that this is less noticeable for the semileptonic t¯t study due to the ResNet [50] architecture. We
+ﬁnd that the ideal choice is λ≈ 1 for the Z→ e+e− study and λ≈ 20 for the semileptonic t¯t study; this retains
+acceptable principal axis matching while not introducing unphysical transformation characteristics. We suspect that
+if the choice of λ is too large, it over-constrains the optimization problem and should instead be annealed.
+As discussed, instead of an expensive double-loop procedure where we train the encoder to optimality with
+the penalty method before updating the decoder, we forego theoretical considerations by jointly optimizing the
+encoder and decoder of a WAE on a surrogate loss as in [21]. The resulting loss is neither an upper nor a lower
+bound on the ideal objective Wc(p(x), pD(x)), and we choose λ by experimentation. An alternative would be to use
+the Sinkhorn Autoencoder [46] approach, which only needs a large enough λ for its loss to be a proper upper bound
+on Wc(p(x), pD(x)). This is further motivation that this method should be explored in future work.
+30/32
+
+=== PAGE BREAK ===
+
+Supplementary Figure 3. Results of λ ablation study on principal axis matching. a Matching of the
+positron’s py distribution for λ = 0.001, λ = 1, and λ = 100 in Z for the Z→ e+e− study. b Matching of the
+positron’s py distribution for λ = 0.001, λ = 1, and λ = 100 in X for the Z→ e+e− study. c Matching of the b
+quark’s py distribution for λ = 0.001, λ = 10, and λ = 100 in Z for the semileptonic t¯t study. d Matching of the
+leading jet’s py distribution for λ = 0.001, λ = 10, and λ = 100 in X for the semileptonic t¯t study. For small values
+of λ (λ = 0.001) we ﬁnd that performance suffers as latent space matching is not enforced. This improves as we
+increase λ but eventually plateaus.
+31/32
+
+=== PAGE BREAK ===
+
+Supplementary Figure 4. Results of λ ablation study on transport plots and derived quantity matching.
+a Transport plans from ˜z→ ˜x of the positron’sE distribution for λ = 0.001, λ = 1, and λ = 100 for the Z→ e+e−
+study. b Matching of the invariant mass of the Z-boson for λ = 0.001, λ = 1, and λ = 100 for the Z→ e+e− study.
+c Transport plans from ˜z→ ˜x of the b quark’sE distribution in Z to the leading jet’sE distribution in X for
+λ = 0.001, λ = 10, and λ = 100 for the semileptonic t¯t study. d Matching of the invariant mass of the top-quark,
+Mt, reconstructed using information from the hadronically decaying W-boson for λ = 0.001, λ = 10, and λ = 100
+for the semileptonic t¯t study. 32/32

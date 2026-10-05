@@ -1,0 +1,486 @@
+1/45
+Unpaired Image-to-Image Translation with Cycle-Consistent
+GANs for Bridging Data-Simulation Discrepancies
+Dmitrii Torbunov,
+Brookhaven National Laboratory
+August 7, 2022
+
+=== PAGE BREAK ===
+
+2/45
+Introduction
+▶ We attempt to reduce Data vs Simulation discrepancies in the High Energy
+Physics (HEP) with a help of unpaired image-to-image translation methods.
+▶ Plan of the Talk:
+▶ Motivate the Problem
+▶ Discuss our Experiment and Dataset
+▶ Discuss our Method
+▶ Highlight some challenges that we faced
+
+=== PAGE BREAK ===
+
+3/45
+Motivation – No Labeled Data
+▶ In High Energy Physics (HEP)
+experiments we study elementary
+particles as they pass through the
+detector.
+▶ To refine our understanding of the
+laws of nature, we try to identify
+particles in the detector and
+estimate their energies.
+▶ However, humans can perform such
+an identification only in a few
+special cases.
+▶ Problem - where to get labels from
+in the general case?
+NuMI DATA: RUN 10811, EVENT 2549. APRIL 9, 2017.
+Credits MicroBooNE Collaboration
+
+=== PAGE BREAK ===
+
+4/45
+Labeled Data. Standard Solution
+▶ Since humans cannot perform data labeling, physicist are relying Machine
+Learning algorithms to perform the particle identification/energy estimation.
+▶ However, the problem still remains – to train the ML algorithms one needs the
+labeled data.
+▶ Solution – use Simulation:
+1. Perform simulation of particle interactions with the detector.
+2. Train ML algorithms on the simulation.
+3. Use ML algorithms on the real data.
+
+=== PAGE BREAK ===
+
+5/45
+Reality-Simulation Discrepancies
+▶ The usage of simulation solves the problem of getting the labeled data.
+▶ Unfortunately, there are multiple discrepancies present between the simulated
+and the real data .
+▶ These discrepancies raise serious concerns, regarding the validity of the usage of
+the ML algorithms on the real data, given that they are trained on the simulation.
+
+=== PAGE BREAK ===
+
+6/45
+Reality-Simulation Discrepancies, Solutions?
+▶ Physicists spent a considerable amount of time trying to manually identify all
+possible discrepancies between the simulation and the real data.
+▶ Yet, new discrepancies are still found continuously. They significantly limit the
+applicability of the ML methods in the HEP community and cause significant
+delays in data analysis.
+▶ We are trying to leverage the power of Deep Learning to automatically
+identify possible discrepancies between the simulation and the real data,
+and fix them .
+
+=== PAGE BREAK ===
+
+7/45
+Bridging the Simulation-Reality Gap with Deep Learning
+▶ We formulate the problem of reducing the simulation-reality discrepancies as the
+domain translation problem:
+1. Domain A – Simulated Data.
+2. Domain B – Real Data.
+▶ Given an image XA from the Simulation Domain we would like to translate it to
+the Domain of Real Data with a help of a Deep Network GA→B, such that the
+translated image GA→B(XA) is indistinguishable from the Real Data.
+▶ Such a problem is known in the Deep Learning community as an
+Image-to-Image translation problem and has multiple solutions.
+▶ In particular, since there is no simple way to pair Simulated to Real images, our
+problem maps to the Unpaired Image-to-Image translation problem in the
+Deep Learning field.
+
+=== PAGE BREAK ===
+
+8/45
+Milestone
+▶ Plan of the Talk:
+▶ Motivate the Problem
+▶ Discuss our Experiment and Dataset
+▶ Discuss our Method
+▶ Highlight some challenges that we faced
+
+=== PAGE BREAK ===
+
+9/45
+Dataset
+▶ Before attempting to solve the domain translation problem we need to agree on
+the dataset to use.
+▶ As a starting point, we decided to consider Liquid Argon Time Projection
+Chamber (LArTPC) based experiments.
+▶ The LArTPCs are the next generation particle detectors:
+▶ The LArTPC detector is simply a container filled with liquid Argon.
+▶ When charged particles travel though the liquid Argon they create trails of electrons.
+▶ These trails can be used to detect particles.
+
+=== PAGE BREAK ===
+
+10/45
+Liquid Argon Detector, 1
+▶ Charged particles leave clouds of electrons in
+the detector.
+▶ The clouds of electrons slowly drift towards
+the wire-planes under the influence of the
+strong electric field Edrift.
+▶ Metallic wires record electric excitations
+caused by the bypassing electrons.
+
+=== PAGE BREAK ===
+
+11/45
+Liquid Argon Detector, 2
+
+
+=== PAGE BREAK ===
+
+12/45
+Liquid Argon Detector, 3
+
+
+=== PAGE BREAK ===
+
+13/45
+Liquid Argon Detector, 4
+
+
+=== PAGE BREAK ===
+
+14/45
+Liquid Argon Detector, 5
+
+
+=== PAGE BREAK ===
+
+15/45
+Liquid Argon Detector, 6
+
+
+=== PAGE BREAK ===
+
+16/45
+Liquid Argon Detector, 7
+
+
+=== PAGE BREAK ===
+
+17/45
+Liquid Argon Detector, 8
+
+
+=== PAGE BREAK ===
+
+18/45
+Liquid Argon Detector, 9
+
+
+=== PAGE BREAK ===
+
+19/45
+Liquid Argon Detector, 10
+
+
+=== PAGE BREAK ===
+
+20/45
+Liquid Argon Detector, 11
+
+
+=== PAGE BREAK ===
+
+21/45
+Liquid Argon Detector, 12
+(a) Schematic Waveforms
+ (b) Actual Data Sample
+
+=== PAGE BREAK ===
+
+22/45
+Benchmark Data
+▶ Before tackling the Simulation to Real Data translation we focused on a simpler
+problem of translating Simulation A into Simulation B .
+▶ Both simulated datasets use the same simulation of particle propagation through
+the detector.
+▶ The only difference between the two simulated datasets is the way the wires
+respond to the clouds of electrons:
+1. Domain A – simplified detector response, where a cloud of electrons is read only by
+the nearest wire.
+2. Domain B – realistic detector response, where a cloud of electrons can produce
+excitations in multiple wires.
+
+=== PAGE BREAK ===
+
+23/45
+Sample of Generated Images
+(a) Domain A
+ (b) Domain B
+
+=== PAGE BREAK ===
+
+24/45
+Milestone
+▶ Plan of the Talk:
+▶ Motivate the Problem
+▶ Discuss our Experiment and Dataset
+▶ Discuss our Method
+▶ Highlight some challenges that we faced
+
+=== PAGE BREAK ===
+
+25/45
+Unpaired Image-to-Image Translation
+▶ Once the benchmark dataset has been chosen we can start exploring image
+translation methods.
+▶ The most common image-to-image translation methods rely on Generative
+Adversarial Networks.
+▶ Of the possible GAN image-to-image translation variants there is one model that
+has drawn our attention due to its inherent properties – the CycleGAN model 1.
+1arXiv:1703.10593
+
+=== PAGE BREAK ===
+
+26/45
+CycleGAN Basics
+Domain A Domain B
+At the core of CycleGAN lies a traditional GAN architecture with a generator GA→B
+that translated images from domain A to B.
+
+=== PAGE BREAK ===
+
+27/45
+CycleGAN Basics
+Domain A Domain B
+To train the generator GA→B, GAN uses an adversarial min-max game against a
+discriminator DB
+
+=== PAGE BREAK ===
+
+28/45
+Traditional GAN training is prone to Mode Collapse
+(a) Domain A
+ (b) Translated to Domain B
+
+=== PAGE BREAK ===
+
+29/45
+CycleGAN Architecture
+Domain A Domain B
+CycleGAN uses two generators GA→B, GB→A and two discriminators DA DB.
+
+=== PAGE BREAK ===
+
+30/45
+CycleGAN Cycle Constraint
+Domain A Domain B
+To solve the Mode Collapse problem, CycleGAN enforces a cycle-consistency
+constraint: GB→A(GA→B(XA)) == XA, and symmetrically in for XB.
+
+=== PAGE BREAK ===
+
+31/45
+CycleGAN Solution of the Mode Collapse Problem
+▶ CycleGAN is one of the earliest successful Unpaired Image-to-Image transfer
+architectures. It solves the mode collapse problem by imposing the
+cycle-consisntency constraint .
+▶ Better models exist in terms of the image translation quality. However, these
+models relax the cycle-consistency constraint, allowing generator to gain and
+loose information during the translation.
+▶ We believe that maintaining the cycle-consistency is important goal, since we do
+not want the physics to be altered going from domain A to B and back.
+▶ So, we have attempted to use the default CycleGAN architecture on our
+benchmarking dataset.
+
+=== PAGE BREAK ===
+
+32/45
+Initial CycleGAN Usage Attempt
+A
+ A -> B
+ B
+A
+ A -> B
+ B
+A
+ A -> B
+ B
+B
+ B -> A
+ A
+B
+ B -> A
+ A
+B
+ B -> A
+ A
+
+=== PAGE BREAK ===
+
+33/45
+Milestone
+▶ Plan of the Talk:
+▶ Motivate the Problem
+▶ Discuss our Experiment and Dataset
+▶ Discuss our Method
+▶ Highlight some challenges that we faced
+
+=== PAGE BREAK ===
+
+34/45
+Initial CycleGAN Usage Attempt – Chunky Tracks
+A
+ A -> B
+ B
+A
+ A -> B
+ B
+The default CycleGAN experiences difficulties with a translation of wide tracks
+
+=== PAGE BREAK ===
+
+35/45
+CycleGAN Translation Issues
+▶ The default CycleGAN gives good translation on average, yet produces noticeable
+artifacts for some cases.
+▶ Analysing the artifacts, we believe that they are the result of the generator
+architectures of the CycleGAN (UNet or ResNet).
+▶ The CycleGAN generators rely on CNN layers, which are very local in nature. So,
+perhaps the network simply translated image patches locally, and they are globally
+mismatched.
+▶ We tried to augment the CNN generator to add a global matching step.
+
+=== PAGE BREAK ===
+
+36/45
+UNet-ViT Generator
+We augmented UNet by a Vision Transformer bottleneck to handle long-range
+dependencies.
+
+=== PAGE BREAK ===
+
+37/45
+UNet-ViT Fixing Bad Translations
+A
+ A -> B
+ B
+A
+ A -> B
+ B
+Figure: Default CycleGAN Generator
+A
+ A -> B
+ B
+A
+ A -> B
+ B Figure: New UNet-ViT Generator
+
+=== PAGE BREAK ===
+
+38/45
+Improving CycleGAN Performance
+▶ By modifying the generator architecture we were able to improve the translation
+quality of CycleGAN.
+▶ However, the vanilla CycleGAN is still outperformed by the more advanced models
+that relax the cycle-consistency constraint.
+▶ We have tried to further improve the CycleGAN performance to match the one of
+the more advanced algorithms.
+
+=== PAGE BREAK ===
+
+39/45
+CycleGAN Modifications, 1
+▶ To further improve the CycleGAN performance we have tried to pre-train its
+generators.
+▶ To pre-train the generators we focused on a task of a self-supervised image
+inpainting.
+
+=== PAGE BREAK ===
+
+40/45
+Pre-Training Generators by Image Inpainting
+Real
+ Masked
+ Reconstructed
+For the image inpainting task, some parts of the image are masked. The network is
+tasked with recovering the masked parts of the image from their surroundings
+
+=== PAGE BREAK ===
+
+41/45
+CycleGAN Modifications, 2
+▶ Unfortunately, the pretraining alone did not seem to improve the image
+translation quality.
+▶ So, we have implemented a discriminator regularization by penalizing the
+magnitude of its gradients.
+▶ Together, the self-supervised pre-training and gradient penalty allowed the
+CycleGAN to achieve the performance of more advanced algorithms.
+
+=== PAGE BREAK ===
+
+42/45
+Modified CycleGAN Benchmarking
+▶ We have compared our modified CycleGAN
+(called UVCGAN) vs more advanced models:
+1. ACL-GAN arXiv:2003.04858
+2. Council-GAN arXiv:1911.10538
+3. U-GAT-IT arXiv:1907.10830
+▶ We performed the comparison on the
+standard Image-to-Image benchmark datasets
+(Selfie-to-Anime, Male-to-Female, Glasses
+Removal).
+▶ Our UVCGAN outperforms more advanced
+models on 4 out of 6 benchmarks and
+achieves competitive results on the other two.
+
+
+=== PAGE BREAK ===
+
+43/45
+UVCGAN Intermediate Results
+▶ By modifying the generator architecture and improving the training procedure, we
+were able to make the CycleGAN performance competitive with more advanced
+models.
+▶ We have also obtained reasonably good translation quality on our benchmarking
+LArTCP dataset.
+▶ Generic Image-to-Image translation results are published in arXiv:2203.025572,
+and LArTCP results are in preparation.
+2Code can be found here https://github.com/LS4GAN/uvcgan
+
+=== PAGE BREAK ===
+
+44/45
+UVCGAN Next Steps
+▶ Now our work focused on three directions:
+1. Simulate a more advanced LArTPC dataset.
+2. Extend UVCGAN to work on much larger images (6000 × 1000).
+3. Explore other improvements to the UVCGAN training.
+
+=== PAGE BREAK ===
+
+45/45
+Our Team
+
+
+=== PAGE BREAK ===
+
+1/3
+Backups
+
+=== PAGE BREAK ===
+
+2/3
+Natural Image Translation Quality, FID and KID
+▶ For natural images, well-established metrics are avaialble to assess the quality of
+translation: FID and KID.
+▶ These metrics compare translated images XA→B ≡ G A→B(XA) to the real images
+in the Domain B XB.
+▶ Evaluation of all metrics begins by applying Inception Net classifier, trained on the
+ImageNet dataset over all images {XA→B} and {XB}.
+▶ For each image, a number of features is extracted from a selected set of deep
+layers of the Inception Net.
+▶ FID and KID scores compare the resulting sets of features between the
+distribution of translated and real images.
+
+=== PAGE BREAK ===
+
+3/3
+UVCGAN Cycle-Constraint Effects
+Unlike other models, UVCGAN maintains strong correlation between input and output

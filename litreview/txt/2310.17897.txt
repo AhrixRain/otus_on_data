@@ -1,0 +1,1011 @@
+arXiv:2310.17897v2  [physics.comp-ph]  12 Jun 2025
+Event generation and consistency tests with sliced Wasserstein distance in
+high-energy physics
+Chu-Cheng Pan,∗ Xiang Dong,∗ Yu-Chang Sun, Ao-Yan Cheng, Ao-Bo Wang, Yu-Xuan Hu, Hao Cai,† and Wei Wang‡
+School of Physics and Technology, Wuhan University, Wuhan, Hubei, China
+In the field of modern high-energy physics research, there is a growing emphasis on utilizing
+deep learning techniques to optimize event simulation, thereby expanding the statistical sample
+size for more accurate physical analysis. Traditional simulation methods often encounter challenges
+when dealing with complex physical processes and high-dimensional data distributions, resulting
+in slow performance. To overcome these limitations, we propose a solution based on deep learning
+with the sliced Wasserstein distance as the loss function. By employing an advanced transformer
+learning architecture, we initiate the learning process from a Monte Carlo sample, and generate high-
+dimensional data. Through the integration of the SWD with the permutation test, we introduce a
+novel, statistically rigorous and more sensitive metric for assessing the distribution differences, which
+significantly outperforms other metrics in detecting subtle distributional shifts, further validating its
+effectiveness for precise evaluation in high-energy physics generative models and high-dimensional
+consistency test. The generated data samples maintain all the original distribution features from a
+limited number of training samples, as evidenced by their successful passage of all common consis-
+tency tests using a test-sample size of the same order of statistical magnitude. This development
+opens up new possibilities for improving event simulation and high-dimensional consistency test in
+high-energy physics research.
+I. INTRODUCTION
+In modern high-energy physics research, experimental
+data are increasingly complex and high-dimensional. For
+instance, a single particle collision event can generate
+numerous primary particles, each characterized by pa-
+rameters such as momentum, energy, charge, and mass
+[1, 2]. Monte Carlo simulation is commonly employed
+to generate particle collisions. But as the complexity
+of high-energy particle physics detectors grows, so does
+the intricacy of the detector simulation programs, re-
+sulting in higher costs. This issue will be further exac-
+erbated in future high-energy physics experiments like
+HL-LHC/CEPC/super-tau-charm [3, 4]. The demand
+for simulation data will continue to rise as high-energy
+physics exploration deepens. Additionally, complex data
+necessitate sophisticated analysis tools, which often re-
+quire massive storage to obtain a sufficient number of
+independent simulation data samples. This places signif-
+icant demands on computing power and storage systems
+[5]. Thus, finding methods to generate high-precision
+simulation data to reduce computing and storage require-
+ments has become a crucial research objective.
+Machine learning has demonstrated immense poten-
+tial in event generation, with event generators frequently
+trained using Generative Adversarial Networks (GANs)
+and Variational Autoencoders (VAEs). The objective is
+to learn the features of finite statistical data and rapidly
+generate large amounts of simulated data with consistent
+features. However, several challenging problems need to
+∗ These authors contributed equally to this work.
+† hcai@whu.edu.cn
+‡ wangwei2017@whu.edu.cn
+be addressed [6]. In GANs, the generator aims to sim-
+ulate the target data, while the discriminator tries to
+distinguish between the generated data and the target
+data. Consequently, the training process can be unsta-
+ble, and issues like model collapse may arise [7]. On the
+other hand, VAEs map input data to a probability dis-
+tribution in latent space through an encoder and then
+reconstruct the original data space using latent variables
+and a decoder. VAEs may overlook crucial details in the
+data, necessitating a balance between the reconstruction
+error and the prior distribution error of the latent space
+[8].
+To resolve this challenge, we propose the utilization
+of a novel loss function that captures the overall consis-
+tency between the target data and the generated data.
+The Sliced Wasserstein distance (SWD) presents a po-
+tential solution as an effective loss function[9]. SWD
+quantifies the disparity between two probability distribu-
+tions by slicing the probability distribution in multiple
+directions, calculating the one-dimensional Wasserstein
+distance in each direction, and averaging the distances
+across all directions. With its continuous differentiability
+and high computational efficiency, SWD offers a promis-
+ing approach to address the loss function problem and
+optimize model parameters to ensure that the generated
+data distribution closely approximates the real data dis-
+tribution [10].
+Beyond using SWD as a training loss function, there
+is also growing interest in robustly evaluating generative
+models using high-dimensional metrics more refined than
+simple histogram comparisons. Metrics such as the Ker-
+nel Physics Distance (KPD) and Fr´ echet Physics Dis-
+tance (FPD) [11] have been explored to systematically
+measure discrepancies between generated and real data.
+Building on these developments, we combine SWD with a
+permutation-based statistical test, thereby constructing
+
+=== PAGE BREAK ===
+
+2
+a rigorous measure of distributional difference. This inte-
+grated approach not only offers a straightforward and in-
+terpretable way to verify the fidelity of high-dimensional
+data, but also provides a robust and more sensitive frame-
+work for detecting subtle discrepancies that might remain
+hidden when relying on histograms or other metrics.
+II. METHODS
+A. SWD Theory
+Sliced Wasserstein distance (SWD) is a variant of
+the Wasserstein distance, which transforms the high-
+dimensional Optimal Transport problem into a one-
+dimensional problem for ease of computation. Specifi-
+cally, for each randomly chosen direction, SWD projects
+the distribution onto this direction and then calculates
+the Wasserstein distance of these one-dimensional distri-
+butions. This process is repeated multiple times and the
+results are averaged to obtain the final distance estimate.
+First, let us define the one-dimensional Wasserstein dis-
+tance. For the one-dimensional case, the Wasserstein dis-
+tance between two distributions P andQ can be defined
+as the L1 distance between their cumulative distribution
+functions (CDF) [12], i.e.,
+WD (P,Q ) =
+Z
+|FP (x)−FQ(x)|dx (1)
+where FP and FQ are the cumulative distribution
+functions of the distributions P and Q. For the high-
+dimensional case, the Sliced Wasserstein Distance is de-
+fined through the integral of the one-dimensional Wasser-
+stein distance:
+SWD (P,Q ) =
+Z
+WD (Pθ,Qθ)dθ (2)
+wherePθ andQθ are the one-dimensional distributions
+of the P and Q distributions projected in the direction θ.
+θ is a direction randomly drawn from a uniform distri-
+bution. W (Pθ,Qθ) is the Wasserstein distance between
+these two one-dimensional distributions. Note that the
+integral here is over all possible directionsθ, i.e., in prac-
+tice, we usually approximate this integral by sampling
+a large number of random directions and taking the av-
+erage. It should be noted that the formula here is for
+the case of continuous probability distributions. For the
+discrete case, we assume that we have two sets of points
+X =x1,...,x n and Y =y1,...,y n, each set is in Rd. We
+can define the one-dimensional discrete Wasserstein dis-
+tance as:
+WD (Xθ,Yθ) = 1
+n
+nX
+i=0
+xiθ−yπ(i)θ (3)
+whereXθ andYθ are the projections of X and Y in the
+direction θ, and π is a permutation that minimizes the
+above sum. In the one-dimensional case, such π can be
+found by sorting the points after projection. This is be-
+cause in one dimension, the optimal transport scheme is
+to pair each pointxiθ with its immediate neighboryπ(i)θ.
+Then, the Sliced Wasserstein Distance for the discrete
+case is defined as
+SWD (X,Y ) =E[WD (Xθ,Yθ)] (4)
+The expectation is calculated by sampling along mul-
+tiple random directions θ. We choose the projection
+dimension in the unit circle, which can make the pro-
+jection more uniform, and then calculate and average
+the one-dimensional Wasserstein distances in these direc-
+tions [9, 13]. Some revised theories regarding the Sliced
+Wasserstein Distance have been proposed to better ac-
+commodate complex high-dimensional data. These mod-
+ifications have potential applications in event generation
+in future work [14, 15].
+To correct for detector effects and the spatial defects in
+high-dimensional data caused by event selection, we will
+make additional corrections to the dimensions of specific
+physical quantities, so our total loss is
+Loss =SWD (X,Y ) +γ·E[WD (Xθspecif ic,Yθspecif ic)]
+(5)
+B. Network Architecture and Model T raining
+To generate complex high-dimensional multivariate
+distributions, we employ the Transformer model based
+on the self-attention mechanism [16]. The self-attention
+mechanism allows the model to compute weighted re-
+lationships between tokens in an input sequence, effec-
+tively capturing intricate interdependencies within high-
+dimensional data. Our approach begins by generating
+a latent vector sampled uniformly from -1 to 1, serving
+as a low-dimensional representation of the distribution.
+This latent vector is projected through a linear transfor-
+mation onto a higher-dimensional space corresponding to
+the number of degrees of freedom in our target distribu-
+tion, i.e. the number of independent variables or features
+we aim to model, and scaled by a factor of 1024. The
+resulting high-dimensional vector is reshaped into a se-
+quence of tokens, each representing an independent unit
+distribution and containing 1024 elements, which encode
+information about 1024 points along a particular dimen-
+sion. By conceptualizing the complex multivariate distri-
+bution as a sequence of these unit distribution tokens, we
+leverage the Transformer’s capability to process sequen-
+tial data and capture long-range dependencies through
+self-attention. The Transformer model learns the com-
+plex relationships among the different dimensions of the
+distribution, enabling it to generate new samples that
+
+=== PAGE BREAK ===
+
+3
+align with the underlying data structure and dependen-
+cies. A diagram illustrating the transformations and data
+flow through the model is provided in Fig. 1.
+We used the AdamW optimizer [17], with a learning
+rate set to 5×10−5, epsilon set to 10−8, and weight decay
+set to 0.1. For each iteration, we randomly extract events
+for matching and loss calculation, targeting a batch size
+of 256 by default, and each batch has 1024 events. At
+the same time, for events where certain physical quanti-
+ties exceed the prior range, such as detector angles and
+event selection, we will directly eliminate them during
+training to exclude events that are in an unreasonable
+range. The target data will be reduced synchronously,
+generally slightly fewer than the extracted events.
+III. RESUL TS
+We generate phase-space Monte Carlo events and sim-
+ulate the detector effect using the Geant4-based simula-
+tion software developed for the BESIII detector [18, 19],
+where the ψ(2S) meson is produced through electron-
+positron collisions and subsequently decays into a ϕ me-
+son and a pair of pions ( π+ and π−). The ϕ meson
+further decays into a pair of kaons ( K + and K−) [20].
+The precision of our generation can be assessed by con-
+sidering the narrow mass peak of the ϕ meson as one
+of the evaluation metrics. For K +π− and K−π+, we
+have MKπ < 0.85,MKπ > 0.95 to remove possible K∗
+events. The application of these specific event selection
+criteria and detector effect aids in evaluating our genera-
+tion when addressing potential discontinuities in the sim-
+ulation data. Our simulation data, transformed into the
+center-of-mass system ofψ(2S), encompass eight degrees
+of freedom, including the masses Mϕ and Mπ+π−, and
+the angular distributions of the decay products both in
+the rest frames of ϕ and π+π−. Specifically, we selected
+the angular variables θϕ, ϕϕ, and the θ and ϕ angles for
+K + and K− in the rest frame of ϕ, similarly for π+π−,
+to capture the full dynamics of the decay process.
+To verify the consistency between the distributions of
+the simulated data generated by SWD using 2 million
+training events and the Monte Carlo test set data, we
+used the Kolmogorov-Smirnov (KS) test, the Wasserstein
+Distance (WD) and Anderson–Darling (AD) test to con-
+duct a one-dimensional same-distribution test both using
+1 million test events in Fig.2 and Fig.3. On specific physi-
+cal quantity dimensions, the confidence results confirmed
+that our SWD-generated data and the test set data have
+high consistency in the distribution on these dimensions.
+To accurately assess the differences between high-
+dimensional distributions [21, 22], we combined the SWD
+and permutation test methods. Firstly, for two high-
+dimensional distributions, the original distance between
+them is calculated using the SWD. To create a refer-
+ence distribution, we merged the datasets X and Y and
+randomly reorganized them multiple times to generate a
+series of new data pairs ( X′
+i, Y′
+i ), noting that this reor-
+TABLE I: Percentage of p-values obtained for various
+statistical metrics when comparing data generated by
+the SWD method to the test set data, using a sample
+size of 1,000,000 events.
+Metric P-value
+FPD 99.9%
+KPD 82.0%
+SWD 24.7%
+ganization is not based on the original grouping labels.
+Subsequently, for each pair of newly matched datasets
+X′
+i and Y′
+i , we calculate the SWD between them to ob-
+tain a series of permutation distances ( Dperm1, Dperm2,
+..., Dpermn). In the evaluation process, we compare the
+position of the original distance ( Doriginal) in these per-
+mutation distances. For example, if Doriginal is greater
+than 95% of the Dpermi distances, a p-value of 0.05 can
+be obtained. If the p-value is less than 5%, we reject the
+null hypothesis, indicating that the samples are likely
+not from the same distribution. By combining the SWD
+with the permutation test, we provide a statistically rig-
+orous method for assessing the differences between high-
+dimensional distributions, which is amenable to GPU ac-
+celeration and parallelization. We applied our method
+and other metrics like the Fr´ echet and kernel physics dis-
+tances (FPD and KPD) which are designed as analogs to
+the commonly used Fr´ echet Inception Distance (FID) and
+Maximum Mean Discrepancy (MMD) in machine learn-
+ing, but applied directly to physics feature spaces [11], to
+test our SWD-generated data against the test set data in
+Table. I and it suggests that our generated data can be
+considered as originating from the same distribution as
+the Monte Carlo simulation data.
+Having found no significant differences between our
+generated sample and Geant4 simulations, we proceed
+to compare the computational performance of our ap-
+proach with the standard Geant4 pipeline. Training our
+model requires 12 hours and 26 minutes on a single GPU
+(GeForce RTX 3090). Once trained, the model can gen-
+erate 50000 events in just one second. In stark contrast,
+the standard Geant4 simulation simulates approximately
+0.2 events per second. Our method is several orders of
+magnitude faster than traditional simulation methods.
+Considering that experimental analyses often require the
+simulation of billions of simulation events, due to an es-
+calating volume of experimental data, low statistical ef-
+ficiencies, and the necessity to generate multiple Monte
+Carlo datasets for the pull distribution, the computa-
+tional storage savings offered by our method are sub-
+stantial.
+
+=== PAGE BREAK ===
+
+4
+FIG. 1: Model Overview We input the random samples from a uniform distribution, non-linearly expand it, split
+it into desired tokens, and feed it into a standard Transformer encoder to learn the correlation of the multi-variable
+distribution. Finally, we generate reasonable high-dimensional data.
+IV. DISCUSSION
+A. Support Size
+In high-energy physics generative modeling, perfor-
+mance often depends on the number of training sam-
+ples. Consequently, understanding the relationship be-
+tween training sample size and support test sample size
+is important. Figure 4 illustrates the permutation test
+distribution both using 1 million test events. The null
+hypothesis posits that the two samples originate from
+identical distributions. The p-value can be approximated
+by the ratio of distances within the permutation groups
+that exceed the original distance. The null hypothesis
+cannot be rejected due to its p-value of 26.6 % when the
+model is trained with 1.8 million events. However, the
+null hypothesis can be rejected given that the p-value is
+near 0 % when the training size is 300,000.
+Suppose a specific physics analysis requires generat-
+ing 1 million events, a natural question arises as to how
+large the training dataset must be to ensure statistical ro-
+bustness. Table II presents the influence of the training
+sample size on the performance of the algorithm using 1
+million test events. From the results, it is evident that
+increasing the training sample size enhances the model’s
+ability to learn, as reflected by the reduction in the SWD
+test distance and an increase in the p-value for larger
+sample sizes. However, beyond a certain point like 1
+million training events, further increases in the training
+sample size yield diminishing returns in terms of model
+learning improvement. Specifically, we find that when
+the training sample size exceeds approximately 750,000
+events, the SWD permutation test p-value exceeds 5%,
+suggesting that this sample size is sufficient for the model
+to achieve statistically significant results. Notably, for
+larger training samples, the model demonstrates more
+stable performance, although the marginal gains from ad-
+ditional data become less pronounced. This suggests that
+while a sufficiently large training sample is crucial for
+achieving robust generalization, the sample size does not
+need to be arbitrarily large to achieve significant improve-
+ments in model performance, particularly in the context
+of the testing sample sizes explored in this study.
+In contrast, suppose that we have only 300,000 training
+events and wish to generate test events that remain indis-
+tinguishable from the target distribution at conventional
+significance levels. Table III explores how the p-value
+changes for varying test sample sizes, identifying the ap-
+proximate threshold beyond which the model’s outputs
+become statistically distinguishable. When the test sam-
+ple size is below 350,000 events, the measured p-value
+surpasses 5%, implying that the generated distribution is
+not distinguishable from the target distribution at con-
+ventional significance levels. Once the test set exceeds
+350,000 events, however, the p-value falls below 5%, in-
+dicating that the generated and target distributions can
+be differentiated more confidently.
+The findings presented in this study indicate that
+
+=== PAGE BREAK ===
+
+5
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=91%, PWD=86%, PAD=85%
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5
+px of φ[GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=78%, PWD=77%, PAD=60%
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5
+py of  φ[GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+0.035
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=55%, PWD=79%, PAD=82%
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5
+pz of φ[GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+0.035
+0.040
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=63%, PWD=48%, PAD=32%
+1.2 1.4 1.6 1.8
+E of φ[GeV]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=78%, PWD=50%, PAD=37%
+0.5 1.0 1.5 2.0 2.5
+Mπ+ π− [GeV/c2]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+0.035
+0.040
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=30%, PWD=29%, PAD=26%
+0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6
+pT of φ[GeV/c]
+0.8
+1.0
+Ratio To
+MC
+FIG. 2: 1D Histograms of the kinematic distributions of the ϕ meson for one million events The blue
+line represents the distribution from Monte Carlo (MC) simulation events, while the black data points are from
+SWD-generated events. To measure the consistency of these one-dimensional distributions, we employ various
+statistical tests including the Kolmogorov-Smirnov (KS) test, Wasserstein distance (WD) test, and
+Anderson-Darling (AD) test.
+achieving statistically indistinguishable generated distri-
+butions typically requires a training sample size compa-
+rable to the desired testing sample size. This 1:1 ra-
+tio suggests that the model effectively captures the dis-
+tributional characteristics from limited training samples
+and can reproduce events at the same order of magni-
+tude. An important practical benefit of this approach
+is significant storage savings. By encoding the Monte
+Carlo distributional features into a trained model, the
+storage required is drastically reduced compared to stor-
+ing large-scale Monte Carlo event samples directly. How-
+ever, there are limitations inherent in any data-driven
+method. When the desired generated event sample size
+significantly exceeds the available training data, there is
+a risk that the limited training dataset might not suffi-
+ciently represent the full distributional space, potentially
+compromising the reliability of the generated events.
+B. Sensitivity T est
+This section examines the performance of three dis-
+tance metrics-Fr´ echet Physics Distance (FPD), Kernel
+Physics Distance (KPD), and Sliced Wasserstein Dis-
+tance (SWD)-in detecting distributional shifts and co-
+variance alterations within a bivariate Gaussian distri-
+bution characterized by zero mean and covariance matrix
+Σ =
+
+1.00 0.25
+0.25 1.00
+
+[11]. We evaluate these metrics un-
+der a series of distortions, including large and small shifts
+in thex-coordinate and changes in covariance magnitude
+(multiplying and dividing the variances).
+In order to assess the sensitivity of these metrics to
+subtle biases between the test and target distributions,
+we introduce very small shifts in the x-coordinate of a
+bivariate Gaussian. Table IV demonstrate that both
+FPD and KPD, which are established as baseline meth-
+ods for evaluation of generative model in High-Energy
+Physics (HEP), exhibit high sensitivity to large shifts.
+These metrics effectively reject the null hypothesis of no
+mismatch between the true and perturbed distributions,
+with p-values remaining below 5% in the presence of
+substantial distortions. However, when confronted with
+smaller shifts, particularly whenµx = 0.01 orµx = 0.005,
+FPD and KPD demonstrate limitations in their ability to
+detect distributional mismatches.
+
+=== PAGE BREAK ===
+
+6
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+0.035
+0.040
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=9%, PWD=22%, PAD=23%
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5
+py of π+ [GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.00
+0.01
+0.02
+0.03
+0.04
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=47%, PWD=38%, PAD=34%
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5
+pz of π+ [GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=38%, PWD=55%, PAD=9%
+0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6
+E of π+ [GeV]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=57%, PWD=35%, PAD=6%
+0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6
+pT of π− [GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=48%, PWD=44%, PAD=22%
+0.5 1.0 1.5 2.0 2.5
+θ of π+
+0.8
+1.0
+Ratio To
+MC
+0.0000
+0.0025
+0.0050
+0.0075
+0.0100
+0.0125
+0.0150
+0.0175
+0.0200
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=20%, PWD=20%, PAD=30%
+−3 −2 −1 0 1 2 3
+φ of π+
+0.8
+1.0
+Ratio To
+MC
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+0.030
+0.035
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=88%, PWD=92%, PAD=88%
+−1.00 −0.75 −0.50 −0.25 0.00 0.25 0.50 0.75 1.00
+py of K − [GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.00
+0.01
+0.02
+0.03
+0.04
+0.05
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=84%, PWD=90%, PAD=91%
+−1.00 −0.75 −0.50 −0.25 0.00 0.25 0.50 0.75 1.00
+pz of K − [GeV/c]
+0.8
+1.0
+Ratio To
+MC
+0.00
+0.01
+0.02
+0.03
+0.04
+Number Of Events(Normalized)
+ψ(2S) → φπ+ π−
+φ → K + K −
+MC
+SWD 
+PKS=42%, PWD=34%, PAD=28%
+0.2 0.4 0.6 0.8 1.0
+pT of K + [GeV/c]
+0.8
+1.0
+Ratio To
+MC
+FIG. 3: 1D Histograms of the kinematic distributions of the final-state particles for one million events
+The blue line represents the distribution from Monte Carlo (MC) simulation events, while the black data points are
+from SWD-generated events. To measure the consistency of these one-dimensional distributions, we employ various
+statistical tests including the Kolmogorov-Smirnov (KS) test, Wasserstein distance (WD) test, and
+Anderson-Darling (AD) test. Notably, the oscillatory effect observed in the E (π+)distribution near 1.5 GeV is
+attributed to the veto of K∗ events.
+In contrast, SWD, our novel metric based on the
+Sliced Wasserstein distance, provides a more stringent
+test and demonstrates enhanced sensitivity, particularly
+with smaller shifts and larger sample sizes. For exam-
+ple, when µx = 0.01, a minimal shift, SWD successfully
+detects the distributional discrepancy at larger sample
+sizes, such as 500,000. This is in stark contrast to FPD
+and KPD, which fail to identify this subtle shift at the
+same sample sizes. The superior performance of SWD
+in detecting small shifts is especially pronounced when
+the sample size is 500,000, where it maintains high de-
+tection accuracy. This suggests that SWD is more adept
+at identifying small distributional differences.
+To further examine how small changes in quality and
+diversity between the test and target distributions im-
+pact each metric’s performance, we alter the covariance
+
+=== PAGE BREAK ===
+
+7
+FIG. 4: Permutation Test We illustrates the SWD
+distance distributions obtained via the permutation test
+for two distinct training sample sizes (300,000 vs. 1.8
+million events). Each bar corresponds to the frequency
+of SWD distances generated through random
+permutations of the data. The vertical dashed lines
+mark the observed SWD distances from the
+unpermuted datasets
+TABLE II: Effect of Training Sample Size on
+Model Performance This table reports the Sliced
+Wasserstein Distance (SWD) between the generated
+and target distributions using 1 million test events,
+along with the corresponding permutation-test p-value,
+for varying training sample sizes. As the training set
+increases, the SWD tends to decrease and the p-value
+generally rises, indicating reduced evidence of
+distributional discrepancy. Once the training sample
+surpasses roughly 750,000 events, the p-value exceeds
+5%, suggesting that the model’s learned distribution is
+no longer statistically indistinguishable from the target
+distribution at conventional significance levels.
+T raining Sample (x10 5 ) SWD test distance (x10 3 ) SWD test p value
+18.0 0.9551 26.6%
+15.0 0.8893 45.3%
+12.5 1.0309 11.1%
+10.0 0.9356 27.9%
+7.5 1.0538 7.4%
+5.0 1.2293 0.7%
+2.5 1.5182 0%
+1.0 1.5774 0%
+0.5 2.3670 0%
+matrix by multiplying the original values by very minor
+factors. As shown in Table V, FPD and KPD demon-
+strate relatively consistent performance across different
+sample sizes when detecting distributional differences un-
+der altered covariance conditions. These metrics show no
+significant sensitivity change with varying sample sizes,
+though they occasionally fail to identify discrepancies
+when the covariance is altered, particularly in cases where
+the covariance factor is multiplied by 1.1 or divided by
+0.9. On the other hand, SWD performs well when the
+covariance changes are more pronounced, other than de-
+tecting very subtle differences, such as when the covari-
+TABLE III: Test Sample Size vs.
+Permutation-Test p-Value This table reports
+p-values for a model trained on 300,000 events under
+varying test sample sizes. For smaller test sets (i.e.,
+below 350,000 events), the p-value remains above the
+5% threshold, indicating no statistically significant
+difference between the generated and target
+distributions.
+T est Sample (x10 4) P V alue (%)
+5 60.1%
+10 33.3%
+15 36.0%
+20 7.7%
+25 11.6%
+30 5.9%
+35 5.1%
+40 2.5%
+45 4.7%
+50 3.2%
+ance is multiplied by 0.95. Additionally, the performance
+of SWD improves as the sample size increases, further
+demonstrating its advantage in detecting distributional
+mismatches when larger datasets are available.
+In conclusion, while FPD and KPD provide reliable
+detection of larger shifts and major covariance changes,
+SWD emerges as a more sensitive and stringent metric,
+particularly when dealing with small shifts and covari-
+ance alterations. The performance of all metrics im-
+proves as the sample size increases, with SWD showing
+consistent superiority in detecting subtle differences in
+data distributions. These findings suggest that SWD is
+particularly beneficial in situations requiring high sensi-
+tivity to small distributional changes, making it a more
+precise method for evaluating generative models. In the
+context of High-Energy Physics (HEP), where accurate
+modeling and evaluation of generative models are cru-
+cial, SWD offers a more stringent approach for detecting
+discrepancies in data distributions, especially when high
+precision is required. Therefore, for tasks that demand
+high precision in the evaluation of generative models, we
+recommend using the SWD method, as it consistently
+provides superior detection capabilities even with small
+deviations in data.
+V. CONCLUSION
+In conclusion, we find that the Sliced Wasserstein Dis-
+tance can serve as an efficient and universal loss func-
+tion for measuring the distribution consistency in high-
+dimensional data. Our generative model makes it dif-
+ficult to manually distinguish distribution consistency
+based on histogram differences in specific dimensions or
+arbitrary random projections. This result indicates that
+our model has high accuracy and reliability in simulat-
+ing the distribution characteristics of high-dimensional
+
+=== PAGE BREAK ===
+
+8
+TABLE IV: Percentage of p-values obtained for various metrics across different noise levels ( µx) with sample sizes of
+50,000, 100,000, and 500,000. The underlying distribution is a bivariate Gaussian with zero mean and covariance
+matrix Σ =
+
+1.00 0.25
+0.25 1.00
+
+.
+Sample Size Metric Shift µx = 0.1 Shift µx = 0.05 Shift µx = 0.01 Shift µx = 0.005 Shift µx = 0
+FPD 0.0% 8.7% 96.6% 95.4% 90.9%
+50,000 KPD 0.0% 2.0% 91.1% 85.6% 91.2%
+SWD 0.0% 0.0% 66.1% 61.8% 64.5%
+FPD 0.0% 0.3% 96.0% 98.1% 92.2%
+100,000 KPD 0.0% 0.0% 56.1% 45.3% 42.7%
+SWD 0.0% 0.0% 19.3% 68.7% 38.4%
+FPD 0.0% 2.0% 94.1% 99.6% 99.9%
+500,000 KPD 0.0% 0.0% 79.6% 42.3% 38.2%
+SWD 0.0% 0.0% 0.0% 27.7% 25.0%
+TABLE V: Percentage of p-values obtained for various metrics across different covariance multiplication factors with
+sample sizes of 50,000, 100,000, and 500,000. The underlying distribution is a bivariate Gaussian with zero mean
+and covariance matrix Σ =
+
+1.00 0.25
+0.25 1.00
+
+, scaled by the specified factors.
+Sample Size Metric F actor = 0.8 F actor = 0.9 F actor = 1.1 F actor = 1.2
+FPD 20.9% 79.4% 74.0% 3.6%
+50,000 KPD 71.8% 79.2% 98.2% 93.4%
+SWD 0.2% 11.4% 13.1% 0.1%
+FPD 33.1% 92.0% 75.2% 13.7%
+100,000 KPD 66.6% 46.8% 61.5% 86.0%
+SWD 0.0% 39.8% 0.9% 0.0%
+FPD 36.2% 89.0% 73.5% 22.3%
+500,000 KPD 82.4% 65.0% 50.1% 26.4%
+SWD 0.0% 0.0% 0.0% 0.0%
+data. Our analysis demonstrates that beyond a train-
+ing sample size of roughly the same order of magni-
+tude in event counts, the generative model consistently
+achieves statistically indistinguishable results from the
+target distribution. We used the sliced Wasserstein dis-
+tance and the permutation test to calculate the con-
+fidence level, providing a rigorous and more sensitive
+method for measuring the consistency of the distribu-
+tion. Additionally, our comparative sensitivity studies
+confirm that SWD provides a superior capability to de-
+tect subtle shifts and covariance alterations compared to
+traditional metrics such as FPD and KPD, highlighting
+its utility for precision-critical assessments in high-energy
+physics generative modeling. The working principle and
+advantages of this method are that it can provide a
+quantitative assessment of distribution consistency. The
+data that support the findings of this article are openly
+available[23]. Our analysis code and results are publicly
+available on GitHub at https://github.com/caihao/
+SWD-EvtGen to support open science and reproducibility.
+For any questions or issues, please raise an issue in the
+repository or contact us directly.
+[1] M. Ablikim, Z. An, J. Bai, N. Berger, J. Bian, X. Cai,
+G. Cao, X. Cao, J. Chang, C. Chen, et al. , Design and
+construction of the besiii detector, Nuclear Instruments
+and Methods in Physics Research Section A: Acceler-
+ators, Spectrometers, Detectors and Associated Equip-
+ment 614, 345 (2010).
+[2] L. Collaboration et al. , Lhcb detector performance, In-
+ternational Journal of Modern Physics A, 2015, Vol. 30,
+No. 7 (2015).
+[3] J. Apostolakis et al. , Detector Simulation Challenges
+for Future Accelerator Experiments, Front. in Phys. 10,
+913510 (2022).
+[4] A. Valassi, E. Yazgan, J. McFayden, S. Amoroso,
+J. Bendavid, A. Buckley, M. Cacciari, T. Childers,
+V. Ciulli, R. Frederix, S. Frixione, F. Giuli, A. Grohsjean,
+C. G¨ utschow, S. H¨ oche, W. Hopkins, P. Ilten,
+D. Konstantinov, F. Krauss, Q. Li, L. L¨ onnblad,
+F. Maltoni, M. Mangano, Z. Marshall, O. Mattelaer,
+J. Fernandez Menendez, S. Mrenna, S. Muralidha-
+ran, T. Neumann, S. Pl¨ atzer, S. Prestel, S. Roiser,
+M. Sch¨ onherr, H. Schulz, M. Schulz, E. Sexton-Kennedy,
+F. Siegert, A. Si´ odmok, and G. A. Stewart, Chal-
+lenges in monte carlo event generator software for high-
+luminosity lhc, Computing and Software for Big Science
+5, 10.1007/s41781-021-00055-1 (2021).
+
+=== PAGE BREAK ===
+
+9
+[5] J. Albrecht and et al., A roadmap for hep software and
+computing r&d for the 2020s, Computing and Software
+for Big Science 3, 10.1007/s41781-018-0018-8 (2019).
+[6] Y. Alanazi, N. Sato, P. Ambrozewicz, A. Hiller-Blin,
+W. Melnitchouk, M. Battaglieri, T. Liu, and Y. Li, A
+survey of machine learning-based physics event genera-
+tion, in Proceedings of the Thirtieth International Joint
+Conference on Artificial Intelligence , IJCAI-2021 (Inter-
+national Joint Conferences on Artificial Intelligence Or-
+ganization, 2021) p. 4286–4293.
+[7] R. Di Sipio, M. F. Giannelli, S. K. Haghighat, and
+S. Palazzo, Dijetgan: a generative-adversarial net-
+work approach for the simulation of qcd dijet events
+at the lhc, Journal of High Energy Physics 2019,
+10.1007/jhep08(2019)110 (2019).
+[8] S. Otten, S. Caron, W. de Swart, M. van Beekveld,
+L. Hendriks, C. van Leeuwen, D. Podareanu, R. Ruiz de
+Austri, and R. Verheyen, Event Generation and Statis-
+tical Sampling for Physics with Deep Generative Models
+and a Density Information Buffer, Nature Commun. 12,
+2985 (2021), arXiv:1901.00875 [hep-ph].
+[9] N. Bonneel, J. Rabin, G. Peyre, and H. Pfister, Sliced
+and radon wasserstein barycenters of measures, Journal
+of Mathematical Imaging and Vision (2014).
+[10] G. Peyr´ e and M. Cuturi, Computational optimal trans-
+port (2020), arXiv:1803.00567 [stat.ML].
+[11] R. Kansal, A. Li, J. Duarte, N. Chernyavskaya,
+M. Pierini, B. Orzari, and T. Tomei, Evaluating gener-
+ative models in high energy physics, Physical Review D
+107, 10.1103/physrevd.107.076017 (2023).
+[12] A. Ramdas, N. Garc´ ıa Trillos, and M. Cuturi, On wasser-
+stein two-sample testing and related families of nonpara-
+metric tests, Entropy 19, 47 (2017).
+[13] P. Toft, The radon transform, Theory and Implementa-
+tion (Ph. D. Dissertation)(Copenhagen: Technical Uni-
+versity of Denmark) (1996).
+[14] S. Kolouri, K. Nadjahi, U. Simsekli, R. Badeau, and
+G. Rohde, Generalized sliced wasserstein distances, Ad-
+vances in neural information processing systems 32
+(2019).
+[15] L. Q. Dung, H. Nguyen, K. Nguyen, and N. Ho, Fast
+approximation of the generalized sliced-wasserstein dis-
+tance, in ICML Workshop on New Frontiers in Learning,
+Control, and Dynamical Systems (2023).
+[16] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit,
+L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin, At-
+tention is all you need (2023), arXiv:1706.03762 [cs.CL].
+[17] I. Loshchilov and F. Hutter, Decoupled weight decay reg-
+ularization (2019), arXiv:1711.05101 [cs.LG].
+[18] S. Agostinelli, J. Allison, K. a. Amako, J. Apostolakis,
+H. Araujo, P. Arce, M. Asai, D. Axen, S. Banerjee,
+G. Barrand, et al., Geant4—a simulation toolkit, Nuclear
+instruments and methods in physics research section A:
+Accelerators, Spectrometers, Detectors and Associated
+Equipment 506, 250 (2003).
+[19] M. Ablikim, Z. An, J. Bai, N. Berger, J. Bian, X. Cai,
+G. Cao, X. Cao, J. Chang, C. Chen, et al. , Design and
+construction of the besiii detector, Nuclear Instruments
+and Methods in Physics Research Section A: Acceler-
+ators, Spectrometers, Detectors and Associated Equip-
+ment 614, 345 (2010).
+[20] J. P. Lees et al. (BaBar), Cross Sections for the Reactions
+e+e− → K +K−π+π−,K +K−π0π0, and K +K−K +K−
+Measured Using Initial-State Radiation Events, Phys.
+Rev. D 86, 012008 (2012), arXiv:1103.3001 [hep-ex].
+[21] F. Y. Ahmad, V. Venkataswamy, and G. Fox, A com-
+prehensive evaluation of generative models in calorime-
+ter shower simulation, arXiv preprint arXiv:2406.12898
+(2024).
+[22] R. Das, L. Favaro, T. Heimel, C. Krause, T. Plehn, and
+D. Shih, How to understand limitations of generative net-
+works, SciPost Physics 16, 031 (2024).
+[23] C.-C. Pan, X. Dong, Y.-C. Sun, A.-Y. Cheng, A.-B.
+Wang, H. Yu-Xuan, and H. Cai, Phipipi dataset for
+our paper ”event generation and consistence test for
+physics with sliced wasserstein distance”, 10.5281/zen-
+odo.10066889 (2023).

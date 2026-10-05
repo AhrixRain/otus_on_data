@@ -1,0 +1,1380 @@
+SciPost Physics Submission
+How to GAN away Detector Eﬀects
+Marco Bellagente1, Anja Butter 1, Gregor Kasieczka2, Tilman Plehn 1, and Ramon
+Winterhalder1
+1 Institut f¨ ur Theoretische Physik, Universit¨ at Heidelberg, Germany
+2 Institut f¨ ur Experimentalphysik, Universit¨ at Hamburg, Germany
+bellagente@thphys.uni-heidelberg.de
+March 18, 2020
+Abstract
+LHC analyses directly comparing data and simulated events bear the danger of
+using ﬁrst-principle predictions only as a black-box part of event simulation. We
+show how simulations, for instance, of detector eﬀects can instead be inverted
+using generative networks. This allows us to reconstruct parton level information
+from measured events. Our results illustrate how, in general, fully conditional
+generative networks can statistically invert Monte Carlo simulations. As a techni-
+cal by-product we show how a maximum mean discrepancy loss can be staggered
+or cooled.
+Content
+1 Introduction 2
+2 GAN unfolding 3
+3 Fully conditional GAN 7
+4 New physics injection 11
+5 Outlook 14
+A Performance 16
+B Staggered vs cooling MMD 17
+References 19
+1
+arXiv:1912.00477v4  [hep-ph]  17 Mar 2020
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+1 Introduction
+Our understanding of LHC data from ﬁrst principles is a unique strength of particle physics.
+It is based on a simulation chain which starts from a hard process described by perturba-
+tive QCD, and then adds the logarithmically enhanced QCD parton shower, fragmentation,
+hadronization, and ﬁnally a fast or complete detector simulation [1]. This simulation chain is
+publicly available and relies on extremely eﬃcient, fast, and reliable Monte Carlo techniques.
+Unfortunately, there is a price for this eﬃciency: while in principle such a Monte Carlo
+simulation as a Markov process can be inverted at least statistically, in practice we have to
+employ approximations. This asymmetry has serious repercussions for LHC analyses, where
+for instance we do not have access to the likelihood ratio of the hard process. Even worse,
+it seriously limits our interpretation of LHC results because we cannot easily show results
+in terms of observables accessible by perturbative QCD. For typical ATLAS or CMS limit
+reporting this might seem less relevant, but every so often we want to be able to understand
+such a result more quantitatively.
+We propose to use generative networks or GANs [2] to invert Monte Carlo simulations.
+There are many examples showing that we can GAN such simulations, including phase space
+integration [3,4], event generation [5–8], detector simulations [9–15], unfolding [16], and parton
+showers [17–20]. The question is if and how we can invert them. We start with a naive GAN
+inversion and see how a mismatch between local structures at parton level and detector level
+leads to problems. We then introduce the ﬁrst fully conditional GAN [21] (FCGAN) in particle
+physics to invert a fast detector simulation [22] for the process
+pp→ZW±→ (𝓁−𝓁+) (jj), (1)
+as illustrated in Fig. 1. We will see how the fully conditional setup gives us all the required
+properties of an inverted detector simulation.
+We note that our approach is not targeted at combining detector unfolding [23–25] with
+optimized inference [26–28]. A powerful application for unfolded kinematic distributions to the
+hard process could be global analyses. For instance in the electroweak and Higgs sector exotics
+resonance searches turn out to be among the most interesting input and pose a challenge when
+including them [29]. In contrast, global analyses in the top sector [30–32] successfully rely
+on unfolded information to diﬀerent levels of the hard process, for instance the top pair
+production process [33, 34]. At the same time, alternative methods like simpliﬁed template
+cross sections lose a sizeable amount of information [35]. The same method would also allow
+us to directly compare ﬁrst-principles QCD predictions with modern LHC measurements. In
+addition, our fast inversion might help with advanced statistical techniques like the matrix
+element method [36–41].
+But most importantly, our FCGAN ﬁrst serves as an example how we can invert Monte
+Carlo simulations to understand the physics behind modern LHC analyses based on a direct
+comparison of data and simulations. Here the GAN beneﬁts from the excellent interpolations
+properties of neural networks. Second, faithfully preserves local structures leading to a large
+degree of model independence in the unfolding procedure.
+2
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+2 GAN unfolding
+A standard method for fast detector simulation is smearing the outgoing particle momenta
+with a detector response function. This allows us to generate and sample from a probability
+distribution of smeared ﬁnal-state momenta for a single parton-level event. For the inversion
+we need to rely on event samples, as we can see from a simple example: we start from a
+sharp Z-peak at the parton level and broaden it with detector eﬀects. Now we look at a
+detector-level event in the tail and invert the detector simulations, for which we need to
+know in which direction in the invariant mass the preferred value mZ lies. This implies that
+unfolding detector eﬀects requires a model hypothesis, which can be thought of as a condition
+in a probability of the inversion from the detector level. The problem with this point of view
+is that the parton-level distribution of the invariant mass requires a dynamic reconstruction
+of the Breit-Wigner peak, which is not easily combined with a Markov process. In any case,
+from this argument it is clear that unfolding only makes sense at the level of large enough
+event samples.
+For our example we rely on two event samples: we start with events at the parton level,
+simulated with Madgraph5 [42]. For the second sample we ﬁrst applyPythia8 not including
+initial state radiation. Technically this means that we only have to deal with a ﬁxed number
+of partons in the ﬁnal state and that we can more easily match partons and jets. Further, we
+apply Delphes [22] as a fast detector simulation and reconstruct the smeared jet 4-momenta
+with a jet algorithm included in F astJet[43]. For lepton 4-momenta we can directly compare
+the parton-level output with the detector-level output. From Ref. [8] we know how to set up
+a GAN to either generate detector-level events from parton-level events or vice versa. In our
+current setup the events are unweighted set of four 4-vectors, two jets and two leptons, but it
+can be easily adapted to weighted events. The ﬁnal-state masses are ﬁxed to the parton-level
+values. Our hadronic ﬁnal state is deﬁned at the level of jet 4-vectors. This does not mean
+that in a possible application we take a parton shower at face value. All we do is assume
+that there is a correspondence between a hard parton and its hadronic ﬁnal state, and that
+the parton 4-momentum can be reconstructed with the help of a jet algorithm. The question
+if for instance an anti-kT algorithm is an appropriate description of sub-jet physics does not
+arise as long as the jet algorithm reproduces the hard parton momentum.
+Our GAN comprises a generator network G competing against a discriminator network D
+in a min-max game, as illustrated in Fig. 2. For the implementation we useKeras (v2.2.4) [44]
+with a TensorFlow (v1.14) backend [45]. As the starting point, G is randomly initialized
+to produce an output, typically with the same dimensionality as the target space. It induces
+W
+Z
+j
+j
+𝓁+
+𝓁−
+Figure 1: Sample Feynman diagram contributing to WZ production, with intermediate on-
+shell particles labelled.
+3
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+G {xG}{xd} D
+{xp}detector parton
+LD
+LGMMD
+Figure 2: Structure of a naive unfolding GAN. The input {xd} describes a batch of events
+sampled at detector level and {xG,p} denotes events sampled from the generator or parton-
+level data. The blue (red) arrows indicate which connections are used in the training of the
+generator (discriminator).
+a probability distribution PG(x) of a target space element x, in our case a parton-level event.
+To be precise, the generator obtains a batch of detector level event as input and generates
+a batch of parton level events as output, i.e.G({xd}) = {xG}. The discriminator is given
+batches{xG} and{xp} sampled from PG and the parton-level target distribution Pp. It is
+trained as a binary classiﬁer, such that D (x∈{xp}) = 1 and D (x) = 0 otherwise. Following
+the conventions of Ref. [8] the discriminator loss function is deﬁned as
+LD =⟨− logD (x)⟩x∼Pp +⟨− log (1−D (x))⟩x∼PG . (2)
+We add a regularization and obtain the regularized Jensen-Shannon GAN loss function [46]
+L(reg)
+D =LD +λD
+⟨
+(1−D(x))2|∇φ|2⟩
+x∼Pp
++λD
+⟨
+D(x)2|∇φ|2⟩
+x∼PG
+, (3)
+with a properly chosen pre-factor λD and where we deﬁne φ(x) = log D(x)
+1−D(x). The discrimi-
+nator training at ﬁxed Pp and PG alternates with the generator training, which is trained to
+maximize the second term in Eq.(2) using the truth encoded in D. This is eﬃciently encoded
+in minimizing
+LG =⟨− logD (x)⟩x∼PG . (4)
+If the training of the generator and the discriminator with their respective losses Eq.(3) and
+Eq.(4) is properly balanced, the distribution PG converges to the parton-level distribution
+Pp, while the optimized discriminator is unable to distinguish between real and generated
+samples.
+If we want to describe phase space features, for instance at the LHC, it is useful to add
+a maximum mean discrepancy (MMD) [47] contribution to the loss function ∗. It allows us
+to compare pre-deﬁned distributions, for instance the one-dimensional invariant mass of an
+intermediate particle. Given batches of true and generated parton-level events we deﬁne the
+additional contribution to the generator loss as
+MMD =
+[
+⟨k
+(
+x,x′)
+⟩x,x′∼PG +⟨k
+(
+y,y′)
+⟩y,y′∼Pp− 2⟨k (x,y )⟩x∼PG,y∼Pp
+]1/2 , (5)
+∗For all details on combining GANs with MMD we refer to the original paper [8].
+4
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+ 
+d 
+dpT,j1
+[GeV 1]
+⇥10 2
+Truth
+GAN
+Delphes
+0 25 50 75 100 125 150 175 200
+pT,j1 [GeV]
+0.8
+1.0
+1.2
+GAN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+ 
+d 
+dpT,j2
+[GeV 1]
+⇥10 2
+Truth
+GAN
+Delphes
+0 20 40 60 80 100 120
+pT,j2 [GeV]
+0.8
+1.0
+1.2
+GAN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+1
+ 
+d 
+dpT,` 
+[GeV 1]
+⇥10 2
+Truth
+GAN
+Delphes
+0 25 50 75 100 125 150 175 200
+pT,`  [GeV]
+0.8
+1.0
+1.2
+GAN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+ 
+d 
+dmjj
+[GeV 1]
+⇥10 1
+Truth
+GAN
+Delphes
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.8
+1.0
+1.2
+GAN
+Truth
+Figure 3: Example distributions for parton level truth, after detector simulation, and GANned
+back to parton level. The lower panels give the ratio of parton level truth and reconstructed
+parton level.
+with another pre-factor λG. Note that we use MMD instead of MMD 2 to enhance the sen-
+sitivity of the model [48]. In Ref. [8] we have compared common choices, like Gaussian or
+Breit-Wigner kernels with a given width σ,
+kGauss (x,y ) = exp− (x−y)2
+2σ2 or kBW (x,y ) = σ2
+(x−y)2 +σ2 . (6)
+As a naive approach to GAN unfolding we use detector-level event samples as generator input.
+The network input is always a set of four 4-vectors, one for each particle in the ﬁnal state,
+with their masses ﬁxed [8]. In the GAN setup we train our network to map detector-level
+events to parton-level events. Both networks consist of 12 layers with 512 units per layer.
+With λG = 1, λD = 10−3 and a batch size of 512 events, we run for 1200 epochs and 500
+iterations per epoch.
+For our Z𝓁𝓁Wjj process we generate 300k events at LO using Madgraph5 (v2.6.7) [42]
+(without any generation cuts) with the standardPythia8 (v8.2) shower [49] and then simulate
+the detector eﬀects event-by-event with Delphes (v3.3.3) [22] using the standard ATLAS
+5
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+card. For the reconstruction of the jets we use the anti- kt jet algorithm [50] with R = 0.6
+which is performed via the F astJet(v3.1.3) [43] package included in Delphes. To keep our
+toy setup simple we select events with exactly two jets and a pair of same-ﬂavor opposite-
+sign leptons, speciﬁcally electrons. At the detector level both jets are required to fulﬁll
+pT,j > 25 GeV and |ηj| < 2.5 GeV. At detector level jets are sorted by pT . We assign each
+jet to a corresponding parton level object based on their angular distance. The detector
+and parton level leptons are assigned based on their charge. While the resulting smearing of
+the lepton momenta will only have a modest eﬀect, the observed widths of the hadronically
+decaying W -boson will be much larger than the parton-level Breit-Wigner distribution. For
+this reason, we focus on showing hadronic observables to benchmark the performance of our
+setup.
+In Fig. 3 we compare true parton-level events to the output from a GAN trained to
+unfold the detector eﬀects. We run the unfolding GAN on a set of statistically independent,
+but simulation-wise identical sets of detector-level events. Both, the relatively ﬂat pT,j 1 and
+the peaked mjj distributions agree well between the true parton-level events and the GAN-
+inverted sample, indicating that the statistical inversion of the detector eﬀect works well.
+A great advantage of this GAN approach is that, strictly speaking, we do not need event-
+by-event matched samples before and after detector simulation. The entire training is based
+on batches of typically 512 events, and these batches are independently chosen from the
+parton-level and detector-level samples. Increasing the batch size within the range allowed by
+the memory size and hence reducing the impact of event-wise matching will actually improve
+the GAN training, because it reduces statistical uncertainties [8].
+The big challenge arises when we want to unfold an event sample which is not statistically
+equivalent to the training data; in other words, the unfolding model is not exactly the same
+as the test data. As a simple example we train the GAN on data covering the full phase
+space and then apply and test the GAN on data only covering part of the detector-level phase
+space. Speciﬁcally, we apply the two sets of jet cuts
+Cut I : pT,j 1 = 30 ... 100 GeV (7)
+Cut II : pT,j 1 = 30 ... 60 GeV and pT,j 2 = 30 ... 50 GeV , (8)
+which leave us with 88% and 38% of events, respectively. This approach ensures that the
+training has access to the full information, while the test sample is a signiﬁcantly reduced
+sub-set of the full sample.
+In Fig. 4 we show a set of kinematic distributions, for which we GAN only part of the
+phase space. As before, we can compare the original parton-level shapes of the distributions
+with the results from GAN-inverting the fast detector simulation. We see that especially the
+GANned pT,j distribution is strongly sculpted by the phase space cuts. This indicates that
+the naive GAN approach to unfolding does not work once the training and test data sets
+are not statistically identical. In a realistic unfolding problem we cannot expect the training
+and test data sets to be arbitrarily similar, so we have to go beyond the naive GAN setup
+described in Fig. 2. The technical reason for this behavior is that events which are similar
+or, by some metric, close at the detector level are not guaranteed to be mapped onto events
+which are close on the parton level. Looking at classiﬁcation networks this is the motivation
+to apply variational methods, for instance upgrade autoencoders to variational autoencoders.
+For a GAN we discuss a standard solution in the next section.
+6
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0 25 50 75 100 125 150 175 200
+pT,j 1 [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+1
+σ
+dσ
+dpT,j1
+×10−2
+Truth
+GAN
+Eq.(7)
+Eq.(8)
+0 50 100 150 200 250
+pT,jj [GeV]
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+1
+σ
+dσ
+dpT,jj
+×10−2
+Truth
+GAN
+Eq.(7)
+Eq.(8)
+Figure 4: Parton level truth and GANned distributions when we train the GAN on the full
+data set but only unfold parts of phase space deﬁned in Eq.(7) and Eq.(8).
+3 Fully conditional GAN
+The way out of the sculpting problem when looking at diﬀerent phase space regions is to add a
+conditional structure to the GAN [21] shown in Fig. 2. The idea behind the conditional setup
+is not to learn a deterministic link between input and output samples, because we know that
+without an enforced structure in the weight or function space the generator does not beneﬁt
+from the structured input. In other words, the network does not properly exploit the fact
+that the detector-level and parton-level data sets in the training sample are paired. A second,
+related problem of the naive GAN is that once trained the model is completely deterministic,
+so each detector-level event will always be mapped to the same parton-level events. This goes
+against the physical intuition that this entire mapping is statistical in nature.
+In Fig. 5 we introduce a fully conditional GAN (FCGAN). It is identical to our naive
+network the way we train and use the generator and discriminator. However, the input to the
+generator are actual random numbers{r}, and the detector-level information{xd} is used as
+an event-by-event conditional input on the link between a set of random numbers and the
+parton-level output, i.e.G({r},{xd}) = {xG}. This way the FCGAN can generate parton-
+level events from random noise but still using the detector-level information as input. To also
+Parameter Value Parameter Value
+Layers 12 Batch size 512
+Units per layer 512 Epochs 1200
+Trainable weights G 3M Iterations per epoch 500
+Trainable weights D 3M Number of training events 3× 105
+λG 1
+λD 10−3
+Table 1: FCGAN setup.
+7
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+G{r} {xG} D
+Condition
+{xd}
+{xp}
+detector
+parton
+LD
+LGMMD
+Figure 5: Structure of our fully conditional FCGAN. The input {r} describes a batch of
+random numbers and{xG,d,p} denotes events sampled from the generator, detector-level data,
+or parton-level data. The blue (red) arrows indicate which connections are used in the training
+of the generator (discriminator).
+condition the discriminator we modify its loss to
+LD→L(FC)
+D =⟨− logD (x,y )⟩x∼Pp,y∼Pd +⟨− log (1−D (x,y ))⟩x∼PG,y∼Pd , (9)
+and the regularized loss function changes accordingly,
+L(reg)
+D →L(reg, FC)
+D =L(FC)
+D +λD
+⟨
+(1−D(x,y ))2|∇φ|2⟩
+x∼Pp,y∼Pd
++λD
+⟨
+D (x,y )2|∇φ|2⟩
+x∼PG,y∼Pd
+,
+(10)
+again using the conventions of Ref. [8]. The generator loss function now takes the form
+LG→L(FC)
+G =⟨− logD (x,y )⟩x∼PG,y∼Pd . (11)
+Note, that we do not build a conditional version of the MMD loss. The hyper-parameters of
+our FCGAN are summarized in Tab. 1. Changing from a naive GAN to a fully conditional
+GAN we have to pay a price in the structure of the training sample. While the naive GAN only
+required event batches to be matched between parton level and detector level, the training of
+the FCGAN actually requires event-by-event matching.
+In Fig. 6 we compare the truth and the FCGANned events, trained on and applied to
+events covering the full phase space. Compared to the naive GAN, inverting the detector
+eﬀects now works even better. The systematic under-estimate of the GAN rate in tails no
+longer occurs for the FCGAN. The reconstructed invariant W -mass forces the network to
+dynamically generate a very narrow physical width from a comparably broad Gaussian peak.
+Using our usual MMD loss developed in Ref. [8] we reproduce the peak position, width, and
+peak shape to about 90%. We emphasize that the MMD loss requires us to specify the relevant
+one-dimensional distribution, in this case mjj, but it then extracts the on-shell mass or width
+dynamically. The multi-kernel approach we use in this case is explained in the Appendix.
+8
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+ 
+d 
+dpT,j1
+[GeV 1]
+⇥10 2
+Truth
+FCGAN
+Delphes
+0 25 50 75 100 125 150 175 200
+pT,j1 [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+ 
+d 
+dpT,j2
+[GeV 1]
+⇥10 2
+Truth
+FCGAN
+Delphes
+0 20 40 60 80 100 120
+pT,j2 [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+0.0
+0.2
+0.5
+0.8
+1.0
+1.2
+1.5
+1.8
+2.0
+1
+ 
+d 
+dpT,` 
+[GeV 1]
+⇥10 2
+Truth
+FCGAN
+Delphes
+0 25 50 75 100 125 150 175 200
+pT,`  [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+ 
+d 
+dmjj
+[GeV 1]
+⇥10 1
+Truth
+FCGAN
+Delphes
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+Figure 6: Example distributions for parton level truth, after detector simulation, and FC-
+GANned back to parton level. The lower panels give the ratio of parton level truth and
+reconstructed parton level. The lower panels give the deviation between parton level truth
+and reconstructed parton level. To be compared with the naive GAN results in Fig. 3.
+As for our naive ansatz we now test what happens to the network when the training data
+and the test data do not cover the same phase space region. We train on the full set of events,
+to ensure that the full phase space information is accessible to the network, but we then only
+apply the network to the 88% and 38% of events passing the jet cuts I and II deﬁned in
+Eq.(7) and Eq.(8). We show the results in Fig. 7. As observed before, especially the jet cuts
+with only 40% survival probability shape our four example distributions. However, we see
+for example in the pT,jj distribution that the inverted detector-level sample reconstructs the
+patterns of the true parton-level events perfectly. This comparison indicates that the FCGAN
+approach deals with diﬀerences in the training and test samples very well.
+Because physicists and 4-year olds follow a deep urge to break things we move on to
+harsher cuts on the inclusive event sample. We start with
+Cut III : pT,j 1 = 30 ... 50 GeV pT,j 2 = 30 ... 40 GeV pT,𝓁− = 20 ... 50 GeV , (12)
+which 14% of all events pass. In Fig. 8 we see that also for this much reduced fraction of
+test events corresponding to the training sample the FCGAN inversion reproduces the true
+9
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0 25 50 75 100 125 150 175 200
+pT,j1 [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+1
+ 
+d 
+dpT,j1
+⇥10 2
+Truth
+FCGAN
+Eq.(7)
+Eq.(8)
+0 20 40 60 80 100 120
+pT,j2 [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+ 
+d 
+dpT,j2
+⇥10 2
+Truth
+FCGAN
+Eq.(7)
+Eq.(8)
+0 25 50 75 100 125 150 175 200
+pT,`  [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+ 
+d 
+dpT,` 
+⇥10 2
+Truth
+FCGAN
+Eq.(7)
+Eq.(8)
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+1
+ 
+d 
+dmjj
+⇥10 1
+Truth
+FCGAN
+Eq.(7)
+Eq.(8)
+Figure 7: Parton level truth and FCGANned distributions when we train the GAN on the full
+data set but only unfold parts of phase space deﬁned in Eq.(7) and Eq.(8). To be compared
+with the naive GAN results in Fig.4.
+distributions extremely well, to a level where it appears not really relevant what fraction of
+the training and test data correspond to each other.
+Finally, we apply a cut which not only removes a large fraction of events, but also cuts into
+the leading peak feature of the pT,j 1 distribution and removes one of the side bands needed
+for an interpolation,
+Cut IV : pT,j 1 > 60 GeV . (13)
+For this choice 39% of all events pass, but we remove all events at low transverse momentum,
+as can be seen from Fig. 6. This kind of cut could therefore be expected to break the unfolding.
+Indeed, the red lines in Fig. 8 indicate that we have broken the mjj reconstruction through
+the FCGAN. However, all other (shown) distributions still agree with the parton-level truth
+extremely well. The problem with the invariant mass distribution is that our implementation
+of the MMD loss is not actually conditional. This can be changed in principle, but standard
+implementations are somewhat ineﬃcient and the beneﬁt is not obvious at this stage. At this
+stage it means that, when pushed towards it limits, the network will ﬁrst fail to reproduce the
+correct peak width in the mjj distribution, while all other kinematic variables remain stable.
+10
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0 25 50 75 100 125 150 175 200
+pT,j1 [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+ 
+d 
+dpT,j1
+⇥10 2
+Truth
+FCGAN
+Eq.(12)
+Eq.(13)
+0 20 40 60 80 100 120
+pT,j2 [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+1
+ 
+d 
+dpT,j2
+⇥10 2
+Truth
+FCGAN
+Eq.(12)
+Eq.(13)
+0 25 50 75 100 125 150 175 200
+pT,`  [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+1
+ 
+d 
+dpT,` 
+⇥10 2
+Truth
+FCGAN
+Eq.(12)
+Eq.(13)
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+4.0
+1
+ 
+d 
+dmjj
+⇥10 1
+Truth
+FCGAN
+Eq.(12)
+Eq.(13)
+Figure 8: Parton level truth and FCGANned distributions when we train the GAN on the
+full data set but only unfold parts of phase space deﬁned in Eqs.(12) and (13).
+Finally, just like in Ref. [8] we show 2-dimensional correlations in Fig. 9. We stick to
+applying the network to the full phase space and show the parton level truth and the FCGAN-
+inverted events in the two upper panels. Again, we see that the FCGAN reproduces all features
+of the parton level truth with high precision. The bin-wise relative deviation between the two
+2-dimensional distributions only becomes large for small values of Ej1, where the number of
+training events is extremely small.
+4 New physics injection
+As discussed before, unfolding to a hard process is necessarily model-dependent. Until now, we
+have always assumed the Standard Model to correctly describe the parton-level and detector-
+level events. An obvious question is what happens if we train our FCGAN on Standard Model
+data, but apply it to a diﬀerent hypothesis. This challenge becomes especially interesting if
+this alternative hypothesis diﬀers from the Standard Model in a local phase space eﬀect.
+It then allows us to test if the generator networks maps the parton-level and detector-level
+11
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0 25 50 75 100 125 150 175 200
+Ej1 [GeV]
+0
+20
+40
+60
+80
+100pT,𝓁𝓁 [GeV]
+0 25 50 75 100 125 150 175 200
+Ej1 [GeV]
+0
+20
+40
+60
+80
+100pT,𝓁𝓁 [GeV]
+0 25 50 75 100 125 150 175 200
+Ej1 [GeV]
+0
+20
+40
+60
+80
+100pT,𝓁𝓁 [GeV]
+0 25 50 75 100 125 150 175 200
+Ej1 [GeV]
+0.0
+0.2
+0.5
+0.8
+1.0
+1.2
+1.5
+1.8
+2.0
+1
+σ
+dσ
+dpT,𝓁𝓁
+[GeV−1]
+×10−2
+slice at pT,𝓁𝓁 = 50 GeV Truth
+FCGAN
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+×103
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+×103
+−1.0
+−0.5
+0.0
+0.5
+1.0
+Figure 9: Two-dimensional parton level truth (upper left) and FCGANned (upper right)
+distributions when we train the GAN on the full data set and unfold over the full phase
+space. The lower panels show the relative deviation between truth and FCGANned and the
+one-dimensional Ej1 distribution along ﬁxed pT,𝓁𝓁.
+phase spaces in a structured manner. Such features of neural networks are at the heart of all
+variational constructions, for instance variational autoencoders which are structurally close
+to GANs. Observing them for GAN unfolding could turn into a signiﬁcant advantage over
+alternative unfolding methods.
+To this end we add a fraction of resonantW′ events from a triplet extension of the Standard
+Model [51], representing the hard process
+pp→W′∗→ZW±→ (𝓁−𝓁+) (jj) (14)
+to the test data. We simulate these events with Madgraph5 using the model implementation
+of Ref. [52] and denote the new massive charged vector boson with a mass of 1.3 TeV and a
+width of 15 GeV as W′. For the test sample we combine the usual Standard Model sample
+with the W′-sample in proportions 90%− 10%. The other new particles do not appear in our
+process to leading order. Because we want to test how well the GAN maps local phase space
+structures onto each other, we deliberately choose a small width Γ W′/MW′∼ 1%, not exactly
+typical for such strongly interacting triplet extensions.
+The results for this test are shown in Fig. 10. First, we look at transverse momentum
+12
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0 25 50 75 100 125 150 175 200
+pT,j 1 [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+1
+σ
+dσ
+dpT,j1
+[GeV−1]
+×10−2
+Truth (W’)
+FCGAN
+Truth (SM)
+0 25 50 75 100 125 150 175 200
+pT,𝓁□ [GeV]
+0.0
+0.2
+0.5
+0.8
+1.0
+1.2
+1.5
+1.8
+2.0
+1
+σ
+dσ
+dpT,𝓁□
+[GeV−1]
+×10−2
+Truth (W’)
+FCGAN
+Truth (SM)
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dmjj
+[GeV−1]
+×10−1
+Truth (W’)
+FCGAN
+Truth (SM)
+600 800 1000 1200 1400 1600 1800 2000
+m𝓁𝓁jj [GeV]
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+1
+σ
+dσ
+dm𝓁𝓁jj
+[GeV−1]
+×10−3
+Truth (W’)
+FCGAN
+Truth (SM)
+Figure 10: Parton level truth and FCGANned distributions when we train the network on
+the Standard Model only and unfold events with an injection of 10% W′ events. The mass of
+the additional s-channel resonance is 1.3 TeV.
+distribution of ﬁnal-state particles, which are hardly aﬀected by the new heavy resonance.
+Both, the leading jet and the lepton distributions are essentially identical for both truth
+levels and the FCGAN output. The same is true for the invariant mass of the hadronically
+decaying W -boson, which nevertheless provides a useful test of the stability of our training
+and testing.
+Finally, we show the reconstructed W′-mass in the lower-right pane. Here we see the
+diﬀerent (normalized) truth-level distributions for the Standard Model and the W′-injected
+sample. The FCGAN, trained on the Standard Model, keeps track of local phase space
+structures and reproduces the W′ peak faithfully. It also learn the W′-mass as the central
+peak position very well. The only issue is the W′-width, which the network over-estimates.
+However, we know already that dynamically generated width distributions are a challenge to
+GANs and require for instance an MMD loss. Nevertheless, Fig. 10 clearly shows that GAN
+unfolding shows a high degree of model independence, making use of local structures in the
+mapping between the two phase spaces. We emphasize that the additional mass peak in the
+FCGANned events is not a one-dimensional feature, but a localized structure in the full phase
+space. This local structure is a feature of neural networks which comes in addition to the
+13
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+known strengths in interpolation.
+5 Outlook
+We have shown that it is possible to invert a simple Monte Carlo simulation, like a fast
+detector simulation, with a fully conditional GAN. Our example process is WZ→ (jj)(𝓁𝓁) at
+the LHC and we GAN away the eﬀect of standard Delphes. A naive GAN approach works
+extremely well when the training sample and the test sample are very similar. In that case
+the GAN beneﬁts from the fact that we do not actually need an event-by-event matching of
+the parton-level and detector-level samples.
+If the training and test samples become signiﬁcantly diﬀerent we need a fully conditional
+GAN to invert the detector eﬀects. It maps random noise parton-level events with conditional,
+event-by-event detector-level input and learns to generate parton-level events from detector-
+level events. First, we noticed that the FCGAN with its structured mapping provides much
+more stable predictions in tails of distributions, where the training sample is statistics limited.
+Then, we have shown that a network trained on the full phase space can be applied to much
+smaller parts of phase space, even including cuts in the main kinematic features. The FCGAN
+successfully maintains a notion of events close to each other at detector level and at parton
+level and maps them onto each other. This approach only breaks eventually because the
+MMD loss needed to map narrow Breit-Wigner propagators is not (yet) conditional in our
+speciﬁc setup.
+Finally, we have seen that the network reproduces an injected new physics signal as a local
+structure in phase space. This large degree of model independence reﬂects another beneﬁcial
+feature of neural networks, namely the structured mapping of the linked phase spaces.
+Theory Nature
+Perturbative QCD Hard process
+Simulated Events LHC Events
+Simulation Measurement
+Geant4
+Delphes
+ATLAS
+CMS
+OmniFold
+OmniFold
+FCGAN FCGAN
+Figure 11: Illustration of the complementary 1.FCGAN and OmniFold [28] approaches.
+14
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+1.FCGAN vs OmniFold
+While we were ﬁnalizing our paper, the OmniFold approach appeared [28]. It aims at the
+same problem as our FCGAN, but as illustrated in Fig. 11 it is completely complementary.
+Our FCGAN uses the simulation based on Delphes to train a generative network, which
+we can apply to LHC events to generate events describing the hard process. The OmniFold
+approach also starts from matched simulated events, but instead of inverting the detector sim-
+ulation it uses machine learning to iteratively translate each side of this link to the measured
+events. This way both approaches should be able to extract hard process information from
+LHC events, assuming that we understand the relation between perturbative QCD predictions
+and Monte Carlo events.
+Acknowledgments
+We would like to thank Lynton Ardizzone for his extremely helpful advice, Ben Nachman
+for great discussions, and Hans-Christian Schultz-Coulon for the experimental encouragement.
+Concerning the updated version, we would like to thank Ben Nachman for suggesting a closure
+test like the one we are showing in Sec. 4 and Johann Brehmer for providing the Madgraph5
+implementation. RW and MB acknowledge support by the IMPRS-PTFS. The research of
+AB and MB is supported by the Deutsche Forschungsgemeinschaft (DFG, German Research
+Foundation) under grant 396021762 – TRR 257 Particle Physics Phenomenology after the
+Higgs Discovery. GK acknowledges support by the Deutsche Forschungsgemeinschaft under
+grant 390833306 – EXC 2121 Quantum Universe.
+15
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+A Performance
+While it is clear from the main text that the FCGAN inversion of the fast detector simulation
+works extremely well, we can still show some additional standard measures to illustrate this.
+For instance, in Fig. 12 we show the event-wise normalized deviation between the parton-level
+truth kinematics and the Delphes and FCGAN-inverted kinematics, for instance
+p(FCGAN)
+T,j −p(Truth)
+T,j
+p(Truth)
+T,j
+and
+p(Delphes)
+T,j −p(Truth)
+T,j
+p(Truth)
+T,j
+. (15)
+The events shown in these histograms correspond to the full phase space inversion shown in
+Fig. 6, but from the discussion in the main text it is clear that the picture does not change
+when we invert only part of phase space. As expected, we see narrow peaks around zero, with
+a width in the±10% range for the jet momenta and much more narrow for the leptons, which
+are less aﬀected by detector smearing. For all distributions, but especially the reconstructed
+W -mass, we see that the FCGAN reconstruction is signiﬁcantly closer to the parton-level
+ 0.4  0.2 0.0 0.2 0.4⇣
+pT,j1   p(Truth)
+T,j1
+⌘
+/p(Truth)
+T,j1
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0Normalized
+FCGAN
+Delphes
+ 0.4  0.2 0.0 0.2 0.4⇣
+pT,j2   p(Truth)
+T,j2
+⌘
+/p(Truth)
+T,j2
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0Normalized
+FCGAN
+Delphes
+ 0.3  0.2  0.1 0.0 0.1 0.2 0.3⇣
+pT,`    p(Truth)
+T,` 
+⌘
+/p(Truth)
+T,` 
+0.0
+0.2
+0.5
+0.8
+1.0
+1.2
+1.5Normalized
+⇥101
+FCGAN
+Delphes
+ 0.4  0.2 0.0 0.2 0.4⇣
+mjj   m(Truth)
+jj
+⌘
+/m(Truth)
+jj
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2Normalized
+⇥101
+FCGAN
+Delphes
+Figure 12: Normalized deviation between the FCGANned sample and truth (residual) for
+some of the kinematic variables.
+16
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+20 30 40 50 60 70 80 90 100
+pT,j 1Truth [GeV]
+20
+30
+40
+50
+60
+70
+80
+90
+100pT,j 1FCGAN [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+×103
+20 30 40 50 60 70 80
+pT,j 2Truth [GeV]
+20
+30
+40
+50
+60
+70
+80pT,j 2FCGAN [GeV]
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+×103
+Figure 13: Correlations between the FCGAN-inverted and parton-level truth kinematics, or
+migration matrix.
+truth than the Delphes events are.
+Finally, we show the migration matrix or correlation between true parton-level and re-
+constructed parton-level events in terms of some of the kinematic variables in Fig. 13. Not
+surprisingly, we observe narrow diagonal lines.
+B Staggered vs cooling MMD
+The MMD loss is a two-sample test looking at the distance between samples x, x′, drawn
+independently and identically distributed, in terms of a kernel function k (x,x′). Implemen-
+tations of such a kernel, as given in Eq. 6, include a ﬁxed width or resolution σ. We employ
+the MMD loss to reproduce the invariant mass distribution of intermediate on-shell particles
+Mp. A natural choice of σ is the corresponding particle width. However, this is ineﬃcient at
+the beginning of the training, when any generated invariant mass MG is essentially a random
+uniform distribution. In that case ( x−x′)2≫σ2 for any x,x′∼MG, and Eq. 5 reduces to
+MMD (k;MG,M P )≃
+√
+⟨k (y,y′)⟩y,y′∼MP≃ const, (16)
+and provides little to no gradient.
+This can be avoided by computing the MMD loss using multiple kernels with decreasing
+widths, so that the early training can be driven by wide kernels. A drawback of this approach
+is that only the small subset of kernels with a resolution close to the evolving width of MG
+gives a non-negligible gradient.
+Alternatively, we can employ a cooling kernel, which we initialize to some large value and
+then shrink to the correct particle width. This is an eﬃcient solution at all stages of the
+training. A subtlety is that the rate of the cooling has to follow the pace of the generator in
+producing narrower invariant mass distributions. Ultimately, we want to avoid hand-crafting
+the cooling process, because it adds hyper-parameters we need to tune. We use a dynamic
+kernel width as a ﬁxed fraction of the standard deviation of the MG distribution. This
+17
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dmjj
+[GeV−1]
+×10−1
+Single BW Truth
+FCGAN
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dmjj
+[GeV−1]
+×10−1
+Multi BW Truth
+FCGAN
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dmjj
+[GeV−1]
+×10−1
+Cooling BW Truth
+FCGAN
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+1
+σ
+dσ
+dmjj
+[GeV−1]
+×10−1
+Multi BW,
+augmented
+Truth
+FCGAN
+70.0 72.5 75.0 77.5 80.0 82.5 85.0 87.5 90.0
+mjj [GeV]
+0.8
+1.0
+1.2
+FCGAN
+Truth
+Figure 14: Invariant jet-jet mass distribution for diﬀerent MMD loss implementations: single
+kernel (upper left), multiple kernels (upper right), cooling kernel (lower left) and augmented
+multiple kernels (lower right).
+standard deviation as an estimate of the width of MG can be replaced by any measure of the
+shape ofMG, such as the full width at half maximum, and our tests show that the performance
+is largely insensitive to the choice of the fraction.
+Yet another approach is based on the observation that the MMD kernel test is not re-
+stricted to one-dimensional distributions [48,53,54]. This allows us to improve the invariant
+mass reconstruction by including additional physical information xi to the test, so that the
+discrepancy is not computed just between the samples MP and MG of real and generated
+invariant masses, but rather between (MP,x P ) and (MG,x G). In the FCGAN spirit we there-
+fore augment the batches of true and generated invariant masses with one of conditional
+invariant masses. From the same detector information used to condition the generator and
+the discriminator, we can extract the detector level invariant masses MD and accordingly
+compute MMD(k; (MG,M D), (MP,M D)). Even tough this does not represent a conditional
+MMD, training with multiple kernels beneﬁts from using the augmented batches. In Fig. 14
+we compare the same invariant mass distribution using these diﬀerent MMD implementations.
+18
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+References
+[1] J. Campbell, J. Huston, and F. Krauss, The Black Book of Quantum Chromodynamics .
+Oxford University Press, 2017.
+[2] I. J. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair,
+A. Courville, and Y. Bengio, arXiv:1406.2661 [stat.ML].
+[3] M. D. Klimek and M. Perelstein, arXiv:1810.11509 [hep-ph].
+[4] J. Bendavid, arXiv:1707.00028 [hep-ph].
+[5] S. Otten et al. , arXiv:1901.00875 [hep-ph].
+[6] B. Hashemi, N. Amin, K. Datta, D. Olivito, and M. Pierini, arXiv:1901.05282 [hep-ex].
+[7] R. Di Sipio, M. Faucci Giannelli, S. Ketabchi Haghighat, and S. Palazzo, JHEP 08
+(2020) 110, arXiv:1903.02433 [hep-ex].
+[8] A. Butter, T. Plehn, and R. Winterhalder, arXiv:1907.03764 [hep-ph].
+[9] M. Paganini, L. de Oliveira, and B. Nachman, Phys. Rev. Lett. 120 (2018) 4, 042003,
+arXiv:1705.02355 [hep-ex].
+[10] M. Paganini, L. de Oliveira, and B. Nachman, Phys. Rev. D97 (2018) 1, 014021,
+arXiv:1712.10321 [hep-ex].
+[11] P. Musella and F. Pandolﬁ, Comput. Softw. Big Sci. 2 (2018) 1, 8, arXiv:1805.00850
+[hep-ex].
+[12] M. Erdmann, L. Geiger, J. Glombitza, and D. Schmidt, Comput. Softw. Big Sci. 2
+(2018) 1, 4, arXiv:1802.03325 [astro-ph.IM].
+[13] M. Erdmann, J. Glombitza, and T. Quast, Comput. Softw. Big Sci. 3 (2019) 4,
+arXiv:1807.01954 [physics.ins-det].
+[14] ATLAS Collaboration, Tech. Rep. ATL-SOFT-PUB-2018-001, CERN, Geneva, Jul,
+2018.
+[15] ATLAS Collaboration, A. Ghosh, Tech. Rep. ATL-SOFT-PUB-2019-007, CERN,
+Geneva, Jun, 2019.
+[16] K. Datta, D. Kar, and D. Roy, arXiv:1806.00433 [physics.data-an].
+[17] E. Bothmann and L. Debbio, JHEP 01 (2019) 033, arXiv:1808.07802 [hep-ph].
+[18] L. de Oliveira, M. Paganini, and B. Nachman, Comput. Softw. Big Sci. 1 (2017) 1, 4,
+arXiv:1701.05927 [stat.ML].
+[19] J. W. Monk, JHEP 12 (2018) 021, arXiv:1807.03685 [hep-ph].
+[20] A. Andreassen, I. Feige, C. Frye, and M. D. Schwartz, Eur. Phys. J. C79 (2019) 2, 102,
+arXiv:1804.09720 [hep-ph].
+19
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+[21] M. Mirza and S. Osindero, arXiv:1411.1784 [cs.LG].
+[22] DELPHES 3, J. de Favereau, C. Delaere, P. Demin, A. Giammanco, V. Lemaˆ ıtre,
+A. Mertens, and M. Selvaggi, JHEP 02 (2014) 057, arXiv:1307.6346 [hep-ex].
+[23] G. Cowan, Conf. Proc. C0203181 (2002) 248. [,248(2002)].
+[24] V. Blobel, Unfolding Methods in Particle Physics . Jan, 2011.
+[25] R. Balasubramanian, L. Brenner, C. Burgard, G. Cowan, V. Croft, W. Verkerke, and
+P. Verschuuren, arXiv:1910.14654 [physics.data-an].
+[26] J. Brehmer, K. Cranmer, G. Louppe, and J. Pavez, Phys. Rev. D98 (2018) 5, 052004,
+arXiv:1805.00020 [hep-ph].
+[27] J. Brehmer, F. Kling, I. Espejo, and K. Cranmer, arXiv:1907.10621 [hep-ph].
+[28] A. Andreassen, P. T. Komiske, E. M. Metodiev, B. Nachman, and J. Thaler,
+arXiv:1911.09107 [hep-ph].
+[29] A. Biek¨ otter, T. Corbett, and T. Plehn, SciPost Phys. 6 (2019) 064, arXiv:1812.07587
+[hep-ph].
+[30] I. Brivio, S. Bruggisser, F. Maltoni, R. Moutaﬁs, T. Plehn, E. Vryonidou, S. Westhoﬀ,
+and C. Zhang, arXiv:1910.03606 [hep-ph].
+[31] N. P. Hartland, F. Maltoni, E. R. Nocera, J. Rojo, E. Slade, E. Vryonidou, and
+C. Zhang, JHEP 04 (2019) 100, arXiv:1901.05965 [hep-ph].
+[32] A. Buckley, C. Englert, J. Ferrando, D. J. Miller, L. Moore, M. Russell, and C. D.
+White, JHEP 04 (2016) 015, arXiv:1512.03360 [hep-ph].
+[33] CMS, V. Khachatryan et al. , Eur. Phys. J. C75 (2015) 11, 542, arXiv:1505.04480
+[hep-ex].
+[34] ATLAS, G. Aad et al. , Eur. Phys. J. C76 (2016) 10, 538, arXiv:1511.04716 [hep-ex].
+[35] J. Brehmer, S. Dawson, S. Homiller, F. Kling, and T. Plehn, JHEP 11 (2019) 034,
+arXiv:1908.06980 [hep-ph].
+[36] K. Kondo, J. Phys. Soc. Jap. 57 (1988) 4126.
+[37] T. Martini and P. Uwer, JHEP 09 (2015) 083, arXiv:1506.08798 [hep-ph].
+[38] A. V. Gritsan, R. R¨ ontsch, M. Schulze, and M. Xiao, Phys. Rev. D94 (2016) 5, 055023,
+arXiv:1606.03107 [hep-ph].
+[39] T. Martini and P. Uwer, JHEP 05 (2018) 141, arXiv:1712.04527 [hep-ph].
+[40] M. Kraus, T. Martini, and P. Uwer, Phys. Rev. D100 (2019) 7, 076010,
+arXiv:1901.08008 [hep-ph].
+[41] S. Prestel and M. Spannowsky, Eur. Phys. J. C79 (2019) 7, 546, arXiv:1901.11035
+[hep-ph].
+20
+
+=== PAGE BREAK ===
+
+SciPost Physics Submission
+[42] J. Alwall et al. , JHEP 07 (2014) 079, arXiv:1405.0301 [hep-ph].
+[43] M. Cacciari, G. P. Salam, and G. Soyez, Eur. Phys. J. C72 (2012) 1896,
+arXiv:1111.6097 [hep-ph].
+[44] F. Chollet. https://github.com/fchollet/keras, 2015.
+[45] M. Abadi et al. , CoRR (2016) , arXiv:1605.08695 [cs.DC].
+[46] K. Roth, A. Lucchi, S. Nowozin, and T. Hofmann, CoRR (2017) , arXiv:1705.09367
+[cs.LG].
+[47] A. Gretton, K. M. Borgwardt, M. J. Rasch, B. Sch¨ olkopf, and A. J. Smola, CoRR
+(2008) , arXiv:0805.2368 [cs.LG].
+[48] Y. Li, K. Swersky, and R. Zemel, arXiv:1502.02761 [cs.LG].
+[49] T. Sjostrand, S. Mrenna, and P. Z. Skands, Comput. Phys. Commun. 178 (2008) 852,
+arXiv:0710.3820 [hep-ph].
+[50] M. Cacciari, G. P. Salam, and G. Soyez, JHEP 04 (2008) 063, arXiv:0802.1189 [hep-ph].
+[51] A. Biek¨ otter, A. Knochel, M. Kr¨ amer, D. Liu, and F. Riva, Phys. Rev.D91 (2015)
+055029, arXiv:1406.7320 [hep-ph].
+[52] J. Brehmer, A. Freitas, D. Lopez-Val, and T. Plehn, Phys. Rev. D93 (2016) 7, 075014,
+arXiv:1510.03443 [hep-ph].
+[53] S. Ravuri, S. Mohamed, M. Rosca, and O. Vinyals, arXiv:1806.11006 [cs.LG].
+[54] G. Karolina Dziugaite, D. M. Roy, and Z. Ghahramani, arXiv:1505.03906 [stat.ML].
+21

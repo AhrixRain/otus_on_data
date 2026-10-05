@@ -1,0 +1,457 @@
+SwdFold:A Reweighting and Unfolding method
+based on Optimal Transport Theory
+Chu-Cheng Pan 1, Xiang Dong 1, Yu-Chang Sun 1, Ao-Yan Cheng 1,
+Ao-Bo Wang1, Yu-Xuan Hu 1, and Hao Cai ∗1
+1School of physics and technology, Wuhan University, Wuhan,
+Hubei, China
+Abstract
+High-energy physics experiments rely heavily on precise measurements
+of energy and momentum, yet face significant challenges due to detector
+limitations, calibration errors, and the intrinsic nature of particle inter-
+actions. Traditional unfolding techniques have been employed to correct
+for these distortions, yet they often suffer from model dependency and
+stability issues. We present a novel method, SwdFold, which utilizes the
+principles of optimal transport to provide a robust, model-independent
+framework to estimate the probability density ratio for data unfolding.
+It not only unfold the toy experimental event by reweighted simulated
+data distributions closely with true distributions but also maintains the
+integrity of physical features across various observables. We can expect
+it can enable more reliable predictions and comprehensive analyses as a
+high precision reweighting and unfolding tool in high-energy physics.
+In high-energy physics experiments, achieving precision and accuracy in mea-
+surements is critical for conducting meticulous analyses. However, detectors face
+inherent resolution limitations, calibration errors, and issues such as the gen-
+eration of secondary particles, which can skew the measurement of energy and
+momentum. Unfolding is a mathematical process used to correct distortions in
+data caused by instrumental effects(detector level data), enabling the recovery
+of the true distribution of physical events(particle level data). This task is com-
+plex due to the diversity and intricacy of the physical event distributions, com-
+pounded by systematic errors and uncertainties from the detectors. Unfolding
+technique is particularly crucial in accurately determining physical observables
+like invariant mass distributions, where it aids in precisely measuring mass val-
+ues and widths[1]. Moreover, unfolding can handle complex physical phenomena
+such as jet measurements, efficiently recovering original distributions from data
+∗hcai@whu.edu.cn
+1
+arXiv:2406.01635v1  [physics.data-an]  2 Jun 2024
+
+=== PAGE BREAK ===
+
+convoluted by instrumental effects[2]. Additionally, by mitigating dependen-
+cies on specific experimental setups, unfolding enables consistent comparisons
+across different experiments and facilitates the application of advanced theoret-
+ical tools, ensuring that findings remain relevant and comparable long after the
+initial analyses are conducted[3, 4].
+Unfolding in high energy physics is traditionally approached by discretizing
+the probability distribution into bins and transforming the unfolding problem
+into matrix inversion[5]. The iterative Bayes’ theorem utilizes repeated ap-
+plications of Bayes’ theorem to invert the response matrix, with regularization
+achieved by limiting the number of iterations based on sample statistics and bin-
+ning, thus avoiding overfitting despite initial conditions set by the training truth
+rather than a flat distribution[6]. On the other hand, Singular Value Decom-
+position (SVD), inverts the response matrix using singular value decomposition
+techniques, where regularization involves suppressing contributions from small
+singular values that signify high-frequency fluctuations, thus enhancing stability
+and accuracy[1]. Lastly, Tikhonov regularization, uses polynomial regulariza-
+tion to stabilize the inversion of matrices when mapping multi-dimensional dis-
+tributions, with the optimal regularization parameter determined via an L-curve
+analysis[7].
+To overcome the limitations associated with traditional methods, such as
+the need for binning and the restriction to single observables, a new approach,
+known as OmniFold, involve the iterative reweighting of a simulated event
+set with machine learning techniques has been introduced[3]. The reweighting
+process employs deep neural network-based classifiers to continuously estimate
+probability ratio and adjust weights within a simulation[8]. The methodology
+can be conceptualized as an EM-type algorithm, which iteratively maximizes
+the likelihood estimate[9]. However, while the EM algorithm is widely used for
+its convergence properties, it only guarantees convergence to a stationary point
+of the likelihood function[10]. Studies indicate that the likelihood function may
+have multiple local maxima, some of which can result in significantly worse log-
+likelihood values compared to the global optimum[11, 12, 13]. Moreover, with
+random initialization, the EM algorithm tends to converge to these suboptimal
+critical points with high probability, making the process particularly sensitive
+to the initial parameter settings[14].
+To surmount the aforementioned difficulties, this article introduces Swd-
+Fold, which leverages the theory of optimal transport. Optimal transport
+theory provides a robust mathematical foundation for comparing different data
+distributions and possesses extensive applicative value across various disciplines,
+including computer vision, machine learning, and statistical inference[15, 16]. It
+has also been validated as an effective metric and loss function in high-energy
+physics experiments for measuring the distributional differences between diverse
+high-dimensional data sets[17, 18, 19, 20]. Our SwdFold facilitates a gradual
+approximation to the true data distribution without the need for data binning.
+This method does not rely on any prior physical models during the unfolding
+process, enhancing its versatility and applicability. On the optimization front,
+SwdFold offers a more stable energy landscape for unfolding, which aids in
+2
+
+=== PAGE BREAK ===
+
+pursuing an optimal solution more effectively. Compared to binary weighted
+classification reweighting based algorithms, it is less susceptible to becoming
+trapped in local optima, thereby ensuring more accurate and robust unfolding
+results[21].
+In exploring the estimation of probability density ratios via SwdFold, we
+begin with the fundamental elements of one-dimensional probability measures,
+transitioning gradually to practical computational domains. The core of this
+study is the construction of the Cumulative Distribution Function (CDF) on
+the set of real numbers, R, for a probability measure α[22]. The mathematical
+definition is the integration of the measure α up to a certain point x ∈ R,
+expressed as:
+∀x∈ R, CDFα(x)
+def.
+=
+Z x
+−∞
+dα. (1)
+For the 1-Wasserstein distance, its computation becomes the focal point of
+our methodological exposition [23]. Against two probability density functions
+α,β , its expression is:
+WD (α,β ) =
+Z ∞
+−∞
+|CDFα(x)−CDF β(x)| dx (2)
+This expression represents the essence of optimal transport, quantifying the
+work required to transform one probability distribution into another.
+For discrete cases, data vectorsA andB should be sorted in ascending order.
+Firstly, we then transfer their weights wA and wB into same Range:
+w′
+b = wb
+PwaPwb
+(3)
+Subsequently, we define the weighted cumulative distribution functions:
+CDFa(xi) =
+iX
+j=1
+wa(xj),CDFb(xi) =
+iX
+j=1
+w′
+b(xj) (4)
+where i = 1, 2,...,n and j = 1, 2,....m,n and m are the lengths of A and
+B respectively.
+Finally, in the Wasserstein distance computation phase, we calculate the
+Wasserstein-1 distance as follows:
+WD (A,WA;B,WB) =
+n+m−1X
+i=0
+|CDFa (xi)−CDF b (xi)|· (xi+1−xi) (5)
+where x∈ (A∪B ),x 0≤x1≤... ≤xi≤... ≤xm+n.
+Thus, we complete the computation of the one-dimensional Wasserstein
+distance[24].
+Next, we extend to the multidimensional case. As Fig.1 shown, We adopt a
+slicing approach, performing slices like radon trasform across different feature
+3
+
+=== PAGE BREAK ===
+
+quantities in each possible dimension Aθ1,Aθ2,... [25, 26]. In practice, we can
+use huge dimensional like n = 256 to approximate. Thus We can get
+SWD (A,WA;B,WB) = 1
+n
+nX
+i=1
+WD (Aθi,WA;Bθi,WB) (6)
+So our optimization objective is to ensure that the estimated probability
+density ratios are approximately consistent with those derived from optimal
+transport theory across each possible dimension. This allows us to correctly es-
+timate the probability density ratio in high-dimensional cases. The optimization
+function can be written as:
+fSWDRW (A,WA;B,WB) = arg minWratioSWD (A,WA·Wratio;B,WB) (7)
+After optimization by gradient descent using Adam optimizer[27], we can
+get the probability density ratio between two weighted samples ( A,WA) and
+(B,WB) by
+fSWDRW (A,WA;B,WB) (x) = p(B,WB )(x)
+p(A,WA)(x) (8)
+where p(X,W )(x) means the probability density of x estimated by sample X
+with weight W . Figure 1 effectively demonstrates this convergence by present-
+ing both a normalized histogram and a cumulative distribution function using
+two toy normal distribution’s samples with different parameters. These visual
+comparisons showcase how the reweighted simulations iteratively approach the
+actual data distribution. As indicated in the plots, the successive iterations
+(10, 100, and 1000) yield increasingly accurate approximations to the true data
+distribution. This progressive improvement, evident in the narrowing differ-
+ences between two samples, highlights the efficacy of our optimization method
+in achieving precise reweighting toward the observed distribution.
+To demonstrate the flexibility and efficacy of our method, our study gener-
+ate toy Monte Carlo events that simulated the studied production and decay
+processes in phase space. We simulate the particle level and detector level event
+produced by electron-positron collisions, with a focus on the decay of the ψ(2S)
+resonance into aϕ meson and a pair of π+,π−, followed by the further decay of
+the ϕ meson into a pair of K +, K−. We retained relevant physical information
+in the phase space Monte Carlo, referred to as synthetic data: one at the particle
+level, termed ”Generation” representing theoretical predictions without detector
+effects in phase space; and another at the simulation level, termed ”Simulation”
+including simulated detector responses. A straightforward physical model was
+used to assign weights to the generated data. These weights adjusted the proba-
+bility distribution of our simulated events to resemble that of another toy Monte
+Carlo with a physically meaningful probability distribution. Subsequently, we
+resampled the weighted generated data to produce an unweighted dataset, which
+we refer to as nature. This nature dataset is markedly different from the syn-
+thetic distribution, particularly notable in the probability distribution of some
+4
+
+=== PAGE BREAK ===
+
+Figure 1: Example for Reweighted Simulation Data Across Iterations using
+SWDRW. This figure consists of two plots that illustrate the effectiveness of iter-
+ative reweighting of simulated data(Sim) to match actual observed data(Data).
+The left plot data (Sim) and actual data (Data), alongside reweighted simulated
+data at various iterations: 10 (Iter.10), 100 (Iter.100), and 1000 (Iter.1000).
+The right plot is a Cumulative Distribution Function (CDF) over the same
+value range, comparing the cumulative probability distributions for the same
+categories of data. These plots are essential for evaluating how effectively the
+iterative reweighting process adjusts the simulated data to align with the dis-
+tribution of the actual data, demonstrating increased alignment as the number
+of iterations grows.
+key physical features. Similarly, nature data at the particle level is referred to
+as “Truth” and at the simulation level as “Data” The unfolding process uses
+the Simulation, Generation, and Data datasets as inputs, training an algorithm
+capable of approximating the Truth probability distribution. The objective is
+to correct experimental effects present in the data, thereby yielding a distribu-
+tion very close to Truth. Our method allows for the simultaneous unfolding of
+multiple observables related to the decay process, providing a comprehensive
+understanding of the underlying physics. Additionally, having weight labels en-
+ables us to more accurately compare the performance of various methods and
+ascertain the accuracy of their estimated distributions.
+In the specific iterative unfolding process of SwdFold, we split into the
+reweight process(SwdR w) to learn detector level weights wn and particle level
+model learning process to learn particle level weights vn [3] by
+fModel(A, 1;A,WRW ) = arg maxgwRWlog(g(a)) (9)
+In the first interation of reweight process, we set particle level weight ν0 as
+uniform weights, then we can optimize by the following step:
+wn(x) =νn−1(x)fSWDR W(Sim,νn−1; Data, 1)(x) (10)
+νn(y) =νn−1(y)fModel(Gen, 1; Gen,wn)(y) (11)
+5
+
+=== PAGE BREAK ===
+
+where (x,y ) is paired event in synthetic dataset, where x is detector level
+event, and y is corresponding particle level event. Then after n iterations, we
+can estimate the unfolded weights as
+p(n)
+(Truth,1)(y)≈νn(y)p(Gen,1)(y) (12)
+We employed a multi-layer fully connected neural network architecture incor-
+porating shortcut connections akin to those found in residual network designs.
+The internal representation of the network is characterized by 256 -dimensional
+latent space features, allowing for intricate modeling of the underlying structure
+of the data. This network processes a diverse set of input features, including
+kinematic properties and particle identities related to decay events. These fea-
+tures encompass the Cartesian momentum components (px,py,pz), total energy
+(E), magnitude of momentum vector (p), transverse momentum ( pT ), and an-
+gular coordinates (θ andϕ ) forK +,K−,π+,π−,ϕ , andπ+π− pairs. Addition-
+ally, the model is sensitive to the involved particle types, namely K +, K−,π +,
+and π−. To further enrich the feature space, the model also incorporates sev-
+eral key invariant mass combinations, particularly the Mϕ of the ϕ meson and
+Mπ+π− for the π+π− pair. Our model was trained using the PyTorch library,
+and the optimization of network parameters was conducted using the AdamW
+optimizer, a variant of the Adam optimizer that includes a decoupled weight
+decay regularization [28].
+Our comprehensive analysis underscores the efficacy of theSwdFold method,
+particularly in the context of unfolding and reweighting within our challenging
+particle physics datasets. The unfolding task in our study was confronted with
+the intricate difficulty of subtle detector effects, which typically do not manifest
+in variable distributions when we unfold all the observable in Fig.6. This issue
+was most pronounced when examining the resolution of the ϕ mass, where a
+comparison of detector-level events (Data) and particle-level events (Truth) re-
+vealed minimal apparent discrepancies. Nonetheless, as Fig.2 shown, SwdFold
+demonstrated its exceptional capacity to refine theϕ mass distribution, aligning
+it more closely with the truth distribution and thereby enabling a more precise
+measurement of the ϕ mass width.
+6
+
+=== PAGE BREAK ===
+
+Figure 2: Histogram Analysis of Unfolding Methodologies. The performance
+of our proposed SwdFold method is shown with brown dots, compared with
+the OmniFold method with black dots. Our SwdFold method exhibits a
+high degree of congruence with the truth event(Truth), signifying a success-
+ful reweighting of the generation event distribution(Gen) to estimate the truth
+event distribution(Truth), as particularly evident in the sharp peak around 1.020
+GeV/c² in the plot.
+The reweighting process faced its own set of challenges, especially when
+comparing synthetic datasets with natural datasets. In the natural dataset,
+the π+π−mass distribution displayed pronounced peaks, signaling resonance in
+decay-peaks that were missing from the synthetic dataset. SwdFold’s robust
+algorithmic framework not only succeeded in accurately representing these res-
+onant peaks but also replicated the corresponding widths observed in nature
+in Fig.3. These advancements in reweighting signify SwdFold’s nuanced ca-
+pability to accurately reflect complex physical phenomena, thereby enhancing
+data analysis and parameter estimation within the domain of particle physics
+research.
+7
+
+=== PAGE BREAK ===
+
+Figure 3: Histogram Analysis of Reweight Methodologies. We presents a de-
+tailed examination of the π+π−mass distribution across three distinct mass
+ranges: (0 .8, 1.05), (1.1, 1.4), and (1 .5, 1.8)GeV/c2. The performance of the
+SwdFold method, illustrated by the black line, showcases its ability to re-
+veal the resonance peaks by reweighting the Generation Event(Gen), aligning
+closely with the Truth Event(Truth) in both peak value and width.
+Our SwdFold method not only achieves high agreement with the one-
+dimensional distributions, has demonstrated remarkable success in capturing
+and preserving the intricate correlations present within the multi-dimensional
+phase space of particle interactions. As evidenced by the Dalitz plots presented
+8
+
+=== PAGE BREAK ===
+
+in Fig.4, the close alignment of the SwdFold plot with the Truth data attests
+to the method’s precision in reweighting and its adeptness in handling the com-
+plex correlations characteristic of particle physics data. This proficiency extends
+beyond mere visual congruence; it indicates a deeper, quantitative concordance
+across the full kinematic domain, showcasing the potential of our method for
+high-precision reweighting and parameter estimation. The ability of SwdFold
+to deliver physically meaningful results, positions it as a powerful tool for en-
+hancing the accuracy and reliability of analyses in experimental particle physics.
+Figure 4: Visualization of the Dalitz plots for the ϕπ system. The left panel
+depicts the distribution from the generated dataset (Gen), which serves as the
+simulated data before any reweighting. The center panel represents the Truth
+data, reflecting the actual particle interactions without the influence of detector
+effects or experimental noise. The right panel showcases the distribution post
+the application of the SwdFold method. The SwdFold plot is close to the Truth
+distribution, demonstrating its successful reweighting.
+In conclusion, we presents SwdFold, a pioneering reweighting and unfold-
+ing method grounded in the principles of optimal transport, which addresses the
+longstanding challenges faced by traditional unfolding techniques in high-energy
+physics. Our method significantly mitigates issues related to model dependency,
+binning artifacts, and sensitivity to statistical fluctuations, which are prevalent
+in conventional methods. By deploying sliced wasserstein distance theory to ap-
+proximate the probability density ratio of simulation dataset and experimental
+dataset, SwdFold can reweight the particle level simulation event to estimate
+the true physical result without detector effect. The empirical validations us-
+ing high-energy physics datasets, specifically the simulated events of electron-
+positron collisions and the decay processes ψ(2S)→ ϕK +K−,ϕ → K +K−,
+demonstrate that SwdFold can accurately recover the true distribution of
+physical events with remarkable precision. Notably, the method excels in main-
+taining the integrity of multidimensional correlations and nuanced physical fea-
+tures, which are often obscured by detector effects and other experimental noise.
+SwdFold’s innovative approach to data unfolding and its ability to handle
+high-dimensional data without binning represent substantial advancements in
+the field. These enhancements enable physicists to derive more accurate in-
+sights from experimental data, thereby facilitating a deeper understanding of
+underlying physical phenomena and contributing to the ongoing development of
+theoretical models. Future work will focus on refining the algorithm’s efficiency
+9
+
+=== PAGE BREAK ===
+
+and exploring its application in other complex systems where data integrity is
+critical. The adaptability and performance of SwdFold affirm its potential
+as a valuable tool for a wide range of applications in experimental physics and
+beyond, promising to significantly impact how data-driven discoveries are made
+in the sciences.
+Looking ahead, SwdFold paves new possibilities for directly training deep
+learning models in an unsupervised manner for tasks in unfolding and reweight-
+ing. This approach holds promising prospects not only for future research in
+particle physics. To foster continued research and development in the field, we
+plan to make our SwdFold code and related datasets publicly available. This
+initiative will enable other researchers to apply our method in various settings,
+further validating and enhancing its applicability.
+References
+[1] Andreas Hoecker and Vakhtang Kartvelishvili. Svd approach to data un-
+folding. Nuclear Instruments and Methods in Physics Research Section A:
+Accelerators, Spectrometers, Detectors and Associated Equipment , 372(3):
+469–481, 1996.
+[2] Vladimir Andreev, M Arratia, A Baghdasaryan, A Baty, K Begzsuren,
+A Belousov, Arthur Bolz, V Boudry, G Brandt, D Britzger, et al. Mea-
+surement of lepton-jet correlation in deep-inelastic scattering with the h1
+detector using machine learning for unfolding. Physical review letters, 128
+(13):132002, 2022.
+[3] Anders Andreassen, Patrick T Komiske, Eric M Metodiev, Benjamin Nach-
+man, and Jesse Thaler. Omnifold: a method to simultaneously unfold all
+observables. Physical review letters, 124(18):182001, 2020.
+[4] Glen Cowan. A survey of unfolding methods for particle physics. In Conf.
+Proc. C, volume 203181, pages 248–257, 2002.
+[5] Tim Adye. Unfolding algorithms and tests using roounfold. arXiv preprint
+arXiv:1105.1160, 2011.
+[6] Giulio D’Agostini. A multidimensional unfolding method based on bayes’
+theorem. Nuclear Instruments and Methods in Physics Research Section
+A: Accelerators, Spectrometers, Detectors and Associated Equipment , 362
+(2-3):487–498, 1995.
+[7] Stefan Schmitt. Tunfold, an algorithm for correcting migration effects in
+high energy physics. Journal of Instrumentation , 7(10):T10003, 2012.
+[8] Anders Andreassen and Benjamin Nachman. Neural networks for full
+phase-space reweighting and parameter tuning. Physical Review D , 101
+(9):091901, 2020.
+10
+
+=== PAGE BREAK ===
+
+[9] Anders Andreassen, Patrick T Komiske, Eric M Metodiev, Benjamin Nach-
+man, Adi Suresh, and Jesse Thaler. Scaffolding simulations with deep learn-
+ing for high-dimensional deconvolution. arXiv preprint arXiv:2105.04448 ,
+2021.
+[10] Soheil Kolouri, Gustavo K Rohde, and Heiko Hoffmann. Sliced wasserstein
+distance for learning gaussian mixture models. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition, pages 3427–3436,
+2018.
+[11] Carlos Am´ endola, Mathias Drton, and Bernd Sturmfels. Maximum likeli-
+hood estimates for gaussian mixtures are transcendental. In Mathematical
+Aspects of Computer and Information Sciences: 6th International Con-
+ference, MACIS 2015, Berlin, Germany, November 11-13, 2015, Revised
+Selected Papers 6, pages 579–590. Springer, 2016.
+[12] Heiko Hoffmann. Unsupervised learning of visuomotor associations , vol-
+ume 11. Bielefeld University, 2005.
+[13] Chi Jin, Yuchen Zhang, Sivaraman Balakrishnan, Martin J Wainwright,
+and Michael I Jordan. Local maxima in the likelihood of gaussian mix-
+ture models: Structural results and algorithmic consequences. Advances in
+neural information processing systems, 29, 2016.
+[14] Bing Jian and Baba C Vemuri. Robust point set registration using gaus-
+sian mixture models. IEEE transactions on pattern analysis and machine
+intelligence, 33(8):1633–1645, 2010.
+[15] Luis Caicedo Torres, Luiz Manella Pereira, and M Hadi Amini. A survey
+on optimal transport for machine learning: Theory and applications. arXiv
+preprint arXiv:2106.01963, 2021.
+[16] Filippo Santambrogio. Optimal transport for applied mathematicians.
+Birk¨ auser, NY, 55(58-63):94, 2015.
+[17] Chu-Cheng Pan, Xiang Dong, Yu-Chang Sun, Ao-Yan Cheng, Ao-Bo Wang,
+Yu-Xuan Hu, and Hao Cai. Event generation and consistence test for
+physics with sliced wasserstein distance. arXiv preprint arXiv:2310.17897 ,
+2023.
+[18] Jessica N Howard, Stephan Mandt, Daniel Whiteson, and Yibo Yang.
+Learning to simulate high energy particle collisions from unlabeled data.
+Scientific Reports, 12(1):7567, 2022.
+[19] Katherine Fraser, Samuel Homiller, Rashmish K Mishra, Bryan Ostdiek,
+and Matthew D Schwartz. Challenges for unsupervised anomaly detection
+in particle physics. Journal of High Energy Physics , 2022(3):1–31, 2022.
+11
+
+=== PAGE BREAK ===
+
+[20] Tianji Cai, Junyi Cheng, Nathaniel Craig, and Katy Craig. Linearized
+optimal transport for collider events. Physical Review D , 102(11):116019,
+2020.
+[21] Soheil Kolouri, Gustavo K Rohde, and Heiko Hoffmann. Sliced wasserstein
+distance for learning gaussian mixture models. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition, pages 3427–3436,
+2018.
+[22] Marc Peter Deisenroth, A Aldo Faisal, and Cheng Soon Ong. Mathematics
+for machine learning . Cambridge University Press, 2020.
+[23] Soheil Kolouri, Se Rim Park, Matthew Thorpe, Dejan Slepcev, and Gus-
+tavo K Rohde. Optimal mass transport: Signal processing and machine-
+learning applications. IEEE signal processing magazine, 34(4):43–59, 2017.
+[24] Gabriel Peyr´ e, Marco Cuturi, et al. Computational optimal transport:
+With applications to data science. Foundations and Trends® in Machine
+Learning, 11(5-6):355–607, 2019.
+[25] Peter Toft. The radon transform. Theory and Implementation (Ph. D.
+Dissertation)(Copenhagen: Technical University of Denmark) , 1996.
+[26] Nicolas Bonneel, Julien Rabin, Gabriel Peyre, and Hanspeter Pfister. Sliced
+and radon wasserstein barycenters of measures. Journal of Mathematical
+Imaging and Vision , 2014.
+[27] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic opti-
+mization. arXiv preprint arXiv:1412.6980 , 2014.
+[28] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization.
+arXiv preprint arXiv:1711.05101 , 2017.
+A Additional Figure
+12
+
+=== PAGE BREAK ===
+
+13
+
+=== PAGE BREAK ===
+
+Figure 6: The unfolding result for all observables
+14

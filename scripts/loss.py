@@ -21,7 +21,17 @@ UTILITY_DIR = REPO_ROOT / "utilityFunctions"
 if str(UTILITY_DIR) not in sys.path:
     sys.path.insert(0, str(UTILITY_DIR))
 
+# The conditional-spread term lives in scripts_joint, which is not on sys.path for
+# every caller: `scripts_joint/upsilon/evaluate_z_to_x.py` imports this module
+# directly, and without this the import of `scoring_rules` fails there. Add it
+# defensively rather than relying on the caller.
+JOINT_DIR = REPO_ROOT / "scripts_joint"
+if JOINT_DIR.is_dir() and str(JOINT_DIR) not in sys.path:
+    sys.path.insert(0, str(JOINT_DIR))
+
 from func_utils import anchor_loss  # noqa: E402
+
+from scoring_rules import gaussian_log_score_from_draws as scoring_gaussian_log_score_from_draws  # noqa: E402
 
 
 P = 2
@@ -1410,9 +1420,50 @@ class DualSpaceFeatureOTLoss:
         self.latest_components["z_cycle_mse_weighted"] = loss
         return loss
 
+    def energy_score_loss(self, x_true: torch.Tensor, x_draws: torch.Tensor) -> torch.Tensor:
+        """Conditional-spread term: the Gaussian log score of the decoded conditional.
+
+        ``x_draws`` carries (m, n, ...) independent decodes of the same ``n``
+        truth events the realised values ``x_true`` belong to, so the score is
+        evaluated at each event's own observation. Per-event moments are taken
+        over the draw axis and scored coordinate-wise.
+
+        Two numerical guards, both measured rather than assumed:
+        * coordinates are standardised by the target sample's scale, because a
+          4-vector mixes GeV-scale momenta with O(1) angles and an unstandardised
+          score is dominated by whichever coordinate happens to be largest;
+        * the predicted scale is floored relative to that sample scale (see
+          ``scoring_rule.scale_floor``), because ``0.5 r^2 / sigma^2`` diverges as
+          the scale underflows: the first smoke run of this term produced train
+          losses of 1e9-1e10 from exactly that.
+
+        **Read the identifiability caveat before enabling this.**
+        ``scripts_joint/single_observation_limits.py`` measures the degenerate
+        limit: if the mean map can hit its own observation, this score - and CRPS,
+        and the energy score - is minimised at ``sigma -> 0``, because then
+        ``mu = x`` and ``log sigma`` is the only remaining term. Whether the real
+        model is in that regime is an empirical question of mean-map capacity
+        versus the number of training events, and the toy study
+        (``scripts_joint/toy_identifiability.py``) shows both outcomes: a mean map
+        far too small to interpolate recovers the spread (1.04x truth) under this
+        term, while the marginal-only objective collapses it to 0.31x. Enable with
+        a monitor on the learned ``core_sigma``/``tail_sigma``: if they fall
+        toward the floor in the first epochs, the arm is in the degenerate regime
+        and must be stopped.
+        """
+        flat_true = x_true.reshape(x_true.shape[0], -1)
+        flat_draws = x_draws.reshape(x_draws.shape[0], x_draws.shape[1], -1)
+        scale = flat_true.detach().std(dim=0, unbiased=False).clamp_min(1e-8)
+        config = getattr(self, "scoring_rule_config", None) or {}
+        floor = float(config.get("scale_floor", 0.05) or 0.0)
+        loss = scoring_gaussian_log_score_from_draws(
+            flat_draws / scale, flat_true / scale, floor=floor
+        )
+        self.latest_components["energy_score_raw"] = loss
+        return loss
+
     def encoder_anchor_loss(self, z_encoded: torch.Tensor, x_true: torch.Tensor) -> torch.Tensor:
         return anchor_loss(z_encoded, x_true)
-
     def decoder_anchor_loss(self, z_true: torch.Tensor, x_from_z: torch.Tensor) -> torch.Tensor:
         return anchor_loss(z_true, x_from_z)
 

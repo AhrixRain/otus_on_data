@@ -210,6 +210,18 @@ def train_joint_epoch(
     cycle_noise_mode = _resolve_cycle_decoder_noise(config, stage)
     z_cycle_noise_mode = _resolve_z_cycle_noise(config, stage)
     z_cycle_weight = float(stage.get("zeta", 0.0) or 0.0)
+    # Conditional-spread term. Off unless the stage declares kappa > 0, so every
+    # earlier config keeps a byte-identical history row.
+    scoring_rule_weight = float(stage.get("kappa", 0.0) or 0.0)
+    scoring_rule = config.get("scoring_rule") or {}
+    scoring_rule_draws = int(scoring_rule.get("draws", 2) or 2)
+    scoring_rule_batch = scoring_rule.get("score_batch")
+    scoring_rule_batch = None if scoring_rule_batch in (None, 0) else int(scoring_rule_batch)
+    if scoring_rule_weight > 0.0 and scoring_rule_draws < 2:
+        raise ValueError(
+            "scoring_rule.draws must be at least 2: the energy score needs two "
+            "draws per event for its within-model term"
+        )
     loaders = config.get("loaders", {})
     batch_size = int(loaders.get("train_batch_size", 1024))
     # Mechanism fix for the flat-loss diagnosis: pad every stream whose
@@ -335,6 +347,22 @@ def train_joint_epoch(
             if z_cycle_weight > 0.0:
                 z_reco = _z_cycle_roundtrip(model, z, z_cycle_noise_mode)
                 z_cycle_loss = factory.z_cycle_loss(z, z_reco)
+            # Conditional-spread term: the energy score of independently decoded
+            # x's for a subset of this batch's truth events, evaluated at each
+            # event's own realised x. The subset is scored at the model's current
+            # decoder noise, which is what makes the conditional spread visible.
+            scoring_rule_loss = x.new_tensor(0.0)
+            if scoring_rule_weight > 0.0:
+                n_score = x.shape[0] if scoring_rule_batch is None else min(
+                    int(scoring_rule_batch), x.shape[0]
+                )
+                z_score = z[:n_score]
+                x_score = x[:n_score]
+                decoded = [
+                    _first(model.decode(z_score)) for _ in range(scoring_rule_draws)
+                ]
+                x_draws = torch.stack(decoded, dim=0)
+                scoring_rule_loss = factory.energy_score_loss(x_score, x_draws)
             region_loss = (
                 stage["beta"] * x_loss
                 + stage["lamb"] * z_loss
@@ -342,6 +370,7 @@ def train_joint_epoch(
                 + stage["nu_e"] * encoder_anchor
                 + stage["nu_d"] * decoder_anchor
                 + z_cycle_weight * z_cycle_loss
+                + scoring_rule_weight * scoring_rule_loss
             )
             weighted_loss = weights[name] * region_loss
             if not torch.isfinite(weighted_loss):
@@ -362,6 +391,17 @@ def train_joint_epoch(
             # every earlier config keeps a byte-identical history row.
             if z_cycle_weight > 0.0:
                 components["z_cycle_loss"] = z_cycle_loss
+            # Same contract for the conditional-spread term. Both the raw score
+            # and its WEIGHTED contribution are registered, so the weight can be
+            # judged from a single epoch of history.json rather than guessed: the
+            # raw log score is of order 1/scale-floor^2 and is far larger than the
+            # reconstruction terms, so the weighted size is what matters.
+            if scoring_rule_weight > 0.0:
+                components["energy_score_loss"] = scoring_rule_loss
+                components["energy_score_weighted"] = scoring_rule_weight * scoring_rule_loss
+                raw_score = factory.latest_components.get("energy_score_raw")
+                if raw_score is not None:
+                    components["energy_score_raw"] = raw_score
             for key, value in components.items():
                 sums[f"{name}_{key}"] = sums.get(f"{name}_{key}", 0.0) + _as_float(value)
 

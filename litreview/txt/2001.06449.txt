@@ -1,0 +1,1419 @@
+Prepared for submission to JHEP
+On gauge invariance of transverse momentum
+dependent distributions at small x
+Renaud Boussariea Yacine Mehtar-Tania
+aPhysics Department, Brookhaven National Laboratory, Upton, NY 11973, USA
+E-mail: rboussarie@bnl.gov, mehtartani@bnl.gov
+Abstract: The interplay between the small x limit of QCD amplitudes and QCD factor-
+ization at moderate x has been studied extensively in recent years. It was ﬁnally shown
+that semiclassical formulations of small x physics can have the form of an inﬁnite twist
+framework involving Transverse Momentum Dependent (TMD) distributions in the eikonal
+limit. In this work, we demonstrate that small x distributions can be formulated in terms
+of transverse gauge links. This allows in particular for direct and eﬃcient decompositions of
+observables into subamplitudes involving gauge invariant suboperators which span parton
+distributions.
+Keywords: Perturbative QCD, small-x, TMD, Colliders
+arXiv:2001.06449v1  [hep-ph]  17 Jan 2020
+
+=== PAGE BREAK ===
+
+Contents
+1 Introduction 1
+2 Background ﬁeld at high energy 3
+3 Transverse QCD strings and the dipole operator 4
+3.1 Parallel transport on the transverse plane 4
+3.2 Dipole operator and the non-Abelian Stokes theorem 5
+4 Gauge invariant power expansion: local formulation 7
+5 Application to the small- x/TMD equivalence for DIS dijet production 10
+6 Extension to generic color structures 13
+7 Extension to 3-line operators 16
+8 Discussions 17
+1 Introduction
+The two main regimes for a process with a hard scale Q and center-of-mass energy s are
+the so-called Bjorken limit Q∼s→∞ that relates to moderate values of x, where QCD
+factorization applies, and the so-called Regge limit, for which Q≪s or x≪ 1. The main
+obstacle when studying the connections between QCD factorization and QCD at small x
+is the discrepancy in the involed non-perturbative elements: QCD factorization involves
+parton distributions, whereas the most general formulations of small x physics involve the
+action of Wilson line operators on hadronic states [1–6]. In [7], the authors showed how
+to extract the small x limit of a Transverse Momentum Dependent (TMD) distribution
+from a Wilson line operator. Their argument relies on two statements: the fact that the
+longitudinal momentum fraction of partons in the distributions are small in the eikonal
+limit, and the fact that transverse gluon ﬁelds are subeikonal in the most commonly used
+gauges (see Section 2).
+As an example, let us consider the Weizs¨ acker-Williams (WW) type gluon TMD op-
+erator for a gluon with longitudinal momentum fraction x and transverse momentum k
+inside a hadron with a large momentum P mostly in the − ligthcone direction, which is
+deﬁned as [8]
+Oij(x, k) =
+∫ dr+d2r
+(2π)3 eixP−r+−i(k·r)Fi−(r)U[+]
+[r,0]Fj−(0)U[+]
+[0,r], (1.1)
+– 1 –
+
+=== PAGE BREAK ===
+
+whereU[±]
+[r,0] are staple-shaped gauge links
+U[±]
+[x,y] =
+[
+x+,∞+]
+x [x, y]±∞+
+[
+±∞+,y +]
+y, (1.2)
+and [x+,∞+]x denotes a straight Wilson line in the fondamental representation of SU(3)
+along the + direction at ﬁxed transverse coordinate x and similarly for [±∞+,y +]y. In
+particular, we have
+[
+x+,y +]
+x =Ux(x+,y +)≡P exp
+[
+ig
+∫ x+
+y+
+dz+A−(z+, x)
+]
+, (1.3)
+where A−(x+, x) = n·A is the − component of the target gauge ﬁeld evaluated on the
+light cone branch x− = 0, with n = (1, 0, 0, 1). Here it is understood that A≡Aata where
+ta are the QCD color matrices in the fundamental representation.
+The transverse gauge link on the other hand is evaluated at constant light cone time
+x+
+[x, y]x+≡P λ exp
+[
+−ig
+∫ x
+y
+dz(λ)· A(x+, z(λ))
+]
+, (1.4)
+where z(λ)≡ (z1,z 2) deﬁnes a trajectory in the transverse plane, that starts at y and ends
+at x, and parametrized by the real number 0 <λ< 1.
+Under the two hypothesis described above, one can neglect the phase ixP−r+ in the
+Fourier transform in Eq. (1.1), as well as the transverse part [ x, y]∞+ of the staple-shaped
+gauge link. This observation allowed the authors of [8] to ﬁnd a match between the WW-
+type TMD operator and inﬁnite Wilson line operators:
+Oij(x≈ 0, k)∝
+∫
+d2re−i(k·r)Ur(∂iU†)rU0(∂jU†)0. (1.5)
+Such an operator appears naturally when one takes the ﬁrst term in a Taylor expansion of
+an observable at smallx. The remarkable equivalence in Eq. (1.5) generated a lot of interest
+for the physics of TMD distributions in the smallx community, which gathered tremendous
+insight on these distributions from small x models [9–16]. Attempts have also been made
+in order to unify small x and moderate x evolution equations for TMDs [17, 18]. However,
+no equivalence was formed beyond the leading power in k/Q until very recently [19, 20].
+In [19, 20], it was shown that a class of observables at small x could be entirely rewrit-
+ten as the eikonal limit of an inﬁnite twist TMD framework. This new formulation of
+small-x physics was based on a power expansion, then the rearrangement of the expanded
+form by classifying terms depending on the genuine twist of the non-perturbative oper-
+ator involved, then the resummation of power corrections to the accompanying Wilson
+coeﬃcients. Although the ﬁnal expressions were fairly simple it would be cumbersome to
+generalize to other classes of observables. It also relied on the assumption that neglecting
+the transverse gauge links from the distribution in a gauge where transverse gluons are
+subeikonal would not spoil QCD gauge invariance of the distribution.
+In this article, we propose a more direct derivation of the equivalence found in [19, 20]
+and uncover its underlying geometric structure which preserves the explicit gauge invariance
+– 2 –
+
+=== PAGE BREAK ===
+
+of the operators. For this purpose, we demonstrate that pairs of Wilson line operators have
+a powerful formulation in terms of transverse gauge links built from rotated gluon ﬁelds.
+In the new approach to TMD’s at small x in terms of transverse gauge link operators it
+will be straightforward to generalize to other observables.
+The article is organized as follows: In Section 2 we give a brief introduction of the
+semiclassical small x basics and discuss gauge invariant for this framework. In Section 3,
+we show how pairs of Wilson lines can be interpreted as transverse gauge links thanks to
+parallel transports on the transverse plane and gauge invariance, and how this result has
+the form of a non-Abelian Stokes equation. In Section 4, we use the newly established form
+of the dipole operator to show how a power expansion can be systematically performed in
+a consistently gauge invariant way. As a second application of the results from Section 3,
+we show how to extract TMD suboperators from the dipole in Section 5, and in Section 6
+we extend this method to more generic 2-Wilson-line operators. Finally, we extend the
+method to a 3-line operator in Section 7.
+2 Background ﬁeld at high energy
+Consider a hadronic target moving in the negative z direction, close to the light cone, i.e.,
+x−∼ 0. It can be described by a classical current [3, 21]
+J−(x)≈J−(x+, x), and J+≈Ji≈ 0, (2.1)
+that generates a gauge ﬁeld which only depends on light cone time x+ and the transverse
+coordinate x. In such a framework, it turns out that both covariant∂·A = 0 and light cone
+A+ = 0 gauge share a common solution. Indeed, it immediately follows from A+ =Ai = 0
+and the independence on x− that ∂·A =∂+A− = 0. The equation of motion for the ﬁeld
+reads [
+Dµ,F µ−]
+=−∂iFi− =−∂2A− =J−. (2.2)
+where
+Fµν≡∂µAν−∂νAµ−ig[Aµ,Aν] and Dµ≡∂µ−igAµ, (2.3)
+denote the ﬁeld strength tensor and the covariant derivative. With the above choice of
+gauges the current is covariantly conserved since D+J− = ∂+J− = 0. Furthermore, note
+that although A− obeys a Poisson equation, it is an exact solution of the Yang-Mills
+equations.
+In the following, we will make use of the existence of a residal gauge freedom inA+ = 0
+light cone gauge: all gauge transformations with the form
+A−(x+, x)→ Ωx(x+)A−(x+, x)Ω−1
+x (x+)− 1
+ig Ωx(x+)∂−Ω−1
+x (x+)
+Ai(x+, x)→− 1
+ig Ωx(x+)∂iΩ−1
+x (x+), (2.4)
+– 3 –
+
+=== PAGE BREAK ===
+
+where Ωx(x+) is an element of the gauge group SU(3) that preserves the conditionA+ = 0.
+Because A+ is suppressed on the branch x− = 0 the above decomposition is expected to
+span a larger subset of SU(3) beyond light cone gauge.
+Under such a gauge transformation, the Wilson line
+Ux(ξ2,ξ 1) =P exp
+[
+ig
+∫ ξ2
+ξ1
+dx+A−(x+, x)
+]
+(2.5)
+transforms as
+Ux(ξ2,ξ 1)→ Ωx(ξ2)Ux(ξ2,ξ 1)Ω−1
+x (ξ1). (2.6)
+It is possible to choose the transformation in order to cancel A− altogether, with
+Ωx(ξ) = Ωx(∞)Ux(∞,ξ ), and Ω −1
+x (ξ) =Ux(ξ,−∞)Ω−1
+x (−∞). (2.7)
+Note that there is an inﬁnite number of gauge transformations, spanning the entire gauge
+groupe SU(3), that satisfy (2.7). This freedom in ﬁxing the boundary conditions translates
+into the diﬀerent regularization schemes for the spurious 1 /k+ singularity encountered in
+light cone gauge, see for example [22].
+3 Transverse QCD strings and the dipole operator
+In the standard semi-classical formulations of small x physics, scattering amplitudes are
+most commonly computed in A+ = 0 light cone gauge by ﬁxing the residual gauge free-
+dom such that the classical transverse ﬁeld vanishes. Hence, only the − component of the
+background ﬁeld is taken into account through lightlike Wilson line operators along thex+
+direction.
+The connection to TMD physics requires the formulation of the problem in terms of ﬁeld
+strength tensors, typically introduced by performing a gradient expansion in transverse co-
+ordinate space that yields∂iA−∼Fi−. In eﬀect, this corresponds to the parallel transport
+of Wilson line operators on the transverse plane as will be shown shortly.
+3.1 Parallel transport on the transverse plane
+Let us ﬁrst show how gauge rotations can be rewritten as transverse gauge links. For any
+pair of transverse positions ( x1, x2) and deﬁning r = x1− x2, we can readily write 1
+Ωx1(t) = Ω x2(t) +
+∫ 1
+0
+ds d
+dsΩx2+sr(t)
+= Ω x2(t)− ri
+∫ 1
+0
+ds (∂iΩ)x2+sr(t). (3.1)
+Now, note that
+∂iΩx(t) =igAi(t, x)Ωx(t), (3.2)
+1From now on, we will denote light cone times with standard time notations ξ or t for reader’s conve-
+nience.
+– 4 –
+
+=== PAGE BREAK ===
+
+whereAi (withi = 1, 2) is the pure gauge ﬁeld obtained from the rotation Ω (see Eq. (2.4)).
+Combining the two remarks above then multiplying Eq. (3.1) by Ω−1
+x2 (t) on the right yields:
+Ωx1(t)Ω−1
+x2 (t) = 1−igri
+∫ 1
+0
+dsAi(t, x2 +sr) Ωx2+sr(t)Ω−1
+x2 (t). (3.3)
+The ﬁnal step is now to notice that Eq. (3.3) is the equation which deﬁnes a Wilson line
+along the straight line trajectory parametrized by the real number s with values between
+0 and 1 and such that z(0) = x2 and z(1) = x1, that is:
+z(s) = x2 +sr
+This Wilson line, that we denote as [ x1, x2]t, solves the following equation:
+[x1, x2]t = 1−ig
+∫ x1
+x2
+dz· A(t, z)[z, x2]t. (3.4)
+Although the transverse gauge link was constructed for a straight line trajectory it can be
+easily shown that it is independent of the trajectory connecting the endpoints so long as
+the transverse ﬁeld is a pure gauge.
+By comparing Eq. (3.3) and Eq. (3.4) we can make the following identiﬁcation:
+Ωx1(t)Ω−1
+x2 (t) = [x1, x2]t. (3.5)
+An equivalent relation can readily be obtained:
+[x1, x2]t = 1−ig
+∫ x1
+x2
+[x1, z]t A(t, z)· dz. (3.6)
+3.2 Dipole operator and the non-Abelian Stokes theorem
+Now let us consider the (non-singlet) dipole operator, with gauge links at inﬁnity Ω x1,2(∞)
+fully accounted for:
+(Oξ(x1, x2))ij≡
+(
+Ωx1(∞)Ux1(∞,ξ )U†
+x2(ξ,∞)Ω−1
+x2 (∞)
+)
+ij
+. (3.7)
+In most cases at small x it is assumed that the classical ﬁeld A− has a compact support
+which is very peaked around x+ = 0 in Eq. (2.5). As a result, so long as x+ < 0 one can
+replace ξ by−∞ in our expressions and one can deal with inﬁnite Wilson lines. Here, we
+will keep a generic ξ. Absorbing the gauge links at inﬁnity Ω x1(∞) and Ω−1
+x2 (∞) into the
+Wilson lines with the help of relations like Eq. (2.4), the dipole operator becomes
+Oξ(x1, x2)→Ux1(∞,ξ )Ωx1(ξ)Ω−1
+x2 (ξ)U†
+x2(ξ,∞), (3.8)
+where the lines are now built from gauge-rotated gluon ﬁelds from Eq. (2.4). Using Eq. (3.5)
+ﬁnally allows to write the dipole operator with transverse gauge links:
+Oξ(x1, x2) =Ux1(∞,ξ )[x1, x2]ξU†
+x2(ξ,∞). (3.9)
+– 5 –
+
+=== PAGE BREAK ===
+
+A diagrammatic depiction of Oξ(x1, x2) is given in Fig. 1, left panel. In Eq. (3.9),
+the transverse gauge link is built from the pure gauge transverse gluons Ai(x+, x) =
+− 1
+igΩx(x+)∂iΩ−1
+x (x+). It is possible to absorb the longitudinal Wilson lines into the trans-
+verse link with the following change of variables
+Ai(ξ, z)→ ˆAi(ξ, z)≡Uz(ξ,∞)Ai(ξ, z)U†
+z(ξ,∞) + 1
+ig (∂iUz)(∞,ξ )U†
+z(ξ,∞). (3.10)
+Note that the hatted ﬁeld is non-local in x+ and transforms similarly to the ﬁeld strength
+tensor under a gauge rotation, i.e.
+ˆA
+i
+(ξ, z)→ Ωz(∞) ˆA
+i
+(ξ, z)Ω−1
+z (∞). (3.11)
+We can actually trade the dependence on the gauge ﬁeld with that of the ﬁeld strength
+tensor with simple algebra:
+ˆAi(ξ, z) =
+∫ ∞
+ξ
+dtU z(∞,t )Fi−(t, z)U†
+z(t,∞) +Ai(∞, z). (3.12)
+The boundary term Ai(∞, z) can be absorbed into a transverse gauge link at t =∞.
+Making use of the Fierz Identity
+UtaU† = tbWba, (3.13)
+one can express Eq. (3.14) in terms of a single Wilson lineWba in the adjoint representation
+ˆAi(ξ, z) =
+∫ ∞
+ξ
+dt tbWba
+z (∞,t )Fa,i−(t, z) +Ai(∞, z). (3.14)
+For the sake of clarity, we will distinguish the gauge links which depend on the rotated
+ﬁeld from Eqs. (3.10) and (3.14) from the regular gauge links by hatting their coordinates.
+We have now established that
+Oξ(x1, x2) = [ˆx1, ˆx2]ξ, (3.15)
+which allows to understand the dipole operator as a transverse string built from the gluons
+in Eq. (3.14).
+We can rewrite this result in the form of the non-Abelian Stokes theorem ([23], see also [24]):
+the integral of Aµ over the square contourC on the left hand side of Fig. 1 is equal to the
+integral of the so-called twisted strength tensor UFµνU† inside the surface S deﬁned by
+this contour:
+S ={(t, z);t∈ [ξ,∞], z∈ [x1, x2]}.
+– 6 –
+
+=== PAGE BREAK ===
+
+ξ +∞
+x1
+x2
+ξ +∞
+z2
+tn
+z1
+t2
+t1
+zn
+C
+S
+→
+F i−(tn, zn)
+Figure 1. Non-Abelian Stokes theorem
+Indeed, the more explicit Eq. (3.15), with non-vanishing transverse ﬁelds at inﬁnite
+light cone time, is given by
+Peig
+∫∞
+ξ dtA−(t,x1)P−ig
+∫ x1
+x2 dz·A(ξ,z)Peig
+∫∞
+ξ dtA−(t,x2)Pe−ig
+∫ x2
+x1 dz·A(∞,z) (3.16)
+=P exp
+[
+−ig
+∫ x1
+x2
+dzi
+∫ ∞
+ξ
+dt [x1, z]∞ [∞,t ]zFi−(t, z)[t,∞]z[z, x1]∞
+]
+,
+which is a form of the Stokes equation
+P exp
+[∮
+C
+dxµAµ(x)
+]
+=P exp
+[∫
+S
+dσµνUFµνU†
+]
+, (3.17)
+where dσµν is the surface measure on S andU denotes a Wilson line connecting the point
+x∈S enclosed by the surface measure to an arbitrary base pointO onC, which in Eq. (3.16)
+is taken to be O≡ (∞, x1).
+4 Gauge invariant power expansion: local formulation
+In this section we shall use the formulation of the dipole operator established above in
+order to construct a power expansion of the dipole operator Eq. (3.15) that is explicitly
+gauge invariant order by order in powers of r = x2− x1.
+First, let us show the following expression for the non-singlet dipole (4.3):
+(O(b, b− r))ij =
+(
+e−r·(∂b−ig ˆA(b))
+)
+ij
+. (4.1)
+where ˆA(b) was previously introduced in Eq. (3.10). Similarly, one can show that
+O(b + r, b) = er·(← −∂b−ig ˆA(b)). (4.2)
+– 7 –
+
+=== PAGE BREAK ===
+
+Our starting point is Eq. (4.3) expressed in the variables r and b with ξ =−∞ (the
+generalization to arbitrary initial points is straightforward)
+O(b, b− r) = (U(∞,−∞)Ω(−∞))b
+(
+Ω−1(−∞)U†(−∞,∞)
+)
+b−r
+= (U(∞,−∞)Ω(−∞))b e−r·∂b
+(
+Ω−1(−∞)U†(−∞,∞)
+)
+b
+(4.3)
+where in the last line we have introduced the translation operator e −r·∂b. The transverse
+derivative can be turned into a covariant one by absorbing the gauge link into the transla-
+tion operator as follows (omitting the light-cone time dependence to alleviate the notations,
+i.e., Ω≡ Ω(−∞) and U≡U(∞,−∞)),
+∂bΩ−1U†φ(b) = Ω−1U†
+[
+∂b +UΩ
+(
+∂bΩ−1U†
+)]
+φ(b)
+= Ω−1U†
+[
+∂b +UΩ
+(
+∂bΩ−1)
+U† +U
+(
+∂bU†
+)]
+φ(b)
+= Ω−1U†
+(
+∂b−ig ˆA(b)
+)
+φ(b) (4.4)
+where φ(b) is a test function. By applying the above commutation relation it follows that
+UΩ (∂b)nΩ−1U†φ(b) =
+(
+∂b−ig ˆA(b)
+)n
+φ(b). (4.5)
+This amounts to replacing the derivative over b in the translation operator by the hatted
+transverse covariant derivative
+ˆDb≡ ∂b−ig ˆA(b), (4.6)
+that involves bothA− andAi ﬁelds, and leads to Eqs (4.1) and (4.2). These two equations
+can be used in order to perform a local expansion, thus an expansion in powers of small
+transverse momenta, with explicit gauge invariance of all operators at each step of the
+process. For this purpose, one can use the following identity which is a direct consequence
+of Eq (3.10) 2
+∂i
+b− ˆAi(t0, b) =Ub(+∞,t 0)Di(t0, b)U†
+b(t0, +∞). (4.7)
+Let us detail the steps for the second term of the local expansion of Eq (4.1). First, use
+the deﬁnition of the hatted ﬁeld on the right:
+O(2) (b, b− r) (4.8)
+= ri1ri0
+(
+∂b−ig ˆA (−∞, b)
+)i1(
+∂b−ig ˆA (−∞, b)
+)i0
+=−ig
+∫ +∞
+−∞
+dt0 ri1ri0
+(
+∂b−ig ˆA (−∞, b)
+)i1[
+Ub (∞,t 0)Fi0− (t0, b)U†
+b (t0,∞)
+]
+2Here the covariant derivativeDi
+bUb is to be understood as an operator acting on everything on its right,
+not to be mistaken for (DiU)b.
+– 8 –
+
+=== PAGE BREAK ===
+
+The trick is now to write the hatted ﬁeld on the left, which is evaluated at −∞ light cone
+time, as a function of the hatted ﬁeld at light cone time t0. Thus we need to use the
+following relation:
+ˆAi(−∞, b)≡ ˆAi(t0, b) +
+∫ t0
+−∞
+dtU (+∞,t )Fi−(t, b)U†(t, +∞), (4.9)
+which, when combined with Eq (4.7), leads to
+(
+∂b−ig ˆA (−∞, b)
+)i1
+(4.10)
+=∂i1
+b −ig ˆA
+i1
+(t0, b)−ig
+∫ t0
+−∞
+dt1Ub (∞,t 1)Fi1− (t1, b)U†
+b (t1,∞)
+=Ub (∞,t 0)Di1 (t0, b)U†
+b (t0,∞)−ig
+∫ t0
+−∞
+dt1Ub (∞,t 1)Fi1− (t1, b)U†
+b (t1,∞)
+We can then conclude with
+O2 =−ig ri1 ri0
+∫ +∞
+−∞
+dt0 [∞,t 0]bDi1 (t0, b)
+(
+Fi0− (t0, b) [t0,∞]b
+)
+(4.11)
+−g2 ri1 ri0
+∫ +∞
+−∞
+dt0
+∫ t0
+−∞
+dt1 [∞,t 1]bFi1− (t1, b) [t1,t 0]bFi0− (t0, b) [t0,∞]b.
+By recursion with similar steps, one can prove the general form of |r|n term:
+On = (−1)nrim...ri1ri0
+∑
+k0...km
+∫ ∞
+−∞
+dt0
+∫ t0
+−∞
+dt1...
+∫ tm−1
+−∞
+dtm (4.12)
+× U(+∞,tm) (r·D)kmFim−(tm)U†(tm,tm−1)...U†(t1,t 0) (r·D)k0Fi0−(t0)U†(t0, +∞)
+where the sum over k0...km is constrained by
+∑
+j=0
+kj =n−m (4.13)
+In simple words, the n-th term in the gauge invariant local expansion of the dipole oper-
+ator is the sum of all possible insertions of F tensors and covariant derivatives with the
+appropriate gauge links, such that the number of F ’s and the number of D’s sum up to n.
+As an illustration, the ﬁrst few orders read:
+Oi
+1 =−ri
+∫ +∞
+−∞
+dt [+∞,t ]Fi−(t)[t, +∞], (4.14)
+for the ﬁrst order
+Oij
+2 = rirj
+∫ +∞
+−∞
+dt1
+∫ t1
+−∞
+dt2 [+∞,t 2]Fi−[t2,t 1]Fj−[t1, +∞]
++
+∫ +∞
+−∞
+dt [+∞,t ]DjFi−(t) [t, +∞], (4.15)
+– 9 –
+
+=== PAGE BREAK ===
+
+for the second, and for the third we have
+Oijk
+3 =−rirjrk
+∫ +∞
+−∞
+dt1
+∫ t1
+−∞
+dt2
+∫ t2
+−∞
+dt3 [∞,t 3]Fi−[t3,t 2]Fj−[t3,t 2]Fk−[t1, +∞]
++
+∫ +∞
+−∞
+dt1
+∫ t1
+−∞
+dt2 [+∞,t 2]
+(
+DkFi−[t2,t 1]Fj− +Fi−[t2,t 1]DkFj−
+)
+[t1, +∞]
++
+∫ ∞
+−∞
+dt [+∞,t ]DjDkFi−(t) [t, +∞]. (4.16)
+The formulation of the dipole operator as a transverse QCD string can thus be used in
+order to perform the power expansion of a small x observable while keeping explicitely
+gauge invariant operators. This is a particularly diﬃcult task when using more standard
+forms of the small x observables, where the gluon ﬁeld strength tensor only appears via
+the derivative of Wilson lines thanks to the relation ∂iA− = Fi−. For example, see [11]
+where gauge invariance, while not broken, is not explicitely respected due to the presence
+of double derivatives of Wilson lines which lead to simple derivatives of ﬁelds. Here, we
+established a systematic framework to perform such expansions with explicit invariance.
+In the following section, we will reproduce and generalize the results of [20] which allow for
+another gauge invariant power expansion where the gauge invariant bilocal operators are
+left untouched while hard subamplitudes undergo a Taylor expansion instead.
+5 Application to the small- x/TMD equivalence for DIS dijet production
+x1
+x2
+x+ = ξ
+Ux1
+U †
+x2
+x+ = ∞
+Figure 2. The amplitude for DIS dijet production involves the non-singlet dipole from Eq. (4.3).
+Gray blobs represent the interactions with the classical external ﬁeld, which eﬀectively dresses the
+quark and the antiquark with Wilson lines to build the dipole operator.
+Starting from Eq. (3.15), one can apply successively both relations (3.4) and (3.6) in order
+to rewrite the dipole operator into 1-body and 2-body contributions:
+Oξ(x1, x2) = 1−ig
+∫ x1
+x2
+dzi ˆA
+i
+(ξ, z) (5.1)
++ (ig)2
+∫ x1
+x2
+dzi
+∫ z
+x2
+dz′j ˆA
+i
+(ξ, z)[ˆz, ˆz′]ξ ˆA
+j
+(ξ, z′)
+– 10 –
+
+=== PAGE BREAK ===
+
+Then, recalling the explicit expression for the rotated ﬁelds in terms of twisted stength
+tensors:
+Oξ(x1, x2) = 1 +ig
+∫ ∞
+ξ
+dt
+∫ x1
+x2
+dziUz(∞,t )F−i(t, z)U†
+z(∞,t ) (5.2)
++ (ig)2
+∫ ∞
+ξ
+dt
+∫ ∞
+ξ
+dt′
+∫ x1
+x2
+dzi
+∫ z
+x2
+dz′j
+×Uz(∞,t )F−i(t, z)U†
+z(∞,t )[ˆz, ˆz′]tUz′(∞,t′)F−j(t′, z′)U†
+z′(∞,t′).
+Using the expression for the hatted links
+[ˆz, ˆz′]ξ =Uz(∞,ξ )[z, z′]ξU†
+z′(∞,ξ ), (5.3)
+as well as
+U†
+z(∞,t )Uz(∞,ξ ) = [t,ξ ]z, (5.4)
+and its counterpart for [ξ,t′]z′, the dipole operators ends up entirely rewritten as the sum
+of 1-body and 2-body operators, in an explicitely gauge invariant way:
+Oξ(x1, x2) = 1 +ig
+∫ ∞
+ξ
+dt
+∫ x1
+x2
+dzi [∞,t ]zF−i(t, z)[t,∞]z (5.5)
++ (ig)2
+∫ ∞
+ξ
+dt
+∫ ∞
+ξ
+dt′
+∫ x1
+x2
+dzi
+∫ z
+x2
+dz′j
+× [∞,t ]zF−α(t, z)[t,ξ ]z[z, z′]ξ[ξ,t′]z′F−β(t′, z′)[t′,∞]z′.
+Eq. (5.5) is very close to the result of [20] for the speciﬁc case of the dipole operator. With
+the simple trick for any function F
+F (z) =
+∫ d2k1
+(2π)2
+∫
+d2b1e−ik1·(b1−z)F (b1), (5.6)
+introducing r≡ x1− x2 and with straightforward algebra, we can ﬁnally recover that
+result:
+Oξ(x1, x2) = 1−ig
+∫ ∞
+ξ
+dt
+∫ d2k
+(2π)2 ri
+(
+ei(k·x1)− ei(k·x2)
+i(k· r)
+)
+×
+∫
+d2ve−i(k·v)[∞,t ]vFi−(t, v)[t,∞]v
++ (ig)2
+∫ ∞
+ξ
+dt
+∫ ∞
+ξ
+dt′
+∫ d2k1
+(2π)2
+∫ d2k2
+(2π)2
+∫
+d2b1
+∫
+d2b2e−i(k1·b1)−i(k2·b2) (5.7)
+× rirj
+i(k2· r)
+(
+ei(k1+k2)·x1− ei(k1+k2)·x2
+i(k1 + k2)· r − ei(k2·x2) ei(k1·x1)− ei(k1·x2)
+i(k1· r)
+)
+× [∞,t ]b1F−i(t, b1) [t,ξ ]b1 [b1, b2]ξ [ξ,t′]b2F−j(t′, b2) [t′,∞]b2.
+The one-body and two-body amplitudes that appear in the above decomposition of
+the dipole operator are depicted in Fig. 3.
+– 11 –
+
+=== PAGE BREAK ===
+
+b2
+b1
++
+ξ +∞
+t
+ξ +∞
+t1
+t2
+b1
+Figure 3. Diagrammatic representation of the 1-body (left) and 2- body (right) amplitudes.
+This result can be used in order to rewrite any small x observable involving the dipole
+operator in terms of TMD distributions, as in [20]. Furthermore, the derivation presented
+above leads to an expression for said TMD distributions which involves explicitly the
+previously neglected transverse gauge links which are usually assumed to be subdominant
+in light cone gauge in the small x regime. Here, we found an explicitely gauge invariant
+expression for the operators.
+It is interesting to note that the derivation of Eq. (5.7) is straightforward once the dipole
+operator is fully rewritten as the transverse string operator [ ˆx1, ˆx2]ξ, while working in the
+usual framework makes it quite technical. This representation also allows for a simple
+understanding of the structures encountered in [20]
+ei(k·r)− 1
+i(k· r) , (5.8)
+as the Fourier transforms of identity along the contours which support the transverse
+strings. Namely,
+∫ x2
+x1
+dz eiz·k = r
+∫ 1
+0
+ds eisr·k. (5.9)
+Let us consider the leading genuine twist contribution to the dipole operator only
+Oξ(x1, x2) =−ig
+∫ ∞
+ξ
+dt
+∫ d2k
+(2π)2 ri
+(
+ei(k·x1)− ei(k·x2)
+i(k· r)
+)
+×
+∫
+d2v e−i(k·v)[∞,t ]vFi−(t, v)[t,∞]v (5.10)
+and convolute it with the generic form of a γ(∗)→q¯q hard part
+H(x1, x2) = (2π)δ(1−z− ¯z)e−i(pq·x1)−i(p¯q·x2)ϕ(r), (5.11)
+where we only used the constraints from longitudinal momentum conservation through the
+classical ﬁeld, and the Galilean boost invariance of the photon wave function. We can
+– 12 –
+
+=== PAGE BREAK ===
+
+easily obtain theT matrix for this process
+T =−gq+
+∫
+d2re−i(¯zpq−zp¯q)·rri
+(
+ei¯z(pq+p¯q)·r− e−iz(pq+p¯q)·r
+i(pq + p¯q)· r
+)
+ϕ(r)
+× [∞, 0]0Fi−(0)[0,∞]0, (5.12)
+which then leads to the following cross section:
+dσ
+dzd2pqd2p¯q
+=
+∫ d4v
+(2π)3δ(v−) e−i(pq+p¯q)·v
+⟨
+P
+⏐⏐⏐Fi−(v
+2)U[+]
+v
+2,−v
+2
+Fj−(−v
+2)U[+]
+−v
+2,v
+2
+⏐⏐⏐P
+⟩
+× αsq+
+8z¯zπs
+∫
+d2r d2r′e−i(¯zpq−zp¯q)·(r−r′)rir′jϕ(r)ϕ∗(r′) (5.13)
+×
+(
+ei¯z(pq+p¯q)·r− e−iz(pq+p¯q)·r
+(pq + p¯q)· r
+)(
+e−i¯z(pq+p¯q)·(r−r′)− eiz(pq+p¯q)·r′
+(pq + p¯q)· r′
+)
+.
+We clearly recognize the Weizs¨ acker-Williams TMD (1.1) from its gauge link structure,
+depicted in Fig. 4.
+x+
+x
+v/2
+−v/2
+∞
+Figure 4. Gauge link structure of the WW distribution
+This cross section gives the form of the cross section for observables like dijet production
+in DIS if it was computed with the so-called small- x Improved TMD techniques [25], thus
+generalizing the equivalence found in [19] and extended in [20]. Note that the present
+results also contain genuine higher twist contributions, i.e. the g2 terms in (5.7), which
+will not be displayed for the sake of readability. The reader is referred to [20] for more
+explicit genuine higher twist contributions, noting that the simple and explicitely gauge
+invariant method we established in the present work allows for non-zero transverse gauge
+links in those contributions.
+6 Extension to generic color structures
+Let us quickly extend the previous method for a more generic process: let us consider
+a particle in color representation R0 splitting into two particles in color representations
+R1 and R2 in the external classical ﬁeld. The involved Wilson line operator is then (see
+– 13 –
+
+=== PAGE BREAK ===
+
+e.g. [19]):
+O012
+ξ (x1, x2) = ΩR1
+x1 (∞)UR1
+x1 (∞,ξ )TR0UR2
+x2 (ξ,∞)ΩR2†
+x2 (∞) (6.1)
+− ΩR1
+b (∞)UR1
+b (∞,ξ )TR0UR2
+b (ξ,∞)ΩR2†
+b (∞).
+Here, b is the average position, weighted by longitudinal fractions z and ¯z: b =zx1 + ¯zx2.
+We implicitely used the following identity, for open color indices in representations R1 and
+in R2:
+TR0UR0
+b =UR1
+b TR0UR2
+b , (6.2)
+R0
+b + ¯zr
+b − zr
+R1
+R2
+U R1
+b+¯zr
+U R2
+b−zr
+R0
+b
+R1
+R2
+U R0
+b
+Figure 5 . Diagrams for the splitting of a particle in color representation R0 into particles in
+respective representations R1 and R2, leading to the operator from Eq. (6.1)
+As in the previous section, the transverse gauge links at inﬁnity allows to rewrite the
+operator with rotated Wilson lines:
+O012
+ξ (x1, x2)→UR1
+x1 (∞,ξ )ΩR1
+x1 (ξ)TR0ΩR2†
+x2 (ξ)UR2
+x2 (ξ,∞) (6.3)
+−UR1
+b (∞,ξ )ΩR1
+b (ξ)TR0ΩR2†
+b (ξ)UR2
+b (ξ,∞).
+Here and from now on until the end of this chapter, we will omit the time dependence in
+the intermediate equations for reader’s convenience. The trick is now to write
+ΩR1
+x1 TR0 ΩR2†
+x2 = ΩR1
+x1 ΩR1†
+b ΩR1
+b TR0 ΩR2†
+b ΩR2
+b ΩR2†
+x2 , (6.4)
+to interpret the ΩΩ† pairs as transverse gauge links formed from the gauge-enhanced gluon
+ﬁelds, see Eqs. (3.5):
+ΩR1
+x1 TR0 ΩR2†
+x2 = [x1, b]R1 ΩR1
+b TR0 ΩR2†
+b [b, x2]R2, (6.5)
+then to absorb the Wilson lines into rotated transverse links
+UR1
+x1 ΩR1
+x1TR0ΩR2†
+x2 UR2
+x2 = [ˆx1, ˆb]R1UR1
+b ΩR1
+b TR0 ΩR2†
+b UR2
+b [ˆb, ˆx2]R2. (6.6)
+– 14 –
+
+=== PAGE BREAK ===
+
+We can use Eqs. (3.4, 3.6) once for each hatted link:
+O012
+ξ (x1, x2) =−ig
+∫ x1
+b
+dzi ˆA
+iR 1
+(z)[ˆz, ˆb]UR1
+b ΩR1
+b TR0 ΩR2†
+b UR2
+b [ˆb, ˆx2]R2
+−ig
+∫ b
+x2
+dziUR1
+b ΩR1
+b TR0 ΩR2†
+b UR2
+b [ˆb, ˆz] ˆA
+iR 2
+(z), (6.7)
+or equivalently:
+O012
+ξ (x1, x2) =−ig
+∫ x1
+b
+dzi ˆA
+iR 1
+(z)UR1
+z ΩR1
+z TR0 ΩR2†
+z UR2
+z [ˆz, ˆx2]R2 (6.8)
+−ig
+∫ b
+x2
+dz′j[ˆb, ˆz′]R1UR1
+z′ ΩR1
+z′ TR0 ΩR2†
+z′ UR2
+z′ ˆA
+jR 2
+(z′).
+With similar tricks:
+O012
+ξ (x1, x2) =−ig
+∫ x1
+b
+dziAiR 1(z)UR1
+z ΩR1
+z TR0 ΩR2†
+z UR2
+z
+−ig
+∫ b
+x2
+dziUR1
+z ΩR1
+z TR0 ΩR2†
+z UR2
+z AiR 2(z) (6.9)
++ (ig)2
+∫ x1
+b
+dzi
+∫ z
+x2
+dz′jAiR 1(z)UR1
+z ΩR1
+z TR0 ΩR2†
+z [ˆz, ˆz′]R2UR2
+z′ AjR 2(z′)
++ (ig)2
+∫ b
+x2
+dz′j
+∫ b
+z′
+dziAiR 1(z)UR1
+z [ˆz, ˆz′]R1 ΩR1
+z′ TR0 ΩR2†
+z′ UR2
+z′ AjR 2(z′).
+With Ω∞ = 1, it is possible to replace ΩR1
+z (ξ) by [z, ∞]R1
+ξ and ΩR2†
+z′ (ξ) by [∞, z′]R2
+ξ . Then
+using the deﬁnition of the (rotated) transverse ﬁelds, and writing the time dependence
+explicitely again:
+O012
+ξ (x1, x2)
+=−ig
+∫ ∞
+ξ
+dt
+∫ x1
+b
+dziUR1
+z (∞,t )TR1
+a Fi−
+a (t, z)[t,ξ ]R1
+z [z, ∞]R1
+ξ TR0[∞, z]R2
+ξ UR2
+z (ξ,∞)
+−ig
+∫ ∞
+ξ
+dt
+∫ b
+x2
+dziUR1
+z (∞,ξ )[z, ∞]R1
+ξ TR0[∞, z]R2
+ξ [ξ,t ]R2
+z TR2
+a Fi−
+a (t, z)UR2
+z (t,∞)
++ (ig)2
+∫ ∞
+ξ
+dt
+∫ ∞
+ξ
+dt′
+[∫ x1
+b
+dzi
+∫ z
+x2
+dz′j +
+∫ b
+x2
+dz′j
+∫ b
+z′
+dzi
+]
+(6.10)
+×UR1
+z (∞,t )TR1
+a Fi−
+a (t, z)[t,ξ ]R1
+z [z, ∞]R1
+ξ TR0[∞, z′]R2
+ξ [ξ,t′]R2
+z′ TR2
+b Fj−
+b (t′, z′)UR2
+z′ (t′,∞).
+With the use of the trick given in Eq. (5.6), one recovers the results from [20], with explicit
+– 15 –
+
+=== PAGE BREAK ===
+
+transverse gauge links:
+O012
+ξ (x1, x2) (6.11)
+=−ig¯zri
+∫ ∞
+ξ
+dt
+∫ d2k
+(2π)2
+∫
+d2ve−ik·(v−x1) ei¯z(k·r)− 1
+i¯z(k· r)
+× [∞,t ]R1
+v TR1
+a Fi−
+a (t, v)[t,ξ ]R1
+v [v, ∞]R1
+ξ TR0[∞, v]R2
+ξ [ξ,∞]R2
+v
+−igzri
+∫ ∞
+ξ
+dt
+∫ d2k
+(2π)2
+∫
+d2v e−ik·(v−x2) eiz(k·r)− 1
+iz(k· r)
+× [∞,ξ ]R1
+v [v, ∞]R1
+ξ TR0[∞, v]R2
+ξ [ξ,t ]R2
+v TR2
+a Fi−
+a (t, v)[t,∞]R2
+v
++ (ig)2
+∫ ∞
+ξ
+dt
+∫ ∞
+ξ
+dt′
+∫ d2k1
+(2π)2
+∫ d2k2
+(2π)2
+∫
+d2b1
+∫
+d2b2 e−ik1·(b1−b)e−ik2·(b2−b)
+× rirj
+(k1 + k2)· r
+(
+e−i(k2·r)− 1
+(k2· r) ei¯z(k1+k2)·r + ei(k1·r)− 1
+(k1· r) e−iz(k1+k2)·r
+)
+× [∞,t ]R1
+b1TR1
+a Fi−
+a (t, b1)[t,ξ ]R1
+b1 [b1, ∞]R1
+ξ TR0[∞, b2]R2
+ξ [ξ,t′]R2
+b2TR2
+b Fj−
+b (t′, b2)[t′,∞]R2
+b2.
+7 Extension to 3-line operators
+The formulation of Wilson line operators in terms of transverse gauge links makes it very
+easy to extend the proof of equivalence to TMD distributions for observables with more
+than 2 Wilson lines involved. For example, let us consider the γ(∗)→ q¯qg amplitude. It
+involves operators with 2 Wilson lines, which can be treated as in previous sections, but it
+also contains a 3-line operator 3
+M3 =Ux1tbWba
+x3U†
+x2, (7.1)
+which in the fundamental representation reads as a 4-line one:
+M3 =Ux1U†
+x3taUx3U†
+x2. (7.2)
+Taking into account all 3 factors Ω(∞) and using the tricks from Section 3, this operator
+becomes
+M3 = [ˆx1, ˆx3]ξ ta [ˆx3, ˆx2]ξ. (7.3)
+Applying Eq. (5.1) for ξ =−∞ simultaneously on the left and on the right of the color
+matrix and using the explicit expressions for the rotated ﬁelds (3.14) allows to rewrite
+directlyU3 with 1-, 2-, 3- and 4-body contributions, reading respectively 4:
+M(1)
+3 =−ig
+∫
+dt
+∫ x1
+x3
+dzi[∞,t ]zFi−(t, z)[t,∞]ztb
+−ig
+∫
+dt
+∫ x3
+x2
+dzitb[∞,t ]zFi−(t, z)[t,∞]z, (7.4)
+3For simplicity, we use the standard smallx formulation where the Wilson lines are extended toξ =−∞:
+UR
+x = [∞,−∞]R
+x.
+4Note that there is a non-scattering contribution as well in the deﬁnition of the operator in Eq. (7.1),
+which we subtracted.
+– 16 –
+
+=== PAGE BREAK ===
+
+U(2)
+3 = (ig)2
+∫
+dt
+∫
+dt′
+∫ x1
+x3
+dzi
+∫ z
+x3
+dz′j
+× [∞,t ]zFi−(t, z) [t,ξ ]z[z, z′]ξ[ξ,t′]z′Fj−(t′, z′) [t′,∞]z′tb
++ (ig)2
+∫
+dt
+∫
+dt′
+∫ x1
+x3
+dzi
+∫ x3
+x2
+dz′j
+× [∞,t ]zFi−(t, z) [t,∞]z tb [∞,t′]z′Fj−(t′, z′) [t′,∞]z′
++ (ig)2
+∫
+dt
+∫
+dt′
+∫ x3
+x2
+dzi
+∫ z
+x2
+dz′j
+× tb [∞,t ]zFi−(t, z) [t,ξ ]z[z, z′]ξ[ξ,t′]z′Fj−(t′, z′) [t′,∞]z′, (7.5)
+U(3)
+3 =− (ig)3
+∫
+dt1
+∫
+dt2
+∫
+dt3
+∫ x1
+x3
+dzi
+∫ z
+x3
+dz′j
+∫ x3
+x2
+duk
+× [∞,t 1]zFi−(t1, z)[t1,ξ ]z[z, z′]ξ[ξ,t 2]z′Fj−(t2, z′)
+× [t2,∞]z′tb[∞,t 3]uFk−(t3, u)[t3,∞]u
+− (ig)3
+∫
+dt1
+∫
+dt2
+∫
+dt3
+∫ x1
+x3
+dzi
+∫ x3
+x2
+duj
+∫ u
+x2
+du′k (7.6)
+× [∞,t 1]zFi−(t1, z)[t1,∞]ztb[∞,t 2]uFj−(t2, u)
+× [t2,ξ ]u[u, u′]ξ[ξ,t 3]u′Fk−(t3, u′)[t3,∞]u′,
+and
+U(4)
+3 = (ig)4
+∫
+dt1
+∫
+dt2
+∫
+dt3
+∫
+dt4
+∫ x1
+x3
+dzi
+∫ z
+x3
+dz′j
+∫ x3
+x2
+duk
+∫ u
+x2
+du′l
+× [∞,t 1]zFi−(t1, z) [t1,ξ ]z[z, z′]ξ[ξ,t 2]z′Fj−(t2, z′) [t2,∞]z′ tb
+× [∞,t 3]uFk−(t3, u) [t3,ξ ]u[u, u′]ξ[ξ,t 4]u′Fl−(t4, u′) [t4,∞]u′ (7.7)
+Although the ﬁnal expressions are quite cumbersome, the method to derive them is straight-
+forward once the dipoles have been replaced by transverse strings. All it took was Eq. (5.1).
+8 Discussions
+We have provided a reinterpretation of operators built from Wilson lines as operators built
+from transverse strings. This observation allows for compact and systematic extensions of
+the exact small-x/TMD equivalence shown in [20]. It also allows for a systematic power
+expansion which preserves QCD gauge invariance at each step. We have given an example
+of extension beyond previously established results.
+Besides the fact that small x models can lead to interesting insight on TMD distributions
+at asymptotic energies, the inﬁnite-twist TMD form of small x amplitudes also changes
+our understanding of saturation eﬀects in the dilute-dense regime [20] by distinguishing
+between kinematic and genuine saturation eﬀects. In light of this new development, it
+would be interesting to revisit the non-linear terms in small x evolution in terms of TMD
+distributions. The ﬁrst step towards the understanding of these non-linearities is precisely
+– 17 –
+
+=== PAGE BREAK ===
+
+what we accomplished in our example from Section 7, by extracting the TMD operators
+from the 3-line operator which appears when one evolves a dipole.
+Another advantage of the TMD form of small x amplitudes is the opportunity it opens
+for the use of TMD evolution equations to resum logarithms of the hard scale as well as
+Sudakov logarithms. Thanks to the extension described in Section 7, it is now possible to
+adapt the full Next-to-Leading Logarithmic cross section for inclusive DIS [26, 27] in order
+to include these resummations.
+Acknowledgements
+This work is supported by the U.S. Department of Energy, Oﬃce of Science, Oﬃce of
+Nuclear Physics, under contract No. DE- SC0012704, and in part by Laboratory Directed
+Research and Development (LDRD) funds from Brookhaven Science Associates.
+References
+[1] L. D. McLerran, R. Venugopalan, Computing quark and gluon distribution functions for very
+large nuclei, Phys. Rev. D49 (1994) 2233–2241. arXiv:hep-ph/9309289,
+doi:10.1103/PhysRevD.49.2233.
+[2] L. D. McLerran, R. Venugopalan, Gluon distribution functions for very large nuclei at small
+transverse momentum, Phys. Rev. D49 (1994) 3352–3355. arXiv:hep-ph/9311205,
+doi:10.1103/PhysRevD.49.3352.
+[3] L. D. McLerran, R. Venugopalan, Green’s functions in the color ﬁeld of a large nucleus, Phys.
+Rev. D50 (1994) 2225–2233. arXiv:hep-ph/9402335, doi:10.1103/PhysRevD.50.2225.
+[4] I. Balitsky, Operator expansion for high-energy scattering, Nucl. Phys. B463 (1996) 99–160.
+arXiv:hep-ph/9509348, doi:10.1016/0550-3213(95)00638-9.
+[5] I. Balitsky, Factorization for high-energy scattering, Phys. Rev. Lett. 81 (1998) 2024–2027.
+arXiv:hep-ph/9807434, doi:10.1103/PhysRevLett.81.2024.
+[6] I. Balitsky, Factorization and high-energy eﬀective action, Phys. Rev. D60 (1999) 014020.
+arXiv:hep-ph/9812311, doi:10.1103/PhysRevD.60.014020.
+[7] F. Dominguez, C. Marquet, B.-W. Xiao, F. Yuan, Universality of Unintegrated Gluon
+Distributions at small x, Phys. Rev. D83 (2011) 105005. arXiv:1101.0715,
+doi:10.1103/PhysRevD.83.105005.
+[8] F. Dominguez, B.-W. Xiao, F. Yuan, kt-factorization for Hard Processes in Nuclei, Phys.
+Rev. Lett. 106 (2011) 022301. arXiv:1009.2141, doi:10.1103/PhysRevLett.106.022301.
+[9] A. Metz, J. Zhou, Distribution of linearly polarized gluons inside a large nucleus, Phys. Rev.
+D84 (2011) 051503. arXiv:1105.1991, doi:10.1103/PhysRevD.84.051503.
+[10] E. Akcakaya, A. Sch¨ afer, J. Zhou, Azimuthal asymmetries for quark pair production in pA
+collisions, Phys. Rev. D87 (5) (2013) 054010. arXiv:1208.4965,
+doi:10.1103/PhysRevD.87.054010.
+[11] A. Dumitru, V. Skokov, cos(4ϕ) azimuthal anisotropy in small-x DIS dijet production
+beyond the leading power TMD limit, Phys. Rev. D94 (1) (2016) 014030.
+arXiv:1605.02739, doi:10.1103/PhysRevD.94.014030.
+– 18 –
+
+=== PAGE BREAK ===
+
+[12] C. Marquet, E. Petreska, C. Roiesnel, Transverse-momentum-dependent gluon distributions
+from JIMWLK evolution, JHEP 10 (2016) 065. arXiv:1608.02577,
+doi:10.1007/JHEP10(2016)065.
+[13] D. Boer, P. J. Mulders, J. Zhou, Y.-j. Zhou, Suppression of maximal linear gluon
+polarization in angular asymmetries, JHEP 10 (2017) 196. arXiv:1702.08195,
+doi:10.1007/JHEP10(2017)196.
+[14] C. Marquet, C. Roiesnel, P. Taels, Linearly polarized small- x gluons in forward heavy-quark
+pair production, Phys. Rev. D97 (1) (2018) 014004. arXiv:1710.05698,
+doi:10.1103/PhysRevD.97.014004.
+[15] E. Petreska, TMD gluon distributions at small x in the CGC theory, Int. J. Mod. Phys.
+E27 (05) (2018) 1830003. arXiv:1804.04981, doi:10.1142/S0218301318300035.
+[16] T. Altinoluk, R. Boussarie, C. Marquet, P. Taels, TMD factorization for dijets + photon
+production from the dilute-dense CGC framework, JHEP 07 (2019) 079. arXiv:1810.11273,
+doi:10.1007/JHEP07(2019)079.
+[17] I. Balitsky, A. Tarasov, Rapidity evolution of gluon TMD from low to moderate x, JHEP 10
+(2015) 017. arXiv:1505.02151, doi:10.1007/JHEP10(2015)017.
+[18] I. Balitsky, G. A. Chirilli, Conformal invariance of transverse-momentum dependent parton
+distributions rapidity evolution, Phys. Rev. D100 (5) (2019) 051504. arXiv:1905.09144,
+doi:10.1103/PhysRevD.100.051504.
+[19] T. Altinoluk, R. Boussarie, P. Kotko, Interplay of the CGC and TMD frameworks to all
+orders in kinematic twist, JHEP 05 (2019) 156. arXiv:1901.01175,
+doi:10.1007/JHEP05(2019)156.
+[20] T. Altinoluk, R. Boussarie, Low x physics as an inﬁnite twist (G)TMD framework:
+unravelling the origins of saturation, JHEP 10 (2019) 208. arXiv:1902.07930,
+doi:10.1007/JHEP10(2019)208.
+[21] F. Gelis, E. Iancu, J. Jalilian-Marian, R. Venugopalan, The Color Glass Condensate, Ann.
+Rev. Nucl. Part. Sci. 60 (2010) 463–489. arXiv:1002.0333,
+doi:10.1146/annurev.nucl.010909.083629.
+[22] G. A. Chirilli, Y. V. Kovchegov, D. E. Wertepny, Regularization of the Light-Cone Gauge
+Gluon Propagator Singularities Using Sub-Gauge Conditions, JHEP 12 (2015) 138.
+arXiv:1508.07962, doi:10.1007/JHEP12(2015)138.
+[23] P. M. Fishbane, S. Gasiorowicz, P. Kaus, Stokes’ Theorems for Nonabelian Fields, Phys.
+Rev. D24 (1981) 2324. doi:10.1103/PhysRevD.24.2324.
+[24] U. A. Wiedemann, Transverse dynamics of hard partons in nuclear media and the QCD
+dipole, Nucl. Phys. B582 (2000) 409–450. arXiv:hep-ph/0003021,
+doi:10.1016/S0550-3213(00)00286-8.
+[25] P. Kotko, K. Kutak, C. Marquet, E. Petreska, S. Sapeta, A. van Hameren, Improved TMD
+factorization for forward dijet production in dilute-dense hadronic collisions, JHEP 09 (2015)
+106. arXiv:1503.03421, doi:10.1007/JHEP09(2015)106.
+[26] G. Beuf, Dipole factorization for DIS at NLO: Combining the q¯q and q¯qg contributions,
+Phys. Rev. D96 (7) (2017) 074033. arXiv:1708.06557, doi:10.1103/PhysRevD.96.074033.
+[27] H. H¨ anninen, T. Lappi, R. Paatelainen, One-loop corrections to light cone wave functions:
+– 19 –
+
+=== PAGE BREAK ===
+
+the dipole picture DIS cross section, Annals Phys. 393 (2018) 358–412. arXiv:1711.08207,
+doi:10.1016/j.aop.2018.04.015.
+– 20 –

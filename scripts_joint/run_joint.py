@@ -411,15 +411,21 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
 
 def build_loss_factories(config, region_arrays):
     masses = config["model"].get("daughter_masses")
+    scoring_rule = config.get("scoring_rule") or {}
     factories = {}
     for name in config["region_order"]:
         loss_config = _merge(config["loss"], config["regions"][name].get("loss", {}))
-        factories[name] = CmsJpsiDoubleMuonLossFactory(
+        factory = CmsJpsiDoubleMuonLossFactory(
             region_arrays[name]["x_train"],
             region_arrays[name]["z_train"],
             loss_config,
             daughter_masses=masses,
         )
+        # The conditional-spread term needs its scale floor; it is inert unless a
+        # stage declares kappa > 0. Set here rather than in the constructor so the
+        # loss factory's signature stays backward compatible.
+        factory.scoring_rule_config = dict(scoring_rule)
+        factories[name] = factory
     return factories
 
 

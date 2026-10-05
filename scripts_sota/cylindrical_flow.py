@@ -97,6 +97,7 @@ _SIGMA_FLOOR_SPEC_KEYS = frozenset(
         "power_pivot_gev",
         "linear_offset",
         "linear_slope",
+        "knee_pt_gev",
         "sigma_cap",
         "pt_max_gev",
         "phi_a",
@@ -185,6 +186,12 @@ def _validate_sigma_floor_spec(spec: dict) -> dict:
             if any(value < 0.0 for value in values):
                 raise ValueError(f"core_sigma_floor_spec.{key} must be non-negative")
             normalized[key] = values
+        knee = float(spec.get("knee_pt_gev", 0.0))
+        if not bool(np.isfinite(knee)) or knee < 0.0:
+            raise ValueError(
+                "core_sigma_floor_spec.knee_pt_gev must be finite and non-negative"
+            )
+        normalized["knee_pt_gev"] = knee
         normalized["mode"] = "linear"
     elif power_mode:
         if "power_c" not in spec or "power_alpha" not in spec:
@@ -348,7 +355,15 @@ class CylindricalFlowStep(nn.Module):
             elif mode == "linear":
                 offset = table("linear_offset", index)
                 slope = table("linear_slope", index)
-                sigma = scale * (offset + slope * pt)
+                # Optional knee: the per-muon log-pT resolution is pT-flat below
+                # knee_pt_gev (multiple-scattering floor) and rises linearly
+                # above it. Needed because a pure offset+slope law cannot
+                # satisfy J/psi (median muon pT 13.1 GeV), Z (41.0) and
+                # Upsilon (4.7) at once (I2, 2026-10-04).
+                knee = float(spec.get("knee_pt_gev", 0.0))
+                sigma = scale * (
+                    offset + slope * torch.clamp(pt - knee, min=0.0)
+                )
             else:
                 a = table("logpt_a", index)
                 b = table("logpt_b", index)

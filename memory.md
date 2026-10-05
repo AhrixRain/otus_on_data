@@ -175,6 +175,115 @@ Read: our encoder beats upstream by 3.4x but still does not invert the response.
   stochastic-encoder failure, which the "keep the encoder noise" decision keeps
   in play. Both need a noise-identifiability fix, not a stronger anchor.
 
+### 1.6 Update 2026-10-04 — where the project actually stands
+
+**The live programme is branch P of `docs/project_tree.md`** ("conditional spread /
+scoring-rule programme", phases P0–P4, approved 2026-10-04). Read that section
+before proposing any new experiment.
+
+- **artifact-measured.** The strictly proper scoring rule on the conditional
+  (`Run_H_SR`) is **refuted by its own pre-declared criteria**: 4 of 5 fail, and
+  the OOD peak shift triples against its baseline (`Run_H_D3b`). See
+  `outputs/cms_Joint/Run_H_SR/VERDICT.md` and Session 72.
+- **artifact-measured (new, Session 73).** The missing control cell was measured:
+  `Run_H_A2floor` is a kernel floor with a learned amplitude and **no** score
+  term, and its zero-noise mean-map spread runs 29.1 -> 32.8 -> 33.0 -> 15.1 MeV
+  (g20 -> g180). Contraction of the mean map happens **with or without** the
+  score, so Session 72's "the score actively prefers a narrower map" is
+  downgraded to a hypothesis. What survives unchanged: the score carries no
+  upward gradient (pinned at 91.5 from epoch 1) and every live arm is
+  **kernel-limited** (kernel-only 34–45 MeV against 28.0 MeV of data).
+- **Five mechanisms are refuted** for the same failure (learned amplitude, cycle
+  noise, beta x 5, z-cycle, proper scoring rule). The open object is not the
+  loss: it is the **mean map** and the **kernel's calibration target**.
+- **Nothing is training.** GPU free, no background jobs. Tests green at 545 OK
+  (4 skipped) before Session 74's additions.
+- **P2 and P4 are DONE (Session 74).** The criterion exists
+  (`scripts_joint/conditional_spread.py` + the ppzee paired bench) and the
+  calibration target is pinned (`docs/calibration_target_2026-10-04.md`). Two
+  corrections came out of it and supersede the Session 71-73 wording:
+  **84 MeV is the Upsilon(1S) reference, not a J/psi number** (our own fit gives
+  84.42 +/- 3.12 MeV), and the Phase 1 score term is now known to have been
+  **clamped in all 8 coordinates** (claimed/reference 0.014-0.031 against a 0.1
+  floor), so it never had an amplitude gradient — Session 72's "the score drove
+  the amplitude down" is withdrawn.
+- **The live blocker is the kernel amplitude.** Adopted target J/psi
+  23.81 MeV (std quadrature); the kernel as shipped implies 33.97 MeV = **1.43x**.
+  The mean-map variance budget is negative under every reading, so P3 (mean-map
+  architecture) cannot work until the kernel comes down. **Next: a kernel rescale
+  is the first authorised-looking run — but it needs explicit approval.**
+
+### 1.7 Update 2026-10-04 (Session 75) — decision documents rewritten to the latest state
+
+- **source-verified (this session):** the decision-document set was consolidated
+  at the user's request. `docs/project_tree.md` is now **v2**: every inline
+  update/correction from Sessions 29-74 is folded into the final state, branch P
+  is closed with its final verdicts, a benchmark board (section 6.0) fixes the
+  reference numbers all claims are scored against, and a new branch **I**
+  records six innovation candidates (I1 alternating-freeze identification, I2
+  two-resonance joint kernel calibration, I3 the formal non-identifiability
+  proposition, I4 paired-sim amplitude transfer, I5 component-aware latent for
+  the honest J/psi, I6 Upsilon width pT/eta audit) — **all labelled proposal,
+  none authorised**. `paper/FRAMING.md` is v2: final RQ1-RQ3 answers, claim
+  ladder with item 5 withdrawn, updated PRD assessment, milestones M1 closed /
+  M2-M4 live. `docs/calibration_target_2026-10-04.md` was re-laid out with
+  **no number changed**. `docs/literature_2026-10-04.md` gained section 4.1
+  recording that its recommendation 1 (a proper scoring rule) was implemented
+  and refuted the same day. This file's history is untouched (append-only
+  convention).
+- **proposal:** the live next step is unchanged by the rewrite: **S2** (kernel
+  rescale by 0.701 to the adopted P4 target, one controlled change on the D3b
+  config, ~5 h GPU) **needs explicit approval**. Cheap read-only parallel items:
+  S2c (Crystal Ball + exponential J/psi peak fit, decides E vs A) and I2 (joint
+  two-region kernel fit predicting the Upsilon amplitude).
+- No training started, no checkpoint or artifact modified. The P-branch
+  working-tree changes (scripts, configs, outputs) remain uncommitted.
+
+### 1.8 Update 2026-10-04 (Session 75-76) — decision docs consolidated, I2 refuted the global kernel rescale, the knee kernel is training
+
+- **source-verified (Session 75).** `docs/project_tree.md` is v2 (all inline
+  corrections folded in, benchmark board section 6.0, branch I candidates);
+  `paper/FRAMING.md` is v2; `docs/calibration_target_2026-10-04.md` re-laid out
+  with no number changed; `docs/literature_2026-10-04.md` gained section 4.1
+  recording that its recommendation 1 was refuted the same day.
+- **artifact-measured (I2, read-only).** `scripts_joint/kernel_joint_calibration.py`
+  → `outputs/cms_Joint/kernel_joint_calibration/`. Median muon pT J/psi 13.14,
+  Z 40.96, Upsilon(1S) 4.67 GeV; required per-muon log-pT amplitudes J/psi
+  0.01371, Upsilon 0.01262, Z 0.03936 (flat between 4.7 and 13.1 GeV). **A single
+  `offset + slope*pT` law cannot satisfy the three regions**: solved exactly on
+  J/psi + Z (robust denominators 30.02 MeV / 2.538 GeV) it predicts Upsilon(1S)
+  **0.367x**. **S2 as written (global factor 0.701) is refuted before any GPU
+  time** — it would drive Z to 0.58x and Upsilon to 0.60x. **Disclosure:** the
+  shipped kernel's Upsilon 0.86 is not a prediction — `upsilon1s: 0.084` is one
+  of its three fit targets.
+- **source-verified (the knee kernel).** `cylindrical_flow.py` gained an optional
+  `knee_pt_gev` on the linear form (plateau = multiple-scattering floor, linear
+  rise above); `tests/test_kernel_knee.py` (5, green). Fit by
+  `scripts_joint/kernel_knee_fit.py` → `outputs/cms_Joint/kernel_knee_fit/`
+  (+ `selected_knee20/`). At knee 20 GeV: J/psi 1.021x, Z 1.007x, and
+  **Upsilon 1S/2S/3S predicted at 0.959/1.021/1.078x**. Adopted knee 20 GeV (the
+  plateau middle, NOT the grid argmax 24; 16/24 are the systematic band).
+- **artifact-measured (I6).** `scripts_joint/upsilon_map_spread_audit.py` →
+  `outputs/cms_Joint/upsilon_map_spread/`. The D3b Upsilon zero-noise "214 MeV"
+  is a **pair-pT extrapolation artefact**: residual std 27.5 MeV at pair-pT
+  0.03-1.34 GeV rising to **372.7 MeV** in the top sextile (7.4-160 GeV), with the
+  bias flipping from +88.7 to -163.9 MeV. 2S/3S identical. The Upsilon width fix
+  is therefore a **pT-resolved** mean-map constraint.
+- **artifact-measured (S2c, inconclusive).** `outputs/cms_Joint/s2c_peak_fit/`:
+  the Crystal Ball + exponential fit on the locked split has chi2/dof 1233 with
+  the tail parameters railed, so its widths are not usable. **The calibration
+  target remains a decision (E adopted), not an empirical settlement.**
+- **source-verified (I3).** `docs/non_identifiability_2026-10-04.md`: re-mixing
+  invariance proves every marginal-only objective is exactly invariant under
+  `(M, p_eps) -> (M∘T, p_eps∘T)`, `T#sigma = sigma`, so the split is not
+  identified without pairs, a constrained mean map, a supplied kernel, or an
+  injectivity condition.
+- **RUNNING.** `Run_H_kneeKernel` launched 2026-10-04 20:04 (`configs_joint/
+  cms_Joint_runH_kneeKernel.yaml`, extends D3b, kernel spec the only change;
+  dry-run + smoke green, preflights removed). 180 epochs, 30,960 updates, 830,536
+  parameters, ~3.2 GiB. Pre-declared readout and kill condition in the config
+  header. **This is the only thing running.**
+
 ## 2. Established findings that still matter
 
 1. **The J/psi success depended on the pre-smeared prior.** artifact-measured A/B: smeared arm 34/35 gate passes, narrow arm 0/35; only the prior file differed. The identity map passes every strict J/psi latent target on the smeared prior.
@@ -587,6 +696,7 @@ Not trained.
 - Key outputs: `outputs/cms_Joint/Run_E/`, `outputs/cms_Joint/AB_narrow_split/`, `outputs/cms_Joint/ppzee/`, `outputs/cms_Joint/unifiedP1/`.
 - Run H tail audit: `scripts_joint/runH_tail_audit.py` -> `outputs/cms_Joint/Run_H/tail_audit/{tail_audit.json,REPORT.md,peak_shift_vs_tail.png}`; diagnosis + fix proposal in `DIAGNOSIS_AND_FIX.md` there.
 - Drift control: `scripts_joint/joint_anchor.py`; guard `run_joint.assert_mean_map_anchor_contract`; arms `configs_joint/cms_Joint_runH_anchor.yaml`, `configs_joint/cms_Joint_runH_fix.yaml`; tests `tests/test_joint_anchor.py`.
+- P branch, conditional spread / scoring rule (added 2026-10-04; decision tree is `docs/project_tree.md` section 5 "P"): instruments `scripts_joint/scoring_rules.py` (Gaussian log score only; three rejected rules documented in the docstring), `scripts_joint/toy_identifiability.py`, `scripts_joint/toy_unpaired_score.py` (the unpaired-target extension with its `--kappa 0` control and `--mean-head unbounded`), `scripts_joint/single_observation_limits.py`, `scripts_joint/conditional_spread.py` (the unpaired criterion: split, claim vs both denominators, coverage with a finite-draw null, permutation control, identity rail), `scripts_joint/paired_quantile_calibration.py` (the paired ppzee bench: PIT, coverage, pull, each against a same-n/same-D null), `scripts_joint/marginal_vs_scoring_rule.py` (`--shuffle-target`), `scripts_joint/d3b_readout_probe.py` (`--checkpoint LABEL=RELATIVE_PATH`, zero/native decomposition, ~7 s/checkpoint on CUDA), `scripts_joint/plot_joint_paperstyle.py --noise native|zero|both`, `scripts_joint/plot_upsilon_arm_comparison.py`, `scripts_joint/upsilon_noise_channel_test.py`; wiring `scripts/loss.py::DualSpaceFeatureOTLoss.energy_score_loss`, `joint_trainer` `kappa` + `scoring_rule.{draws,score_batch}`, `run_joint.build_loss_factories` (`scoring_rule_config`); config `configs_joint/cms_Joint_runH_scoringRule.yaml` (extends `cms_Joint_runH_D3b.yaml`); artifacts `outputs/cms_Joint/{toy_identifiability,single_observation_limits,toy_unpaired_score,toy_unpaired_score_kappa0,toy_unpaired_score_unbounded,conditional_spread,Run_H_SR,Run_H_D3b,d3b_readout_probe}`, `Run_H_A2floor/final_readout/`, `ppzee/quantile_calibration/`, `conditional_spread/score_anatomy.json`; documents `docs/calibration_target_2026-10-04.md` (P4, adopted target), `docs/literature_2026-10-04.md`, `litreview/unfolding_identifiability_review_2026-10-03.md`; tests `tests/test_scoring_rules.py` (19), `tests/test_energy_score_term.py` (10), `tests/test_conditional_spread.py` (26), `tests/test_paired_quantile_calibration.py` (44).
 - Tests: `python -m unittest discover -s tests` (use unittest, not pytest).
 
 ## 6. Session log (condensed, post-Run E)
@@ -2389,3 +2499,517 @@ python scripts_joint/run_joint.py --run H_fix    --run-name Run_H_fix_smoke     
   `outputs/cms_Joint/Run_H/tail_audit/DIAGNOSIS_AND_FIX.md` section 5; the
   decisive one is that turning the noise off must shrink the decoded width
   (`sqrt(sigma_native^2 - sigma_noise0^2) >= 50 MeV`, today ~15 MeV).
+
+### 2026-10-04 - Sessions 67-70, D3b: noise-from-the-start works; the residual is the kernel
+
+**artifact-measured (new run).** `Run_H_D3b` (`configs_joint/cms_Joint_runH_D3b.yaml`,
+`python scripts_joint/run_joint.py --run H_D3b --device cuda`) finished the full
+20/80/80 schedule, 180/180 epochs, exit 0, Upsilon never opened. Preflight (dry-run
++ smoke) re-run after the config edit and green, then cleaned with
+`clean_preflight.py --apply`. Stage selection scores 4.337 / 4.551 / 3.886; selected
+checkpoint = global epoch 180 (stage-3 last). Final evaluation at decoder 1.0/0.25,
+encoder 0/0.
+
+**artifact-measured (the mechanism check passed).** Zero-noise decoded J/psi mass
+spread is 17.6-19.3 MeV at every scored checkpoint (prior std 14.93, CMS x std 28.03,
+robust prior width 0.65 MeV), i.e. 0.63-0.69x the data width and 1.18-1.29x the prior.
+The A2frozen/D3zcycle stage-1 construction (29.2 MeV = 1.04x data) does **not** appear.
+Measured with `scripts_joint/d3b_readout_probe.py --device cuda`; payload
+`outputs/cms_Joint/d3b_readout_probe/d3b_final/d3b_readout.json`, write-up
+`outputs/cms_Joint/d3b_readout_probe/REPORT.md` (with the pre-D3b baseline table).
+
+**artifact-measured (J/psi z->x at the native operating point).** decoded mass std
+46.7 -> 38.8 MeV (1.66x -> 1.39x data); `width_rel_error` 0.753 -> 0.152;
+`width_rel_error_vs_identity` 1.5996 -> 0.322; direct mass KS 0.1134 -> 0.0725;
+W1 0.0135 -> 0.0071 GeV. Native selection score 6.047 -> 3.963 (rescore:
+zero 5.258, native 3.963).
+
+**artifact-measured (A0.4 scorecard, `outputs/cms_Joint/scorecard/Run_H_D3b/`).** All
+eight checkpoints are `identified`, **including stage-1** (within/required 1.05-1.12)
+where A2frozen's stage-1 is rejected as degenerate. Axis C native slice median/max
+18.6-23.4 / 33.6-51.4 against gates 3/10 (A2frozen 44.6 / 65.4). Axis C still fails.
+
+**artifact-measured (Upsilon transfer, continuum-reweighted prior, 1M events).**
+Inclusive mass KS 0.0375, W1 0.0372 GeV, mean +29 MeV. Per state at native: 1S/2S/3S
+median-CMS **+39.8 / +27.9 / +30.9 MeV** (A2frozen stage-3 best: +21.6/+2.9/+6.3) and
+std 236 / 278 / 290 MeV (first signal state); the added width over the prior is
+209-221 MeV and is state-independent, as is the +15.5 MeV mean bias. Per-stage medians
+(stage-1 / stage-2 / stage-3 best): +39/+21/+20, +63/+44/+45, +39/+26/+30 - the
+position bias is already in **stage-1**. Artifacts:
+`outputs/cms_Joint/Run_H_D3b/upsilon_transfer_continuumReweighted_best_model/`,
+`upsilon_peak_medians_native/`, `upsilon_peak_medians_stages/`,
+`upsilon_arm_comparison/`, plus 18 paperstyle plots under `quantitative_z_to_x/`.
+
+**artifact-measured (zero vs native noise, same events; Upsilon).** Zero-noise 1S std
+214 MeV vs native 235; medians +65.5 vs +39.5. The channel **centres** the peak and
+widens it slightly; the width is already in the mean map at zero noise (214 vs prior
+110). Same test on A2frozen: 280 -> 296, medians +18.2 -> +20.5. Driver
+`scripts_joint/upsilon_noise_channel_test.py`; artifacts `upsilon_noise_test_d3b/`,
+`upsilon_noise_test_a2frozen/`.
+
+**artifact-measured (paperstyle, both noise conditions).**
+`plot_joint_paperstyle.py` gained `--noise native|zero|both` (default native, old
+behaviour); D3b produced 44 plots at
+`outputs/cms_Joint/Run_H_D3b/paperstyle_best_model/{native,zero}/{jpsi,z}/`. At native
+the J/psi x-space mass ratios sit at 1 (W2 2.4e-7 data cycle, 1.2e-6 decoded prior);
+at zero noise the Z peak overshoots the data (ratio ~1.2, W2 0.926/0.815 vs native
+0.429/0.332), which is the visual form of "zero-noise closure is not defensible".
+
+**artifact-measured (gauge / negative-control study).** New read-only
+`scripts_joint/marginal_vs_scoring_rule.py`: D3b best_model decoded at zero and native
+noise, scored against the locked CMS x sample with mass W1, mass KS, an energy distance
+and a Gaussian-kernel score. **All four gauges move together** (J/psi KS 0.232 -> 0.075,
+energy distance +0.00358 -> +0.00108; Z 0.070 -> 0.048, +0.101 -> +0.080), so the naive
+contrast is confounded. The clean control is the **shuffled** decode (same values,
+z -> x assignment permuted): every gauge reproduces bit-for-bit (J/psi KS 0.23198,
+energy distance +0.00358; Z 0.06998, +0.10057). **Consequence: no marginal gauge can
+measure the map, because a permutation leaves it exactly invariant.** Payload
+`outputs/cms_Joint/d3b_readout_probe/identity_vs_conditional{,_shuffle}/`.
+
+**source-verified (literature).** Four parallel deep reads of the arXiv literature are
+consolidated in `docs/literature_2026-10-04.md`: (i) our "learned sigma collapses"
+failure is published in the paired setting and traced to mean-predicting losses
+(arXiv:2006.06685), with the same paper measuring "too narrow" posteriors after the fix;
+(ii) identifiability of the split is **not** stated anywhere, but arXiv:2603.20903 gives
+uniqueness **iff** an injectivity condition on the marginal forward map, which fails for
+a non-injective (smearing/collapsed) kernel - so even the truth-level marginal is not
+identified; (iii) the cleanest demonstration that marginal matching leaves the noise
+width free is arXiv:2411.02495 (unpaired coupling = OT coupling; posterior width set by
+the SDE noise scale, verified over four orders of magnitude); (iv) **no** paper does an
+unpaired, real-data, zero-shot transfer to an excluded resonance with a position/width
+decomposition - our result appears new; (v) primary-source CMS numbers: Y(1S) resolution
+96 +/- 2 MeV (all eta) and 69 +/- 2 MeV (|eta| < 1), J/psi ~1% (~31 MeV), line shape
+Crystal Ball + FSR tail, response tracker-dominated below pT 200 GeV - our 84 MeV is the
+acceptance-weighted interpolation and should be reported as such, while our 235-300 MeV
+is 2.4-3.6x every primary-source value.
+
+**correction (citation hygiene).** `docs/project_tree.md` cites arXiv:1803.01718/1803.01720
+as unfolding reviews; both are unrelated mathematics papers. Use Blobel hep-ex/0208022,
+Kuusela & Panaretos 1401.8274, Volobouev 1408.6500, Stanley-Patil-Kuusela 2111.01091.
+The scoring-rule review also corrects three ids used in earlier notes (Pacchiardi & Dutta
+is 2205.15784; Gneiting & Katzfuss has no arXiv version; Wang-Blei-Cunningham is NeurIPS
+2021 proceedings only).
+
+**proposal (next, one controlled variable).** The residual 1.39x is now attributable to
+the kernel, not the map: at the D3b best checkpoint the two quadrature terms are 17.6 MeV
+(mean map) and ~34 MeV (kernel) against 28.0 MeV of data, and the kernel's own calibration
+already records `achieved/target` 1.21 for J/psi. Before rescaling it, pin the calibration
+target (28.1 MeV std vs ~24 MeV quadrature requirement vs 84 MeV fitted peak width - the
+three differ by 1.2-2.5x). **[CORRECTED 2026-10-04: the 84 MeV number is the Upsilon(1S)
+reference, not a J/psi number - no artifact uses it for J/psi. The J/psi readings are 28.06
+(data std), 23.81 (std quadrature) and 30.02 (robust quadrature). See Session 74 and
+`docs/calibration_target_2026-10-04.md`.]** Two untried, literature-backed mechanisms: a strictly proper
+scoring rule on the conditional (arXiv:2205.15784), and an architectural constraint that
+stops the mean map carrying width. Not started; no training authorisation.
+
+### 2026-10-04 - Session 71, Phase 0 of the scoring-rule programme: what is identifiable
+
+**approval.** The user approved the plan (an experiment design + paper outline, folded
+into `docs/literature_2026-10-04.md` is the evidence base). Phase 0 is a CPU-only toy
+study; no training authorisation was given for Phase 1.
+
+**source-verified + artifact-measured (the instrument was wrong three times before it was
+right).** `scripts_joint/scoring_rules.py` now ships exactly one rule, the Gaussian log
+score `(x - mu)^2 / (2 sigma^2) + log sigma` (lower is better, strictly proper, minimised
+at `mu -> x` and `sigma -> |x - mu|`). Rejected after measurement:
+- a **Gauss-kernel score** with plug-in bandwidth is a *similarity*, not a divergence: a
+  too-narrow model (c = 0.2) scored 0.216 against 0.286 for the correct model, and a
+  shuffled target scored 0.097, i.e. its minimum is reached by *disagreeing* with the data;
+- the **energy score** `E|X~ - x| - (1/2)E|X~ - X~'|` has the right minimum over a scale
+  family (0.567 at c = sigma vs 0.699/0.657 either side) but returns **exactly 0.0 when the
+  draws are identical** - better than the correct value - so minimising it drives
+  `sigma -> 0`. Any rule whose within-model term collapses with the spread has this trap;
+- the energy score's "second independent observation" variant has its minimum at
+  `c = sigma/sqrt(2)`, an underdispersion bias.
+
+**artifact-measured (the identifiability limit, `scripts_joint/single_observation_limits.py`,
+`outputs/cms_Joint/single_observation_limits/`).** With ONE observation per event and a mean
+map able to hit that observation, the argmin over `sigma_hat` is 0.01 for **all three**
+rules - log score, CRPS and energy score - because `mu = x` leaves only `log sigma`. With a
+correctly specified mean the same rules recover the truth exactly (argmin 1.0). **Repeated
+observations do not rescue it** (2 obs/event with a flexible mean still gives argmin 0.01);
+only a correctly specified or structurally constrained mean does. Consequence: the
+degeneracy is in the **mean map**, not in the loss, and no scoring rule can fix it.
+
+**artifact-measured (1-D toy with planted ground truth,
+`scripts_joint/toy_identifiability.py`, `outputs/cms_Joint/toy_identifiability/`, 5 seeds,
+4000 steps).** Recovered spread as the median ratio `k_hat/k_true` over the central domain:
+| arm | median ratio | in band [0.75, 1.25] |
+|---|---|---|
+| flexible mean + marginal/reconstruction loss (the objective we train with) | **0.314 +- 0.000** | **0/5** |
+| flexible mean + log score | **1.033 +- 0.020** | **5/5** |
+| fixed mean + log score | 1.002 +- 0.011 | 5/5 |
+So the marginal objective alone under-spreads by 3x on a problem where the truth is known,
+and the log score recovers it even with a flexible mean map - because that toy network is far
+too small to interpolate 512 events. The real model has 830k parameters against 3.0M/4.2M
+training events, and the degenerate regime is a question of capacity versus event count.
+
+**source-verified (wiring, all opt-in).** `scripts/loss.py` gained
+`DualSpaceFeatureOTLoss.energy_score_loss` (log score over the decoded conditional of a
+batch subset, per-event moments from the draws); `joint_trainer.train_joint_epoch` gained
+`kappa` (per stage, mirroring `zeta`), `scoring_rule.{draws,score_batch}` config keys, the
+draws decoded from the same `z` slice as the realised `x`, and component registration only
+when `kappa > 0` so every earlier config keeps a byte-identical history row. Tests:
+`tests/test_scoring_rules.py` (19) and `tests/test_energy_score_term.py` (10), including a
+regression pin for the removed kernel score and a pin for the interpolating-mean limit.
+Full suite **478 tests, OK (4 skipped)**.
+
+**proposal (Phase 1, needs authorisation).** Add `kappa > 0` to the D3b configuration as the
+single controlled change, with an explicit monitor on the learned `core_sigma`/`tail_sigma`:
+the stage-1 checkpoint at g20 (about 25 minutes) decides whether the log score drives the
+amplitude up (proceed) or down (the degenerate regime; stop). The frozen physics kernel is
+what makes the mean map structurally unable to absorb the width, so it stays on. No run
+started.
+
+### 2026-10-04 - Session 72, Phase 1 run and readout: the log score is refuted
+
+**artifact-measured (`Run_H_SR`, 180/180 epochs, exit 0, 4.6 h, 92.4 s/epoch = 1.25x D3b).**
+Config `configs_joint/cms_Joint_runH_scoringRule.yaml`. Full write-up:
+`outputs/cms_Joint/Run_H_SR/VERDICT.md`. Versus D3b the arm changed two coupled things as
+one intervention - the decoder amplitude was **unfrozen** (`freeze_noise_amplitude: false`,
+so the kernel becomes a floor) and the strictly proper **Gaussian log score** was added at
+`kappa = 0.004` on a 2048-event subset with 2 decodes per event. Edit (1) was forced: the
+first preflight kept the freeze, and inspecting that probe showed `freeze_noise_amplitude:
+true` **discards the learned scale parameters** (byte-identical to D3b), so the score term
+would have had no amplitude to act on.
+
+**artifact-measured (pre-declared readout; four of five criteria fail).**
+| criterion | target | measured | verdict |
+|---|---|---|---|
+| zero-noise mean-map spread | <= 20 MeV | 11.7 MeV | pass |
+| native J/psi `width_rel_error` | <= 0.15 | 0.3849 (D3b 0.3818) | **fail** |
+| native `width_rel_error_vs_identity` | <= 0.5 | 0.8169 (D3b 0.8105) | **fail** |
+| Axis C native slice median | <= 12 | 31.0 (D3b 23.4) | **fail** |
+| calibration: the score must move toward the measured spread | - | **pinned at 91.5 from epoch 1 to 180** | **fail** |
+
+A log score of 91.5 implies an effective per-coordinate scale of `sqrt(0.5/91.5) = 0.074`
+against the relative floor of 0.1: **the term sits on its floor and carries no gradient
+toward the spread** while the model loss fell 4.97 -> 1.55.
+
+**artifact-measured (mechanism).** Decoder core sigma (median over real kinematics) fell
+0.0025 (D3b stage-1) -> 0.0010 (SR best), tail 0.00081 -> 0.00016. The kernel evaluates to
+~0.008 on J/psi kinematics, so `sigma = max(learned, kernel)` leaves the **effective**
+amplitude equal to the kernel and the learned path inert - which is why the physics readout
+is identical to D3b to two digits. The score drove the amplitude **down**; the kernel is the
+only reason the physics held. The zero-noise mean-map spread fell monotonically
+17.3 -> 11.7 MeV, i.e. *below* the prior width of 14.8 MeV (over-contraction, by the mean
+map). This is the Phase 0 degeneracy in the real model: a 2048-event batch out of 2.9M
+J/psi events is interpolable by an 830k-parameter mean map, so `mu = x` leaves only
+`log sigma` and every proper rule is minimised at `sigma -> 0`.
+
+**conclusion.** The Phase 1 hypothesis is **refuted by its own pre-declared criteria**: a
+strictly proper score of the conditional does not make the detector resolution learnable in
+this model on real unpaired data. The failure is the structural degeneracy between the mean
+map and the channel, not the loss or its weight, and no choice of `kappa` can fix it because
+the gradient points to collapse. Two positive by-products: this is the first non-frozen arm
+in eleven where the amplitude did not vanish to the floor during training, and it confirms
+the frozen kernel is load-bearing.
+
+**artifact-measured (OOD, report-only; Upsilon transfer, continuum-reweighted prior, native
+multipliers).** Per-state medians minus the CMS fit 1S/2S/3S: **+122 / +103 / +111 MeV**
+against D3b's +40 / +28 / +31 and A2frozen stage-3's +20.5 / +4.1 / +6.0. Inclusive mass KS
+0.0752 (D3b 0.0375), W1 0.0683 GeV (D3b 0.0372), decoded 1S std 0.4329 GeV (D3b 0.2357),
+inclusive mean minus data +66 MeV (D3b +29). The drift is the same state-independent mass
+shift the project has been chasing, now ~3x larger. So the arm is worse than its baseline on
+three of five pre-declared criteria plus the OOD readout. Artifacts:
+`Run_H_SR/upsilon_transfer_continuumReweighted_best_model/`, `upsilon_peak_medians_native/`.
+
+**mechanism (why the drift is in that direction).** With the kernel already saturating the
+data width, the mean map's spread is a *residual* that the log score penalises as error, so
+contracting the mean map lowers the score while the kernel holds the marginal width. The
+score therefore actively prefers a narrower mean map: measured zero-noise spread 29.2 MeV
+(D3b channel-off stage-1) -> 11.7 MeV here, and the OOD peak shifts grow. Identifiability and
+decorrelation are the same failure. **This qualifies the Phase 0 existence proof**: the toy's
+mean map was learned from scratch with no kernel, so a small map could not interpolate and
+the spread was identified; under a kernel floor, even a constrained mean map may still be
+pushed to contract because the residual the score penalises is the spread it wants. That must
+be tested on the toy (CPU) before any further GPU arm.
+
+**source-verified (side fix).** `scripts/loss.py` now imports `scoring_rules` from
+`scripts_joint`, which was not on `sys.path` for `scripts_joint/upsilon/evaluate_z_to_x.py`;
+the module adds it defensively. The first Upsilon evaluation of `Run_H_SR` failed with
+`ModuleNotFoundError` until that was fixed.
+
+**proposal (only lever left, needs authorisation).** Constrain the mean map so it cannot
+carry the spread - cap its capacity or its per-coordinate residual scale - keep the score
+term, and first extend the Phase 0 toy to include a kernel floor to check that the lever works
+there. Re-run the same pre-declared readout only if the toy recovers the spread.
+
+### 2026-10-04 - Session 73, the P0-P4 programme is recorded, and the control cell that was missing
+
+**source-verified (the plan is now durable).** The experiment design approved on
+2026-10-04 (phases **P0-P4**, criteria S1-S5, exit conditions) existed only in the planning
+conversation. It is now written into `docs/project_tree.md`: branch **P** in the section-4
+tree, a full leaf section 5 "P", rows 12-16 of the section-6 ordering table, and gate
+**G-P**. Three similar numbering systems are now explicitly disambiguated in that file's
+header: `P-A`/`P-B` (section 3 factorization), `P1`-`P6` (Session 59 blockers), and
+**P0-P4** (the programme phases). Also recorded there: the name collision between the D3
+*acceptance* leaf, `Run_H_D3zcycle` and `Run_H_D3b`.
+
+**artifact-measured (new; the missing control cell, `outputs/cms_Joint/Run_H_A2floor/final_readout/`,
+`scripts_joint/d3b_readout_probe.py`, 7 s per checkpoint on CUDA).** `Run_H_A2floor` is a
+kernel floor with a learned amplitude and **no** score term - exactly `Run_H_SR`'s amplitude
+configuration minus the instrument. Zero-noise mean-map spread: **29.1 -> 32.8 -> 33.0 ->
+15.1 MeV** (stage-1 g20 -> stage-2 g40 -> stage-3 g140 -> last g180), `kernel_only`
+38.6-45.1 MeV once the channel is on. End-of-training comparison, same locked split and
+probe:
+
+| arm | amplitude | score | zero-noise map spread [MeV] |
+|---|---|---|---|
+| A2frozen | frozen to kernel | no | 19.1 |
+| A2floor | learned, kernel floor | no | 15.1 |
+| D3b | frozen to kernel | no | 17.6 |
+| SR | learned, kernel floor | yes | **11.7** |
+
+**Consequence - Session 72 is qualified, not withdrawn.** Contraction of the mean map
+happens **with or without** the score (A2floor wanders up to 33.0 MeV and ends at 15.1 with
+no score at all), so the Session 72 statement that "the score actively prefers a narrower
+mean map" is **downgraded from a measured mechanism to a hypothesis**: the direction is
+consistent and SR ends narrowest, but the sole-cause attribution is not measured. What
+survives unchanged: the score's own value is floor-pinned from epoch 1 to 180 and therefore
+carries no upward gradient, and every live arm is **kernel-limited** (kernel_only 34-45 MeV
+against 28.0 MeV of data). The refutation of the P1 hypothesis does not depend on the
+downgraded sentence.
+
+**The P0-P4 impact, stated as what each phase can still deliver.** This is the answer to
+"P0-P4 有什么影响" in the log's own terms:
+
+- **P0 - partially invalidated, still usable.** S1's positive half passed (log score
+  1.033 +/- 0.020, 5/5 seeds) and its **negative half failed as declared** (the marginal
+  objective collapsed to 0.314, 0/5 seeds below the declared 0.20). Two plan deviations are
+  recorded: the shipped rule is the Gaussian **log** score, not the energy/kernel score the
+  plan named (both were measured and rejected first), and the toy has **no kernel floor**,
+  which is precisely the production condition. So P0's existence proof is conditional, and
+  P0 must be extended with a kernel floor before it justifies any GPU arm.
+- **P1 - done and refuted.** S2 pass (11.7 MeV), S3 fail x3, S4 **not measurable** until P2
+  exists, S5 report-only and it fails badly (+122 MeV vs the declared +/-30). Cost 1.25x
+  D3b, inside the declared <=2x budget. The executed arm also changed two coupled variables
+  instead of the declared single `kappa`; the confound is covered by A2floor (above), which
+  fails too.
+- **P2 - untouched by the refutation and now the highest-value item.** It is the paper's
+  claim 1 (a conditional-spread criterion with identity/floor references and a permutation
+  control) and the only instrument that can measure S4. CPU, read-only, not started.
+- **P3 - trigger not met, and the failure inverted.** Its declared trigger was a mean-map
+  residual > 25 MeV; the measured residual is 11.7 MeV and the map now **over-contracts**
+  (0.79x the prior std, 0.42x the CMS width). A cap on the map's spread is aimed the wrong
+  way, so P3 must be redesigned (a scheduled floor on the map's spread, or a weak width
+  penalty at the prior width) and only after the toy gains a kernel floor. Not authorised,
+  not started.
+- **P4 - unchanged, and now more blocking.** Three inconsistent J/psi targets (28.1 / ~24 /
+  84 MeV) still have to be resolved before any kernel rescale, and the kernel is what sets
+  the width in every live arm. Writing only, so it is the cheapest unblocking step.
+  **[CORRECTED 2026-10-04: 84 MeV is not a J/psi number. The J/psi readings are 28.06
+  (data std), 23.81 (std quadrature, adopted) and 30.02 (robust quadrature); 84 MeV is the
+  Upsilon(1S) reference (our own fit, 84.42 +/- 3.12 MeV). See Session 74.]**
+
+**Paper consequence.** The plan's claim-ladder item 5 ("a proper scoring rule makes the
+conditional spread learnable without pairs") - the item that would have made this a PRD
+paper - is **withdrawn as a claim and kept as a measured negative result**. Items 1-4 and 6
+are untouched, so the paper falls back to MLST / JINST / EPJC / Comput. Softw. Big Sci
+unless P2 or P4 produces a positive physics result. The productive inversion: the plan
+assumed the missing object was a *loss*; the programme proved it is the **mean map** plus
+the **kernel's calibration target**, with five refuted mechanisms behind that statement.
+
+**Still stale, not touched here (proposal).** `docs/project_tree.md` sections 1 and 3 and
+`paper/FRAMING.md` still carry pre-D3b framing: FRAMING's RQ1 row says "D3 (running)" for an
+arm that has since been read out and refuted, and its Upsilon expectation still cites 84 MeV
+where the primary sources give 96 +/- 2 MeV (all eta) and 69 +/- 2 MeV (|eta| < 1). Fixing
+those is the P4 work item.
+
+### 2026-10-04 - Session 74, P2 and P4 delivered, and the Phase 1 refutation re-attributed
+
+**The three items the user asked for, in order: P2 (both halves), P4, and the P0 toy
+extension with a kernel floor.** All three are done, and two of them changed conclusions
+recorded in Sessions 71-73.
+
+**source-verified (P2, unpaired half).** `scripts_joint/conditional_spread.py`
+(`tests/test_conditional_spread.py`, 26 tests). Five legs: the exact split; the claimed
+per-event scale against the data-driven requirement under **both** denominators; 68%/95%
+coverage of the cycle residual with a same-n/same-D finite-draw null; a permutation control
+on the **explained variance**; the identity rail and the no-information floor. Two design
+corrections were forced by measurement: the coverage must be centred on **zero**, not on the
+empirical median (recentring lets a biased mean map look calibrated), and the control leg
+must be the explained-variance separation, not a coverage difference (coverage saturates and
+has too little power when the mean-map spread is small against the channel noise).
+
+**artifact-measured (P2 unpaired, 8 checkpoints, J/psi, 6000 events, 48 draws, 16 s,
+`outputs/cms_Joint/conditional_spread/arms_2026-10-04/`).** The two deterministic stage-1
+warmups (A2frozen, A2floor) claim **exactly zero** per-event spread: coverage 0.000, claim /
+required 0.00, pairing sensitivity 1.16 -- rejected. Every stochastic checkpoint is
+*coherent* (coverage 0.65-0.81 against a 0.66-0.68 finite-draw null; pairing sensitivity
+0.22-0.79 against a 0.10 floor) but **off-band on the adopted std requirement**: A2frozen
+stage-3 1.51, A2floor stage-2 1.70, A2floor last 1.47, SR 1.44, D3zcycle 1.40, D3b 1.30.
+Against the **robust** denominator the same arms read 1.00-1.31. So the width failure is a
+failure of the claim's **size**, and the verdict is denominator-dependent -- P4's point,
+measured by an independent instrument.
+
+**artifact-measured (P2 paired half, ppzee, all 160,000 held-out pairs, 32 encoder draws;
+`scripts_joint/paired_quantile_calibration.py`, 44 tests,
+`outputs/cms_Joint/ppzee/quantile_calibration/`).** 68% coverage **0.0565** [0.0554, 0.0577]
+against a finite-draw null of **0.6387**; 95% coverage 0.1034 against 0.8988; pull width
+**20.40** against a null of 1.0499; PIT max deviation 692 binomial sd (chi2 p = 0), strongly
+U-shaped. The posterior mean is unbiased (residual rms 2.6065 vs the canonical 2.6100 GeV) --
+**the encoder is centred and far too narrow** (median inferred width 0.137 GeV). The shuffled
+control moves the truths 13.2 GeV rms and makes the reading *worse*, not better.
+
+**artifact-measured (method result worth carrying).** The PIT/rank statistic is exactly
+uniform under calibration for any continuous conditional, so it needs no finite-draw
+correction; central-interval coverage and the pull width do. At D = 32 a perfectly calibrated
+conditional reads 0.6387 at nominal 0.68 and 0.8988 at 0.95, and the pull reference is
+`sqrt(1+1/D)*sqrt((D-1)/(D-3)) = 1.0499`, not 1.0. Both scripts now evaluate against a
+same-n/same-D calibrated null; the unpaired one uses a t-based null (0.648 at D = 8, 0.674 at
+D = 32, 0.678 at D = 512).
+
+**source-verified + artifact-measured (P4, `docs/calibration_target_2026-10-04.md`).**
+Adopted, explicitly changeable: **the per-region data-driven quadrature requirement, std
+estimator -- J/psi 23.81 MeV (= sqrt(28.0605^2 - 14.8408^2), 0.01088 in log-pT), Z
+2.884 GeV**, with the robust reading (30.02 MeV, the one the A0.4 R gate already uses), the
+kernel's own fitting target (28.1) and the primary source (~31 MeV, arXiv:2502.14036) as
+systematics. **Correction to Sessions 71-73: 84 MeV is NOT a J/psi number.** No artifact uses
+it for J/psi; it is the **Upsilon(1S)** reference, and it is our own fit: 84.42 +/- 3.12 MeV
+from the three-Gaussian fit to CMS Open Data record 5206
+(`experiments/cms_upsilon/figures/cms_upsilon_fit_results.csv`), with 88.24 +/- 3.05 MeV for
+the 8.5-11.5 GeV range -- a 4.5% analysis systematic on the reference itself. **Upsilon has no
+quadrature target at all** (the region prior's std is 110.29 MeV against 84.42, so the
+variance is negative); keep 84.4 primary with 96 +/- 2 / 69 +/- 2 as the acceptance systematic.
+The kernel as shipped implies **33.97 MeV** at J/psi (independently 34.1 in the D3b probe,
+35.4 in SR) = **1.43x the adopted target**; the rescale factor is 0.701 (E) / 0.827 (A) /
+0.884 (F), a 1.26x span, so no rescale should run before the choice. D3b's 38.9 MeV native
+width is 1.63x required under E, and its within/required 0.95-1.12 against F becomes
+1.23-1.42 against E, i.e. **2 of its 4 stochastic checkpoints leave the [0.8, 1.25] R band:
+the identification verdict is target-dependent and every identification number must be quoted
+with its denominator.** Finally, the mean-map variance budget `target^2 - kernel^2` is
+**negative under all three readings** (-587 / -364 / -253 MeV^2): **P3 is blocked on the
+kernel rescale, not on architecture.**
+
+**artifact-measured (the P0 extension, `scripts_joint/toy_unpaired_score.py`,
+`outputs/cms_Joint/toy_unpaired_score*/`, 5 seeds, 4000 steps).** The item above was "add a
+kernel floor to the toy and check that a constrained mean map plus the score lifts the
+spread". It does not, and the reason is more interesting than the question:
+
+| arm | k_hat/k_true | in band | mean-map spread ratio | scale z-dependence |
+|---|---|---|---|---|
+| paired target, no kernel (the Phase 0 control) | 1.101 +/- 0.044 | 5/5 | 0.94 | 0.611 (= truth) |
+| **unpaired target, no floor** | 1.399 +/- 0.040 | **0/5** | **0.052** | **0.097** |
+| unpaired target + the shipped relative floor | 1.341 +/- 0.055 | **0/5** | **0.011** | 0.090 |
+| unpaired target + kernel floor | 1.024 +/- 0.122 | 5/5 | 0.907 | 0.614 |
+| unpaired target + kernel floor + linear mean | 1.036 +/- 0.143 | 4/5 | 0.672 | 0.618 |
+| **kappa = 0 control (marginal objective only)** | **1.022** | **5/5** | 1.063 | 0.614 |
+
+1. **An unpaired target destroys the conditional structure**: the mean map is pulled onto the
+   marginal mean (0.052 of its true spread) and the scale loses its z-dependence (0.097 vs
+   0.611). The shipped relative floor makes it worse (0.011).
+2. **The kernel floor stops the collapse but does not make the score work**: the kappa = 0
+   control -- no score at all -- recovers the spread just as well (1.022 vs 1.024) on this
+   planted problem, so the kernel arm's apparent success is the marginal objective's doing.
+3. **The P3 lever fails on the toy too** (linear mean + score: 4/5, mean map still 0.672).
+   Caveats recorded: the kappa = 0 control used the bounded mean head only, and the toy's
+   marginal arm succeeds partly because that head cannot carry the whole marginal spread (an
+   unbounded head reproduces the same ordering: unpaired 1.290 / mean-map 0.090, kernel arm
+   1.003 / 0.844).
+
+**artifact-measured (why the Phase 1 score sat at 91.5 -- the instrument defect, now measured
+rather than hypothesised; `outputs/cms_Joint/conditional_spread/score_anatomy.json`).** The
+trainer scores `x[:n]` against draws at `z[:n]` where **x and z are independently sampled
+batches** (`joint_trainer.py`: `x = _sample_batch(x_train)`, `z = _sample_batch(z_train)`), so
+the term is the *marginal* score, not the paired conditional score the toy validated. And the
+per-coordinate anatomy at D3b/SR: the draws' spread is **0.0144-0.0306 of the reference std in
+all eight coordinates** against a 0.1 relative floor -- the floor is 3-7x larger than the claim
+everywhere, so `max(claimed, 0.1*ref)` clamped the term in every coordinate. The measured
+value (99-101 on real kinematics; 91.5 during training) is entirely the clamped term, and its
+gradient with respect to the amplitude was **exactly zero**. Without the floor the same term
+reads 3,264 (D3b) / 3,464 (SR). Cause: the physics kernel is calibrated in log-pT (~0.8% of
+pT), so its absolute smearing is 1.5-3% of the cartesian reference stds.
+
+**conclusion, and a correction to Session 72.** The P1 hypothesis is **refuted as
+implemented**: an unpaired target plus a floor that clamped every coordinate. Session 72's
+statement that "the score drove the amplitude down" is **withdrawn** -- the score had no
+amplitude gradient at all, and the pre-existing `x_reco` term (F1) drove the amplitude down.
+What survives with a mechanism: the term degenerated into a pure "pull the mean map onto an
+unpaired target" loss whose optimum is the marginal mean, which is the measured contraction
+29.2 -> 11.7 MeV. The toy's clean statement, which is the paper's claim: **a strictly proper
+score of a conditional identifies the spread only against a paired target; with an unpaired
+target it is actively harmful, collapsing the mean map and removing the scale's dependence on
+the condition.** The paired bench (ppzee) is the only place in this project where that target
+exists, and there the posterior is far too narrow (coverage 0.0565 vs 0.6387).
+
+**proposal (next, needs authorisation).** The live blocker is the **kernel amplitude**, not
+the mean map: adopt P4's target, rescale the kernel by 0.701 (one controlled change, one
+config, the physics kernel's `scale`), and re-run the same pre-declared readout. Expected if
+the analysis is right: decoded J/psi native width 38.9 -> ~27 MeV and the four D3b stochastic
+checkpoints back inside the R band. Do not spend a GPU arm on P3 until that is measured.
+Cheap parallel items: (a) a fitted J/psi peak sigma on the locked split (Crystal Ball +
+exponential, as CMS does) to decide A vs E empirically -- read-only; (b) an Upsilon region
+prior restricted to its signal component so an Upsilon quadrature target becomes definable.
+
+### 2026-10-04 - Session 75, decision documents consolidated to the latest state (read-only)
+
+**source-verified (documents).** At the user's request the decision-document set
+was rewritten to reflect the post-Session-74 state, with no training, no
+checkpoint changes and no `outputs/` modification:
+
+- `docs/project_tree.md` **v2** — all inline updates/corrections folded into
+  final statements; branch P closed (P0 done + extended, P1 refuted with the two
+  measured instrument defects, P2 done = claim 1, P3 blocked on P4, P4 done);
+  new section 6.0 "benchmark board" (identity/floor references, Axis R band
+  0.8-1.25, calibration targets, Axis C gates 3/10, ppzee oracle 0.8099,
+  coverage/pull nulls, G-D criteria, PRD bar); new branch **I** with six
+  innovation candidates (I1-I6, all proposal-labelled, none authorised); the
+  retired/parked table updated.
+- `paper/FRAMING.md` **v2** — final RQ answers (RQ1 negative with workaround,
+  RQ2 split, RQ3 negative), claim ladder item 5 withdrawn, PRD assessment
+  unchanged in its verdict (not PRD; needs M2 + M3), I3 added as the theory
+  spine.
+- `docs/calibration_target_2026-10-04.md` — re-laid out, **no number changed**;
+  S2c cross-linked as the empirical settler of E vs A.
+- `docs/literature_2026-10-04.md` — section 4.1 addendum records that
+  recommendation 1 (proper scoring rule) was implemented and refuted the same
+  day; the recommendation itself is marked closed.
+- This file: section 1.7 added; history untouched (append-only).
+
+**proposal (unchanged by the rewrite, needs authorisation).** S2 kernel rescale
+(0.701, D3b config, pre-declared readout) remains the live next run; S2c and I2
+are the cheap read-only parallel items. The P-branch working-tree changes are
+still uncommitted; per section 1.1 they should be committed before any new run.
+
+### 2026-10-04 - Session 76, read-only items executed and the knee-kernel run launched
+
+**What the user asked for, and what was delivered.** Execute the four read-only
+items (S2c, I2, I6, Upsilon target), the I3 write-up, then start the training
+run. All done; the run is in flight.
+
+**artifact-measured (I2).** See section 1.8. The decisive number is the
+two-parameter solve on J/psi + Z predicting Upsilon(1S) at 0.367x, which refutes
+S2 as written and produced the knee law instead.
+
+**source-verified + artifact-measured (the knee kernel).** `knee_pt_gev` added
+to the linear kernel form with 5 focused tests; the fit script sweeps the knee
+grid and solves the two remaining parameters exactly per knee. Adopted knee
+20 GeV by physical argument (plateau middle), not by the score argmax — the score
+keeps improving to 24 only because it is chasing the Upsilon reference, which
+would be calibration on the held-out region. The config header records the whole
+scan and the disclosure.
+
+**artifact-measured (I6).** The Upsilon zero-noise width is pT-stratified:
+27.5 MeV locally at low pair-pT against 372.7 MeV in the top sextile, bias
+flipping sign near 4 GeV. This is the actionable form of the old "the map carries
+214 MeV" statement and it is what P3's redesign should target.
+
+**artifact-measured (S2c, inconclusive and recorded as such).** The Crystal Ball
+fit fails to describe the data (chi2/dof 1233, tails railed); no usable number.
+E stays adopted by decision. A proper fit (wider window, psi(2S), FSR tail,
+bin-width scan) remains open.
+
+**source-verified (I3).** The re-mixing proposition is written to
+`docs/non_identifiability_2026-10-04.md` with a proof sketch, the measured
+instances (shuffled decode bit-for-bit invariance; the toy's 0.052 collapse), and
+the boundary table of what restores identification.
+
+**RUNNING (needs monitoring, no further authorisation assumed).**
+`Run_H_kneeKernel`: `python scripts_joint/run_joint.py --run H_kneeKernel
+--device cuda`, background job id `pwsh-408`, log `logs/Run_H_kneeKernel.log`,
+outputs `outputs/cms_Joint/Run_H_kneeKernel/`. Launched 20:04, ~100 s/epoch,
+ETA ~5 h. Stage-1 train loss 4.41 -> 3.40 over the first four logged epochs.
+**Next session: read `history.json` and run the pre-declared readout; do not
+start a second GPU job while it runs.**
+

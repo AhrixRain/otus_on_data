@@ -1,0 +1,1000 @@
+MIT-CTP 5155
+OmniFold: A Method to Simultaneously Unfold All Observables
+Anders Andreassen,1, 2, 3,∗ Patrick T. Komiske,4,† Eric M. Metodiev, 4,‡ Benjamin Nachman,2,§ and Jesse Thaler 4,¶
+1Department of Physics, University of California, Berkeley, CA 94720, USA
+2Physics Division, Lawrence Berkeley National Laboratory, Berkeley, CA 94720, USA
+3Google, Mountain View, CA 94043, USA
+4Center for Theoretical Physics, Massachusetts Institute of Technology, Cambridge, MA 02139, USA
+Collider data must be corrected for detector eﬀects (“unfolded”) to be compared with many
+theoretical calculations and measurements from other experiments. Unfolding is traditionally done
+for individual, binned observables without including all information relevant for characterizing the
+detector response. We introduce OmniFold, an unfolding method that iteratively reweights a
+simulated dataset, using machine learning to capitalize on all available information. Our approach
+is unbinned, works for arbitrarily high-dimensional data, and naturally incorporates information
+from the full phase space. We illustrate this technique on a realistic jet substructure example
+from the Large Hadron Collider and compare it to standard binned unfolding methods. This new
+paradigm enables the simultaneous measurement of all observables, including those not yet invented
+at the time of the analysis.
+Measuring properties of particle collisions is a central
+goal of particle physics experiments, such as those at the
+Large Hadron Collider (LHC). After correcting for detec-
+tor eﬀects, distributions of collider observables at “truth
+level” can be compared with semi-inclusive theoretical
+predictions as well as with measurements from other ex-
+periments. These comparisons are widely used to en-
+hance our understanding of the Standard Model, tune
+parameters of Monte Carlo event generators, and enable
+precision searches for new physics. “Unfolding” is the
+process of obtaining these truth distributions (particle-
+level) from measured information recorded by a detector
+(detector-level). The unfolding process ensures that mea-
+surements are independent of the speciﬁc experimental
+context, allowing for comparisons across diﬀerent exper-
+iments and usage with the latest theoretical tools, 1 even
+long after the original analysis is completed. Many un-
+folding methods have been proposed and are currently
+used by experiments. See Refs. [1–4] for reviews and
+Refs. [5–7] for the most widely-used unfolding algorithms.
+Current unfolding methods face three key challenges.
+First, all of the widely-used methods require the mea-
+sured observables to be binned into histograms. This
+binning must be determined ahead of time and is of-
+ten chosen manually. Second, because the measurements
+are binned, one can only unfold a small number of ob-
+servables simultaneously. Multi-diﬀerential cross section
+measurements beyond two or three dimensions are simply
+not feasible. Finally, unfolding corrections for detector
+eﬀects often do not take into account all possible aux-
+iliary features that control the detector response. Even
+though the inputs to the unfolding can be calibrated, if
+the detector response depends on features that are not
+used directly in the unfolding, then the results will be
+1 For fully exclusive theoretical predictions, one could alternatively
+forward fold to compare to experimental data.
+suboptimal and potentially biased.
+This letter introduces OmniFold, a new approach
+that solves all three of these unfolding challenges.
+Detector-level quantities are iteratively unfolded, using
+machine learning to handle phase space of any dimension-
+ality without requiring binning. Utilizing the full phase
+space information mitigates the problem of auxiliary fea-
+tures controlling the detector response. There have been
+previous proposals to use machine learning methods for
+unfolding [8–10] as well as proposals to perform unfolding
+without binning [9–12]. These proposals, however, are
+untenable in high dimensions and do not reduce to stan-
+dard methods in the binned case. OmniFold naturally
+processes high-dimensional features, in the spirit of pre-
+vious machine-learning-based reweighting strategies [13–
+18], and it reduces to well-established methods [5] in the
+binned case. We also introduce simpler versions of the
+procedure, using single or multiple observables, named
+UniFold and MultiFold, respectively.2
+All unfolding methods require a trustable detector
+simulation to estimate the detector response. In the
+binned formulation, the folding equation can be written
+as m = R t, where m and t are vectors of the measured
+detector-level and true particle-level histograms, respec-
+tively. R is the “response matrix”:
+Rij = Pr(measure i| truth is j). (1)
+In general, R is not invertible, so the unfolding problem
+has no unique solution, and methods attempt to achieve
+a useful solution in various ways. One of the most widely-
+used methods is Iterative Bayesian Unfolding (IBU) [5],
+also known as Richardson-Lucy deconvolution [20, 21].
+Given a measured spectrum mi = Pr(measure i) and a
+2 The name OmniFold is taken from Emily Dickinson’s poem The
+Mountain Sat Upon the Plain [19].
+arXiv:1911.09107v2  [hep-ph]  16 Apr 2020
+
+=== PAGE BREAK ===
+
+2
+prior spectrum t(0)
+j = Pr0(truth is j), IBU proceeds iter-
+atively according to the equation:
+t(n)
+j =
+∑
+i
+Prn−1(truth is j| measure i) Pr(measurei)
+=
+∑
+i
+Rijt(n−1)
+j
+∑
+kRikt(n−1)
+k
+×mi, (2)
+where n is the iteration number.
+OmniFold uses machine learning to generalize Eq. (2)
+to the unbinned, full phase space. A key concept for this
+approach is the likelihood ratio:
+L[(w,X ), (w′,X′)](x) = p(w,X )(x)
+p(w′,X ′)(x), (3)
+where p(w,X ) is the probability density of x estimated
+from empirical weights w and samples X. The function
+L[(w,X ), (w′,X′)](x) can be approximated using a clas-
+siﬁer trained to distinguish ( w,X ) from (w′,X′). This
+property has been successfully exploited using neural net-
+works for full phase-space Monte Carlo reweighting and
+parameter estimation [18, 22–26]. Here, we use neural
+network classiﬁers to iteratively reweight the particle-
+and detector-level Monte Carlo weights, resulting in an
+unfolding procedure.
+The OmniFold technique is illustrated in Fig. 1. In-
+tuitively, synthetic detector-level events (“simulation”)
+are reweighted to match experimental data (“data”), and
+then the reweighted synthetic events, now evaluated at
+particle-level (“generation”), are further reweighted to
+estimate the true particle-level information (“truth”).
+The starting point is a synthetic Monte Carlo dataset
+composed of pairs (t,m ), where each particle-level event
+t is pushed through the detector simulation to obtain a
+detector-level event m. Particle-level events have initial
+weightsν0(t), and when t is pushed to m, these become
+detector-level weights νpush
+0 (m) = ν0(t). OmniFold it-
+erates the following steps:
+1. ωn(m) =νpush
+n−1 (m)L[(1, Data), (νpush
+n−1, Sim.)](m),
+2. νn(t) =νn−1(t)L[(ωpull
+n , Gen.), (νn−1, Gen.)](t).
+The ﬁrst step yields new detector-level weights ωn(m),
+which are pulled back to particle-level weights ωpull
+n (t) =
+ωn(m) using the same synthetic pairs ( t,m ). Note that
+νpush and ωpull are not, strictly speaking, functions be-
+cause of the multi-valued nature of the detector simula-
+tion. The second step ensures that νn is a valid weighting
+function of the particle-level quantities.
+Assumingν0(t) = 1, in the ﬁrst iteration Step 1 learns
+ω1(m) =pData(m)/pSim.(m), which is pulled back to the
+particle-level weights ωpull
+1 (t). Step 2 simply converts
+the per-instance weights ωpull
+1 (t) to a valid particle-level
+weighting function ν1(t). After one iteration, the new
+Simulation
+Synthetic Natural
+Detector-level
+Data
+Particle-level
+Generation
+Truth
+Pull Weights
+Push Weights
+Step 1: 
+Reweight Sim. to Data
+Step 2: 
+Reweight Gen.
+ωn−1
+ωn
+→→→ωn
+<latexit sha1_base64="USI/aHUkKNmen4gwHqyTXZ7rTGs=">AAACJ3icdVDdShtBGP1W+6Npral615vBUCgFl10bkngX6I2XFhoVsiHMTr5NBudnmZltG5Z9B1/DF/DWvoF3opfe+BydbFqo0h4YOJxzPr75TpoLbl0U3QUrq8+ev3i5tt549XrjzWbz7dax1YVhOGBaaHOaUouCKxw47gSe5gapTAWepGefF/7JNzSWa/XVzXMcSTpVPOOMOi+Nmx8TVYxLtRdXJPlh+HTmqDH6e5loiVPqncobdaQaN1tRuN/51I07JArb7YO40/Wk24kO2j0Sh1GNVn8HahyNmw/JRLNConJMUGuHcZS7UUmN40xg1UgKizllZ3SKQ08VlWhHZX1TRd57ZUIybfxTjtTq3xMlldbOZeqTkrqZfeotxH95w8JlvVHJVV44VGy5KCsEcZosCiITbpA5MfeEMsP9XwmbUUOZ8zU+2pLhXMm8avhi/lxP/k+O98M4CuMv7Va/t2wI1uAd7MIHiKELfTiEIxgAg3O4hCv4GVwE18FNcLuMrgS/Z7bhEYL7X/gNqFY=</latexit><latexit sha1_base64="USI/aHUkKNmen4gwHqyTXZ7rTGs=">AAACJ3icdVDdShtBGP1W+6Npral615vBUCgFl10bkngX6I2XFhoVsiHMTr5NBudnmZltG5Z9B1/DF/DWvoF3opfe+BydbFqo0h4YOJxzPr75TpoLbl0U3QUrq8+ev3i5tt549XrjzWbz7dax1YVhOGBaaHOaUouCKxw47gSe5gapTAWepGefF/7JNzSWa/XVzXMcSTpVPOOMOi+Nmx8TVYxLtRdXJPlh+HTmqDH6e5loiVPqncobdaQaN1tRuN/51I07JArb7YO40/Wk24kO2j0Sh1GNVn8HahyNmw/JRLNConJMUGuHcZS7UUmN40xg1UgKizllZ3SKQ08VlWhHZX1TRd57ZUIybfxTjtTq3xMlldbOZeqTkrqZfeotxH95w8JlvVHJVV44VGy5KCsEcZosCiITbpA5MfeEMsP9XwmbUUOZ8zU+2pLhXMm8avhi/lxP/k+O98M4CuMv7Va/t2wI1uAd7MIHiKELfTiEIxgAg3O4hCv4GVwE18FNcLuMrgS/Z7bhEYL7X/gNqFY=</latexit><latexit sha1_base64="USI/aHUkKNmen4gwHqyTXZ7rTGs=">AAACJ3icdVDdShtBGP1W+6Npral615vBUCgFl10bkngX6I2XFhoVsiHMTr5NBudnmZltG5Z9B1/DF/DWvoF3opfe+BydbFqo0h4YOJxzPr75TpoLbl0U3QUrq8+ev3i5tt549XrjzWbz7dax1YVhOGBaaHOaUouCKxw47gSe5gapTAWepGefF/7JNzSWa/XVzXMcSTpVPOOMOi+Nmx8TVYxLtRdXJPlh+HTmqDH6e5loiVPqncobdaQaN1tRuN/51I07JArb7YO40/Wk24kO2j0Sh1GNVn8HahyNmw/JRLNConJMUGuHcZS7UUmN40xg1UgKizllZ3SKQ08VlWhHZX1TRd57ZUIybfxTjtTq3xMlldbOZeqTkrqZfeotxH95w8JlvVHJVV44VGy5KCsEcZosCiITbpA5MfeEMsP9XwmbUUOZ8zU+2pLhXMm8avhi/lxP/k+O98M4CuMv7Va/t2wI1uAd7MIHiKELfTiEIxgAg3O4hCv4GVwE18FNcLuMrgS/Z7bhEYL7X/gNqFY=</latexit><latexit sha1_base64="aANR4xqa5G8N4A3PGP5I4W3UWFE=">AAACJ3icdVDdShtBGJ21tmpsa6yX3gwGQYQuuxqSeCd446UF8wPZEGYn3yaD87PMzKrLsu/Q1+gL9La+gXeil73xOZxsItTSHhg4nHM+vvlOnHJmbBA8eSvvVt9/WFvfqG1+/PR5q779pWdUpil0qeJKD2JigDMJXcssh0GqgYiYQz++Opv7/WvQhil5afMURoJMJUsYJdZJ4/phJLNxIb+GJY5uNZvOLNFa3RSREjAlzimdUUXKcb0R+Eet43bYwoHfbJ6ErbYj7VZw0uzg0A8qNNASF+P6czRRNBMgLeXEmGEYpHZUEG0Z5VDWosxASugVmcLQUUkEmFFR3VTifadMcKK0e9LiSv1zoiDCmFzELimInZm/vbn4L2+Y2aQzKphMMwuSLhYlGcdW4XlBeMI0UMtzRwjVzP0V0xnRhFpX45stCeRSpGXNFfN6Pf4/6R35YeCH35qN086yonW0i/bQAQpRG52ic3SBuoii7+gn+oXuvB/evffgPS6iK95yZge9gff7BX9hqAI=</latexit>
+ωn−1
+Data
+→→ →→ωn
+<latexit sha1_base64="IV5Rkcz2AJeiGq38yKsp/wTcRwM=">AAACenicdVFLa9wwEJbdV7J9ZJP01ovIUmhpauTa+7ottIceU+gmgbVZZK3sFdHDSHLaxeiH9lzor+ihWm8KTdoOCD6+mW++mVFRc2YsQt+C8N79Bw8f7e33Hj95+uygf3h0blSjCZ0TxZW+LLChnEk6t8xyellrikXB6UVx9X6bv7im2jAlP9tNTXOBK8lKRrD11LLv2qxrstBVkbcoGo+mcTo+RVEyTJJ06AEaTZIUuUw2y1a+jR3MvmpWrS3WWn1pMy3gnRaoi9O/gPuALXZerwStsG/m3LI/QNFolKTJBHpLNEZpDLeWw+k0hfGNcDB7Dro4W/Z/ZCtFGkGlJRwbs4hRbfMWa8sIp66XNYbWmFzhii48lFhQk7fdeA6+9MwKlkr7Jy3s2D8VLRbGbEThKwW2a3M3tyX/lVs0tpzkLZN1Y6kkO6Oy4dAquL05XDFNieUbDzDRzM8KyRprTKz/mVsuJd1IUbueP8zv7eH/wfm7KEZR/CkdzCa7C4E98AKcgFcgBmMwAx/BGZgDAr4H+8FRcBz8DE/C1+GbXWkY3GiOwa0I0181Z7sO</latexit><latexit sha1_base64="IV5Rkcz2AJeiGq38yKsp/wTcRwM=">AAACenicdVFLa9wwEJbdV7J9ZJP01ovIUmhpauTa+7ottIceU+gmgbVZZK3sFdHDSHLaxeiH9lzor+ihWm8KTdoOCD6+mW++mVFRc2YsQt+C8N79Bw8f7e33Hj95+uygf3h0blSjCZ0TxZW+LLChnEk6t8xyellrikXB6UVx9X6bv7im2jAlP9tNTXOBK8lKRrD11LLv2qxrstBVkbcoGo+mcTo+RVEyTJJ06AEaTZIUuUw2y1a+jR3MvmpWrS3WWn1pMy3gnRaoi9O/gPuALXZerwStsG/m3LI/QNFolKTJBHpLNEZpDLeWw+k0hfGNcDB7Dro4W/Z/ZCtFGkGlJRwbs4hRbfMWa8sIp66XNYbWmFzhii48lFhQk7fdeA6+9MwKlkr7Jy3s2D8VLRbGbEThKwW2a3M3tyX/lVs0tpzkLZN1Y6kkO6Oy4dAquL05XDFNieUbDzDRzM8KyRprTKz/mVsuJd1IUbueP8zv7eH/wfm7KEZR/CkdzCa7C4E98AKcgFcgBmMwAx/BGZgDAr4H+8FRcBz8DE/C1+GbXWkY3GiOwa0I0181Z7sO</latexit><latexit sha1_base64="IV5Rkcz2AJeiGq38yKsp/wTcRwM=">AAACenicdVFLa9wwEJbdV7J9ZJP01ovIUmhpauTa+7ottIceU+gmgbVZZK3sFdHDSHLaxeiH9lzor+ihWm8KTdoOCD6+mW++mVFRc2YsQt+C8N79Bw8f7e33Hj95+uygf3h0blSjCZ0TxZW+LLChnEk6t8xyellrikXB6UVx9X6bv7im2jAlP9tNTXOBK8lKRrD11LLv2qxrstBVkbcoGo+mcTo+RVEyTJJ06AEaTZIUuUw2y1a+jR3MvmpWrS3WWn1pMy3gnRaoi9O/gPuALXZerwStsG/m3LI/QNFolKTJBHpLNEZpDLeWw+k0hfGNcDB7Dro4W/Z/ZCtFGkGlJRwbs4hRbfMWa8sIp66XNYbWmFzhii48lFhQk7fdeA6+9MwKlkr7Jy3s2D8VLRbGbEThKwW2a3M3tyX/lVs0tpzkLZN1Y6kkO6Oy4dAquL05XDFNieUbDzDRzM8KyRprTKz/mVsuJd1IUbueP8zv7eH/wfm7KEZR/CkdzCa7C4E98AKcgFcgBmMwAx/BGZgDAr4H+8FRcBz8DE/C1+GbXWkY3GiOwa0I0181Z7sO</latexit><latexit sha1_base64="i+iM1Y2AuIdG+9czSK1qRLZgOsY=">AAACenicdVFNa9wwEJXdr2T7tU2OvYgshZamRq69X7dAe+gxhW4SWJtlrJW9IpJsJDnpYvRDey70V/RQ7WYLTdoOCB5v5s2bGRWN4MYS8i0I791/8PDR3n7v8ZOnz573XxycmbrVlM1oLWp9UYBhgis2s9wKdtFoBrIQ7Ly4/LDJn18xbXitvth1w3IJleIlp2A9tei7Lts2meuqyDsSjUfTOB0fkygZJkk69ICMJklKXKbaRafexQ5nXzWvVha0rq+7TEt8pwXZxvFfwH0EC87ra8kq8M2cW/QHJBqNkjSZYG9JxiSN8cZyOJ2mON4JB2gXp4v+j2xZ01YyZakAY+YxaWzegbacCuZ6WWtYA/QSKjb3UIFkJu+24zn8yjNLXNbaP2Xxlv1T0YE0Zi0LXynBrszd3Ib8V27e2nKSd1w1rWWK3hiVrcC2xpub4yXXjFqx9gCo5n5WTFeggVr/M7dcSrZWsnE9f5jf2+P/g7P3UUyi+HM6OJnsTrSHXqIj9BrFaIxO0Cd0imaIou/BfnAQHAY/w6PwTfj2pjQMdppDdCvC9Be8rLq6</latexit>
+FIG. 1. An illustration of OmniFold, applied to a set of syn-
+thetic and natural data. As a ﬁrst step, starting from prior
+weightsν0, the detector-level synthetic data (“simulation”) is
+reweighted to match the detector-level natural data (simply
+“data”). These weights ω1 are pulled back to induce weights
+on the particle-level synthetic data (“generation”). As a sec-
+ond step, the initial generation is reweighted to match the new
+weighted generation. The resulting weightsν1 are pushed for-
+ward to induce a new simulation, and the process is iterated.
+induced truth is:
+ν1(t)pGen.(t) =
+∫
+dm′pGen.|Sim.(t|m′)pData(m′). (4)
+This is a continuous version of IBU from Eq. (2), where
+the sum has been promoted to a full phase-space inte-
+gral. In fact, OmniFold (and IBU) are iterative strate-
+gies that converge to the maximum likelihood estimate
+of the true particle-level distribution [27–31], which we
+discuss in detail in the Appendix. After n iterations, the
+unfolded distribution is:
+p(n)
+unfolded(t) =νn(t)pGen.(t). (5)
+The unfolded result can be presented either as a set of
+generated events {t} with weights {νn(t)} (and uncer-
+tainties) or, more compactly, as the learned weighting
+function νn and instructions for sampling from pGen..
+To demonstrate the versatility and power of Omni-
+Fold, we perform a proof-of-concept study relevant for
+the LHC. Speciﬁcally, we unfold the full radiation pat-
+tern (i.e. full phase space) of jets, which are collimated
+sprays of particles arising from the fragmentation and
+hadronization of high-energy quarks and gluons. Jets
+are an ideal environment in which to benchmark unfold-
+ing techniques, since detector eﬀects often account for
+a signiﬁcant portion of the experimental measurement
+uncertainties for many jet substructure observables [32].
+With the radiation pattern unfolded, one can obtain the
+
+=== PAGE BREAK ===
+
+3
+0.00
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+Normalized Cross Section [GeV −1]
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+“Data”
+Sim.
+IBU m
+“Truth”
+Gen.
+OmniFold
+0 20 40 60
+Jet Mass m [GeV]
+0.85
+1.0
+1.15
+Ratio to
+Truth
+0.00
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+Normalized Cross Section
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+“Data”
+Sim.
+IBU M
+“Truth”
+Gen.
+OmniFold
+0 20 40 60 80
+Jet Constituent Multiplicity M
+0.85
+1.0
+1.15
+Ratio to
+Truth
+0
+2
+4
+6
+8
+10Normalized Cross Section
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+“Data”
+Sim.
+IBU w
+“Truth”
+Gen.
+OmniFold
+0.0 0.1 0.2 0.3 0.4 0.5 0.6
+Jet Width w
+0.85
+1.0
+1.15
+Ratio to
+Truth
+0.00
+0.05
+0.10
+0.15
+0.20
+0.25
+0.30
+Normalized Cross Section
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+“Data”
+“Truth”
+Sim.
+Gen.
+IBU ln ρ
+OmniFold
+−14 −12 −10 −8 −6 −4 −2
+Soft Drop Jet Mass ln ρ
+0.85
+1.0
+1.15
+Ratio to
+Truth
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Normalized Cross Section
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+“Data”
+“Truth”
+Sim.
+Gen.
+IBU τ (β=1)
+21
+OmniFold
+0.0 0.2 0.4 0.6 0.8 1.0 1.2
+N -subjettiness Ratio τ (β=1)
+21
+0.85
+1.0
+1.15
+Ratio to
+Truth
+0
+2
+4
+6
+8Normalized Cross Section
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+“Data”
+Sim.
+IBU zg
+“Truth”
+Gen.
+OmniFold
+0.0 0.1 0.2 0.3 0.4 0.5
+Groomed Jet Momentum Fraction zg
+0.85
+1.0
+1.15
+Ratio to
+Truth
+FIG. 2. The unfolding results for six jet substructure observables, using Herwig 7.1.5 (“Data”/“Truth”) and Pythia 8.243
+tune 26 (Sim./Gen.), unfolded with OmniFold and compared to IBU. OmniFold matches or exceeds the unfolding performance
+of IBU on all of these observables. We emphasize that OmniFold is a single general unfolding procedure, whereas unfolding
+with IBU must be done observable by observable. Statistical uncertainties are shown only in the ratio panel.
+unfolded distribution of any observable using Eq. (5).
+Hence, this procedure can be viewed as simultaneously
+unfolding all observables.
+Our study is based on proton-proton collisions gener-
+ated at √s = 14 TeV with the default tune of Her-
+wig 7.1.5 [33–35] and Tune 26 [36] of Pythia 8.243 [37–
+39] in order to study a challenging setting where the “nat-
+ural” and “synthetic” distributions are substantially dif-
+ferent. As a proxy for detector eﬀects and a full detector
+simulation, we use the Delphes 3.4.2 [40] fast simula-
+tion of the CMS detector, which uses particle ﬂow re-
+construction. Jets with radius parameter R = 0.4 are
+clustered using either all particle ﬂow objects (detector-
+level) or stable non-neutrino truth particles (particle-
+level) with the anti- kT algorithm [41] implemented in
+F astJet3.3.2 [42, 43]. One of the simulations ( Her-
+wig) plays the role of “data”/“truth”, while the other
+(Pythia) is used to derive the unfolding corrections. To
+reduce acceptance eﬀects, the leading jets are studied
+in events with a Z boson with transverse momentum
+pZ
+T > 200 GeV. After applying the selections, we obtain
+approximately 1.6 million events from each generator.
+Any suitable machine learning architecture can be used
+for OmniFold. For this study, we use Particle Flow
+Networks (PFNs) [44, 45] to process jets in their natu-
+ral representation as sets of particles. Intuitively, PFNs
+learn and processes a set of additive observables via
+PFN({pi}M
+i=1) = F
+(∑M
+i=1 Φ(pi)
+)
+for an event with M
+particles pi, where F and Φ are parameterized by fully-
+connected networks. We specify the particles by their
+transverse momentum pT , rapidity y, azimuthal angle
+φ, and particle identiﬁcation code [46], restricted to the
+experimentally-accessible information (PFN-Ex [44]) at
+detector-level. To deﬁne separate models for Step 1 and
+Step 2, we use the PFN architecture and training param-
+eters of Ref. [44] with latent space dimension 𝓁 = 256,
+implemented in the EnergyFlow Python package [47].
+Neural networks are trained with Keras [48] and Tensor-
+Flow [49] using the Adam [50] optimization algorithm.
+The models are randomly initialized in the ﬁrst iteration
+and subsequently warm-started using the model from the
+previous iteration. 20% of the events are reserved as a
+validation set during training.
+To investigate the unfolding performance, we consider
+six widely-used jet substructure observables [51]. The
+ﬁrst four are jet mass m, constituent multiplicityM, the
+
+=== PAGE BREAK ===
+
+4
+Observable
+Method m M w lnρ τ21 zg
+OmniFold 2.77 0.33 0.10 0.35 0.53 0.68
+MultiFold 3.80 0.89 0.09 0.37 0.26 0.15
+UniFold 8.82 1.46 0.15 0.59 1.11 0.59
+IBU 9.31 1.51 0.11 0.71 1.10 0.37
+Data 24.6 130 15.7 14.2 11.1 3.76
+Generation 3.62 15 22.4 19 20.8 3.84
+TABLE I. The unfolding performance of OmniFold, Multi-
+Fold, and UniFold on six jet substructure observables, com-
+pared to IBU. The performance is quantiﬁed by the triangular
+discriminator [60–62] ∆(p,q ) = 1
+2
+∫
+dλ (p(λ)−q(λ))2
+p(λ)+q(λ) (×103) be-
+tween the unfolded and truth-level (binned) histograms. Also
+shown are the distances from data (no unfolding) and gen-
+eration (the prior). The best unfolding method for each ob-
+servable is shown in bold. All methods perform well, with
+OmniFold providing consistently good performance.
+N-subjettiness ratioτ21 =τ (β=1)
+2 /τ (β=1)
+1 [52, 53], and the
+jet width w (implemented as τ (β=1)
+1 ). Since jet groom-
+ing [54–58] is of recent interest, we also show the jet mass
+lnρ = lnm2
+SD/p2
+T and momentum fraction zg after Soft
+Drop grooming [57, 58] with zcut = 0.1 and β = 0. Sev-
+eral of these observables are computed with the help of
+F astJet Contrib 1.042 [59].
+The unfolding performance of OmniFold is shown in
+Fig. 2 and compared to IBU, both with n = 5 iterations.
+We found little diﬀerence between n = 3 and n = 5,
+though OmniFold exhibits a slight preference for more
+iterations. OmniFold succeeds in simultaneously un-
+folding all of these observables, achieving performance
+comparable to or better than IBU applied to each observ-
+able individually. The mass is challenging for all meth-
+ods as particle-type information is relevant at particle-
+level but is not fully known at detector-level, introducing
+additional prior dependence. Though OmniFold is un-
+binned, the data are only able to constrain energy and
+angular scales comparable to the detector resolution.
+Statistical uncertainties from the prior distribution are
+shown in the bottom panels of Fig. 2, holding the un-
+folding procedure (i.e. response matrix and reweighting)
+ﬁxed. For this proof-of-concept study, we do not show
+systematic uncertainties, though the procedure for deriv-
+ing them is the same as for IBU. Non-closure and model-
+ing uncertainties can be derived in the standard way by
+testing the procedure on diﬀerent Monte Carlo samples
+and comparing the results to the known “truth” distri-
+butions. (We checked that OmniFold satisﬁes technical
+closure when Pythia is unfolded to itself.) Experimen-
+tal systematic uncertainties can be obtained by varying
+the relevant eﬀects and repeating the unfolding proce-
+dure. Like other unfolding procedures, OmniFold can-
+not improve the results in phase-space regions that are
+unconstrained by observed quantities. It can, however,
+improve the performance if the full phase space contains
+0
+1
+2
+3
+4
+5
+6
+7
+Correlation Dimension
+D/T: Herwig 7.1.5 default
+S/G: Pythia 8.243 tune 26
+Delphes 3.4.2 CMS Detector
+Z+jet: pZ
+T > 200 GeV, R = 0.4
+pjet
+T > 500 GeV, scaled to 500 GeV
+“Data”
+Sim.
+OmniFold
+“Truth”
+Gen.
+101
+ 102
+Energy Scale Q [GeV]
+0.8
+1.0
+1.2
+Ratio to
+Truth
+FIG. 3. The correlation dimension of the space of jets, un-
+folded with OmniFold. The unfolded results closely match
+the truth-level dimension over most of the energy range, tend-
+ing toward the prior in the more diﬃcult phase space region
+at low Q. Unfolding a complicated statistic such as the cor-
+relation dimension is challenging with standard methods.
+auxiliary features relevant for the detector response. To
+capitalize on this full phase-space approach, it is essen-
+tial that the detector simulation properly describes these
+features and that systematic uncertainties are estimated
+using a high-dimensional approach [63, 64].
+To highlight the ﬂexibility of our unfolding framework,
+we study variations of OmniFold, where the available
+information is varied by controlling the inputs:
+• UniFold: A single observable as input. This is an
+unbinned version of IBU.
+• MultiFold: Many observables as input. Here, we
+use the six jet substructure observables in Fig. 2 to
+derive the detector response.
+• OmniFold: The full event (or jet) as input, using
+the full phase space information.
+The unfolding performance of each method on our six
+substructure observables is tabulated in Table I and com-
+pared to IBU. The UniFold and MultiFold implemen-
+tations both use dense networks with three layers of one
+hundred nodes each and a two-node output layer. We
+see good unfolding performance across all methods, and
+even though OmniFold is not directly trained on these
+six observables, it performs comparably to or better than
+MultiFold. While the detector response depends on
+the jet rapidity, we checked that MultiFold did not
+signiﬁcantly beneﬁt from including the rapidity, though
+doing so could be important in a real experimental con-
+text. In general, additional information can be included
+
+=== PAGE BREAK ===
+
+5
+and the unfolding procedure can be repeated, with the
+ﬁnal model chosen as the one with the best detector-level
+agreement with the data.
+Since OmniFold unfolds the full radiation pattern, it
+can be used to probe new, physically-interesting quanti-
+ties that are challenging to unfold with existing methods.
+One example is the recently-proposed correlation (frac-
+tal) dimension of jets [65, 66], which is a function of the
+energy scale Q. This complicated statistic is deﬁned by
+pairwise metric distances between jet radiation patterns,
+falling outside of the purview of single-observable unfold-
+ing techniques. Within our jet samples, we restrict to
+energetic jets with pjet
+T > 500 GeV, boosted to the ori-
+gin of the rapidity-azimuth plane, and with constituents
+rescaled to havepT summing to 500 GeV. The correlation
+dimensions of these jets, both before and after applying
+OmniFold, are shown in Fig. 3. The unfolded results
+match the true distribution over a wide range of Q val-
+ues, with residual prior dependence seen in at low Q (i.e.
+the infrared) where jets have a higher dimensionality and
+detector eﬀects have a larger impact, thus making the
+unfolding problem more diﬃcult. More broadly, Omni-
+Fold opens the door to going beyond per-event collider
+observables towards more nuanced or intricate measure-
+ments of the data.
+In conclusion, we have presented a potentially transfor-
+mative unfolding paradigm based on iteratively reweight-
+ing a set of simulated events with machine learning. Our
+OmniFold approach allows an entire dataset to be un-
+folded using all of the available information, avoiding the
+need for binning and restricting to single observables. We
+have demonstrated the power of this method in a (sim-
+ulated) case of interest by unfolding the full radiation
+pattern of jets, paving the way for signiﬁcant advances
+in jet substructure at the LHC. Our unfolding frame-
+work allowed us to go beyond per-event observables to-
+wards unfolding more complex dataset statistics, such
+as fractal dimensions of the space of jets. Going even
+further, (unsupervised) machine learning models may be
+trained directly at particle-level by using the unfolded
+and weighted dataset, which is a fascinating avenue for
+further exploration. These advances have broad applica-
+bility beyond particle physics in domains where deconvo-
+lution or unfolding is used, such as image-based measure-
+ments and quantum computation [67]. To enable future
+unfolding studies and developments, we have made our
+code and jet datasets publicly available [68, 69], including
+two additional tunes of Pythia beyond those presented
+here. Finally, our reweighting-based unfolding strategy
+allows for new observables to be measured long after the
+unfolding is carried out, which can signiﬁcantly empower
+future public and archival collider data analyses [70].
+We are grateful to Gabriel Collin, Christian Herwig,
+Andrew Larkoski, Matthew LeBlanc, Salvatore Rappoc-
+cio, Jennifer Roloﬀ, Matthew Schwartz, Daniel White-
+son, and Mike Williams for helpful comments and dis-
+cussions. We also thank the referees for their valu-
+able suggestions, including the clariﬁcation of the sta-
+tistical framing of the method. The authors beneﬁted
+from the hospitality of the Harvard Center for the Fun-
+damental Laws of Nature. This work was partially
+completed at the Aspen Center for Physics, which is
+supported by National Science Foundation grant PHY-
+1607611. AA and BN were supported by the U.S. De-
+partment of Energy (DOE), Oﬃce of Science under con-
+tract DE-AC02-05CH11231. PTK, EMM, and JT were
+supported by the DOE Oﬃce of Nuclear Physics under
+Grant No. DE-SC0011090 and the DOE Oﬃce of High
+Energy Physics under Grant Nos. DE-SC0012567 and
+DE-SC0019128. JT is additionally supported by the Si-
+mons Foundation through a Simons Fellowship in The-
+oretical Physics. Cloud computing resources were pro-
+vided through a Google Cloud allotment from the MIT
+Quest for Intelligence. BN would like to thank NVIDIA
+for providing Volta GPUs for neural network training.
+Emily Dickinson, #975
+The Mountain sat upon the Plain
+In his tremendous Chair –
+His observation omnifold,
+His inquest, everywhere –
+The Seasons played around his knees
+Like Children round a sire –
+Grandfather of the Days is He
+Of Dawn, the Ancestor –
+Appendix: OmniFold as a Maximum Likelihood Estimate
+In this Appendix, we review the statistical underpinnings of Iterative Bayesian Unfolding (IBU) [5] as well as
+OmniFold and conﬁrm that they converge to the maximum likelihood estimate of the true particle-level distribution.
+This discussion serves to clarify the statistical formulation of unfolding, as well as to provide a derivation of the
+correctness of OmniFold. We follow the overall spirit of Ref. [27], keeping the formulation general and unbinned,
+working in the asymptotic limit of large amounts of data. We seek to ﬁnd the truth-level reweighting ν(t) of the
+synthetic particle-level distribution pGen.(t) that maximizes the likelihood of observing the measured data.
+
+=== PAGE BREAK ===
+
+6
+The (log) likelihood of a given reweighting to produce the observed data is:
+LL[ν] =
+∫
+dmp Data(m) ln
+(∫
+dt′p(m|t′)ν(t′)pGen.(t′)
+)
+−λ
+(∫
+dt′ν(t′)pGen.(t′)− 1
+)
+. (6)
+Here, pData(m) is the measured distribution of data at detector level. The quantity p(m|t) captures the detector
+response, i.e. the distribution of the detector-level informationm produced by the particle-level informationt. We take
+the detector response to be accurately modeled in the synthetic dataset, p(m|t) =pData|Truth(m|t) =pSim.|Gen.(m|t),
+one of the standard assumptions of unfolding. The last term is a Lagrange multiplier constraint to ensure that the
+particle-level reweightingν(t) of the synthetic distribution pGen.(t) yields a normalized distribution.
+To maximize the likelihood, we vary it with respect to the reweighting function ν:
+δLL
+δν(t) =
+∫
+dmp Data(m) p(m|t)pGen.(t)∫
+dt′p(m|t′)ν(t′)pGen.(t′)−λp Gen.(t) = 0. (7)
+Integrating this equation equation against
+∫
+dtν (t) and applying the normalization condition yields that λ = 1. The
+stationary condition in Eq. (7) results in a maximum of the likelihood because the second variation is non-positive
+and therefore the functional is concave:
+δ2LL
+δν(t0)δν(t1) =−
+∫
+dmp Data(m)p(m|t0)pGen.(t0)p(m|t1)pGen.(t1)
+(∫
+dt′p(m|t′)ν(t′)pGen.(t′)
+)2 ≤ 0. (8)
+To connect the maximum likelihood strategy to the OmniFold and IBU methods, we can multiply the stationary
+condition in Eq. (7) on both sides by ν(t) to obtain an equation satisﬁed by the optimal reweighting function ν∗(t):
+ν∗(t)pGen.(t) =
+∫
+dmp Data(m) p(m|t)ν∗(t)pGen.(t)∫
+dt′p(m|t′)ν∗(t′)pGen.(t′). (9)
+If we were to replace ν∗(t) on the left-hand side of Eq. (9) by νn(t) and on the right-hand side by νn−1(t), we would
+obtain the update rule for OmniFold, with the discrete version corresponding to IBU:
+νn(t)pGen.(t) =
+∫
+dmp Data(m) p(m|t)νn−1(t)pGen.(t)∫
+dt′p(m|t′)νn−1(t′)pGen.(t′). (10)
+To see that Eq. (10) indeed causes the likelihood to increase, we will show that it is a consequence of a generalized
+expectation-maximization (EM) algorithm [28–31] in which the likelihood increases at each step. We use the particle-
+level information t as the unobserved latent variables. By Theorem 1 of Ref. [28], we only need to show that the
+expected complete-data (log) likelihood Q increases from one choice of reweighting νn−1(t) to another νn(t):
+Q(νn|νn−1) =
+∫
+dmp Data(m)
+∫
+dtp (t|m,νn−1) lnp(t,m|νn). (11)
+Manipulating the argument of Eq. (11) using conditional probabilities and Bayes’ rule, we have:
+Q(νn|νn−1) =
+∫
+dmp Data(m)
+∫
+dt p(m|t)νn−1(t)pGen.(t)∫
+dt′p(m|t′)νn−1(t′)pGen.(t′) ln
+(
+νn(t)pGen.(t)
+)
++ const., (12)
+where the response p(m|t) is independent of ν andp(t|ν) =ν(t)pGen.(t). The constant term is independent of νn and
+so will not contribute to our maximization over νn.
+We can maximize Eq. (12) with respect to νn(t), including the Lagrange multiplier constraint to enforce normal-
+ization, by taking the derivative and setting it equal to zero. This collapses the integral over t and leads exactly to
+Eq. (10). Thus the choice of νn(t) via Eq. (10) increases Q, and so the log likelihood also increases by the properties
+of the generalized EM algorithm. While the maximum may not be unique due to null directions in Eq. (8), a global
+maximum of the likelihood is attained due to its concavity, with the precise ν∞(t) dictated by the choice of initial
+distributionpGen.(t). If the response “matrix” p(m|t) is invertible, this procedure converges to the true solution. Fur-
+ther, terminating the algorithm after a ﬁnite number of iterations introduces regularization by reducing the variance
+of the estimator at the cost of increased bias via prior dependence.
+Thus, OmniFold provides an unbinned, machine-learning-based strategy to estimate the maximum likelihood true
+particle-level distribution given the observed detector-level data. Of course, in the presence of statistical ﬂuctuations,
+the maximum of the likelihood may not be the desired solution, so in practice, one regularizes the unfolding procedure
+by performing a ﬁnite number of iterations.
+
+=== PAGE BREAK ===
+
+7
+∗ ajandreassen@google.com
+† pkomiske@mit.edu
+‡ metodiev@mit.edu
+§ bpnachman@lbl.gov
+¶ jthaler@mit.edu
+[1] G. Cowan, “A survey of unfolding methods for particle
+physics,” Conf. Proc. C0203181, 248 (2002).
+[2] Volker Blobel, “Unfolding Methods in Particle Physics,”
+PHYSTAT2011 Proceedings , 240 (2011).
+[3] Volker Blobel, “Unfolding,” Data Analysis in High En-
+ergy Physics , 187 (2013).
+[4] Rahul Balasubramanian, Lydia Brenner, Carsten Bur-
+gard, Glen Cowan, Vincent Croft, Wouter Verkerke, and
+Pim Verschuuren, “Statistical method and comparison
+of diﬀerent unfolding techniques using RooFit,” (2019),
+arXiv:1910.14654 [physics.data-an].
+[5] G. D’Agostini, “A Multidimensional unfolding method
+based on Bayes’ theorem,” Nucl. Instrum. Meth. A362,
+487–498 (1995).
+[6] Andreas Hocker and Vakhtang Kartvelishvili, “SVD ap-
+proach to data unfolding,” Nucl. Instrum. Meth. A372,
+469–481 (1996), arXiv:hep-ph/9509307 [hep-ph].
+[7] Stefan Schmitt, “TUnfold: an algorithm for correct-
+ing migration eﬀects in high energy physics,” JINST 7,
+T10003 (2012), arXiv:1205.6201 [physics.data-an].
+[8] Nikolai D. Gagunashvili, “Machine learning approach
+to inverse problem and unfolding procedure,” (2010),
+arXiv:1004.2006 [physics.data-an].
+[9] Alexander Glazov, “Machine learning as an instru-
+ment for data unfolding,” (2017), arXiv:1712.01814
+[physics.data-an].
+[10] Kaustuv Datta, Deepak Kar, and Debarati Roy, “Un-
+folding with Generative Adversarial Networks,” (2018),
+arXiv:1806.00433 [physics.data-an].
+[11] G. Zech and B. Aslan, “Binning-Free Unfolding Based
+on Monte Carlo Migration,” Statistical problems in par-
+ticle physics, astrophysics and cosmology. Proceedings,
+Conference, PHYSTAT 2003, Stanford, USA, Septem-
+ber 8-11, 2003 , eConf C030908, TUGT001 (2003),
+[,138(2003)].
+[12] L. Lindemann and Gunter Zech, “Unfolding by weighting
+Monte Carlo events,” Nucl. Instrum. Meth. A354, 516–
+521 (1995).
+[13] D Martschei, M Feindt, S Honc, and J Wagner-Kuhr,
+“Advanced event reweighting using multivariate analy-
+sis,” Journal of Physics: Conference Series 368, 012028
+(2012).
+[14] A. Rogozhnikov, “Reweighting with Boosted Decision
+Trees,” Proceedings, 17th International Workshop on Ad-
+vanced Computing and Analysis Techniques in Physics
+Research (ACAT 2016): Valparaiso, Chile, January
+18-22, 2016 , J. Phys. Conf. Ser. 762, 012036 (2016),
+arXiv:1608.05806 [physics.data-an].
+[15] Roel Aaij et al. (LHCb Collaboration), “Observation of
+the decays Λ 0
+b → χc1pK− and Λ 0
+b → χc2pK−,” Phys.
+Rev. Lett. 119, 062001 (2017), arXiv:1704.07900 [hep-
+ex].
+[16] M. Aaboud et al. (ATLAS Collaboration), “Search for
+pair production of higgsinos in ﬁnal states with at least
+three b-tagged jets in √s = 13 TeV pp collisions using
+the ATLAS detector,” Phys. Rev. D98, 092002 (2018),
+arXiv:1806.04030 [hep-ex].
+[17] Anders Andreassen, Ilya Feige, Christopher Frye, and
+Matthew D. Schwartz, “JUNIPR: a Framework for Un-
+supervised Machine Learning in Particle Physics,” Eur.
+Phys. J. C79, 102 (2019), arXiv:1804.09720 [hep-ph].
+[18] Anders Andreassen and Benjamin Nachman, “Neural
+Networks for Full Phase-space Reweighting and Param-
+eter Tuning,” (2019), arXiv:1907.08209 [hep-ph].
+[19] Emily Dickinson, “The Mountain Sat Upon the Plain,” in
+The Complete Poems of Emily Dickinson (Little, Brown,
+and Company, 1924).
+[20] L. B. Lucy, “An iterative technique for the rectiﬁcation
+of observed distributions,” Astronomical Journal 79, 745
+(1974).
+[21] William Hadley Richardson, “Bayesian-based iterative
+method of image restoration,” J. Opt. Soc. Am. 62, 55–
+59 (1972).
+[22] Kyle Cranmer, Juan Pavez, and Gilles Louppe, “Ap-
+proximating Likelihood Ratios with Calibrated Discrim-
+inative Classiﬁers,” (2015), arXiv:1506.02169 [stat.AP].
+[23] Johann Brehmer, Kyle Cranmer, Gilles Louppe, and
+Juan Pavez, “Constraining Eﬀective Field Theories with
+Machine Learning,” Phys. Rev. Lett.121, 111801 (2018),
+arXiv:1805.00013 [hep-ph].
+[24] Johann Brehmer, Kyle Cranmer, Gilles Louppe, and
+Juan Pavez, “A Guide to Constraining Eﬀective Field
+Theories with Machine Learning,” Phys. Rev. D98,
+052004 (2018), arXiv:1805.00020 [hep-ph].
+[25] Johann Brehmer, Gilles Louppe, Juan Pavez, and Kyle
+Cranmer, “Mining gold from implicit models to improve
+likelihood-free inference,” (2018), arXiv:1805.12244
+[stat.ML].
+[26] Enrico Bothmann and Luigi Del Debbio, “Reweighting
+a parton shower using a neural network: the ﬁnal-state
+case,” Journal of High Energy Physics 2019, 33 (2019).
+[27] L. A. Shepp and Y. Vardi, “Maximum likelihood recon-
+struction for emission tomography,” IEEE transactions
+on medical imaging 1, 113–122 (1982).
+[28] A. P. Dempster, N. M. Laird, and D. B. Rubin, “Max-
+imum likelihood from incomplete data via the EM algo-
+rithm,” Journal of the Royal Statistical Society. Series B
+(Methodological) 39, 1–38 (1977).
+[29] C. F. Jeﬀ Wu, “On the convergence properties of the EM
+algorithm,” Ann. Statist. 11, 95–103 (1983).
+[30] Y. Vardi, L. A. Shepp, and L. Kaufman, “A statistical
+model for positron emission tomography,” Journal of the
+American Statistical Association 80, 8–20 (1985).
+[31] Mikael Kuusela, “Statistical issues in unfolding methods
+for high energy physics,” Aalto University Master’s The-
+sis (2012).
+[32] Roman Kogler et al. , “Jet Substructure at the Large
+Hadron Collider: Experimental Review,” Rev. Mod.
+Phys. 91, 045003 (2019), arXiv:1803.06991 [hep-ex].
+[33] M. Bahr et al. , “Herwig++ Physics and Manual,” Eur.
+Phys. J. C58, 639–707 (2008), arXiv:0803.0883 [hep-ph].
+[34] Johannes Bellm et al., “Herwig 7.0/Herwig++ 3.0 release
+note,” Eur. Phys. J. C76, 196 (2016), arXiv:1512.01178
+[hep-ph].
+[35] Johannes Bellm et al. , “Herwig 7.1 Release Note,”
+(2017), arXiv:1705.06919 [hep-ph].
+[36] ATLAS Run 1 Pythia8 tunes , Tech. Rep. ATL-PHYS-
+PUB-2014-021 (CERN, Geneva, 2014).
+[37] Torbjorn Sj¨ ostrand, Stephen Mrenna, and Peter Z.
+Skands, “A Brief Introduction to PYTHIA 8.1,” Comput.
+
+=== PAGE BREAK ===
+
+8
+Phys. Commun. 178, 852–867 (2008), arXiv:0710.3820
+[hep-ph].
+[38] Torbjorn Sj¨ ostrand, Stephen Mrenna, and Peter Z.
+Skands, “PYTHIA 6.4 Physics and Manual,” JHEP 05,
+026 (2006), arXiv:hep-ph/0603175 [hep-ph].
+[39] Torbjorn Sj¨ ostrand, Stefan Ask, Jesper R. Chris-
+tiansen, Richard Corke, Nishita Desai, Philip Ilten,
+Stephen Mrenna, Stefan Prestel, Christine O. Ras-
+mussen, and Peter Z. Skands, “An Introduction to
+PYTHIA 8.2,” Comput. Phys. Commun. 191, 159–177
+(2015), arXiv:1410.3012 [hep-ph].
+[40] J. de Favereau, C. Delaere, P. Demin, A. Giammanco,
+V. Lematre, A. Mertens, and M. Selvaggi (DELPHES 3),
+“DELPHES 3, A modular framework for fast simulation
+of a generic collider experiment,” JHEP 02, 057 (2014),
+arXiv:1307.6346 [hep-ex].
+[41] Matteo Cacciari, Gavin P. Salam, and Gregory Soyez,
+“The Anti-k(t) jet clustering algorithm,” JHEP 04, 063
+(2008), arXiv:0802.1189 [hep-ph].
+[42] Matteo Cacciari, Gavin P. Salam, and Gregory Soyez,
+“FastJet User Manual,” Eur. Phys. J. C72, 1896 (2012),
+arXiv:1111.6097 [hep-ph].
+[43] Matteo Cacciari and Gavin P. Salam, “Dispelling the
+N 3 myth for the kt jet-ﬁnder,” Phys. Lett. B641, 57–
+61 (2006), arXiv:hep-ph/0512210 [hep-ph].
+[44] Patrick T. Komiske, Eric M. Metodiev, and Jesse Thaler,
+“Energy Flow Networks: Deep Sets for Particle Jets,”
+JHEP 01, 121 (2019), arXiv:1810.05165 [hep-ph].
+[45] Manzil Zaheer, Satwik Kottur, Siamak Ravanbakhsh,
+Barnab´ as P´ oczos, Ruslan Salakhutdinov, and Alexan-
+der J. Smola, “Deep sets,” in Advances in Neural In-
+formation Processing Systems 30: Annual Conference on
+Neural Information Processing Systems 2017, 4-9 Decem-
+ber 2017, Long Beach, CA, USA (2017) pp. 3391–3401.
+[46] M. Tanabashi et al. (Particle Data Group), “Review of
+Particle Physics,” Phys. Rev. D98, 030001 (2018).
+[47] Patrick T. Komiske and Eric M. Metodiev, “Ener-
+gyFlow,” (2019), https://energyflow.network/.
+[48] Francois Chollet, “Keras,” https://github.com/
+fchollet/keras (2017).
+[49] Mart´ ın Abadi, Paul Barham, Jianmin Chen, Zhifeng
+Chen, Andy Davis, Jeﬀrey Dean, Matthieu Devin, Sanjay
+Ghemawat, Geoﬀrey Irving, Michael Isard, et al. , “Ten-
+sorﬂow: A system for large-scale machine learning.” in
+OSDI, Vol. 16 (2016) pp. 265–283.
+[50] Diederik Kingma and Jimmy Ba, “Adam: A method for
+stochastic optimization,” (2014), arXiv:1412.6980 [cs].
+[51] Andrew J. Larkoski, Ian Moult, and Benjamin Nachman,
+“Jet Substructure at the Large Hadron Collider: A Re-
+view of Recent Advances in Theory and Machine Learn-
+ing,” Phys. Rept. 841, 1–63 (2020), arXiv:1709.04464
+[hep-ph].
+[52] Jesse Thaler and Ken Van Tilburg, “Identifying Boosted
+Objects with N-subjettiness,” JHEP 03, 015 (2011),
+arXiv:1011.2268 [hep-ph].
+[53] Jesse Thaler and Ken Van Tilburg, “Maximizing Boosted
+Top Identiﬁcation by Minimizing N-subjettiness,” JHEP
+02, 093 (2012), arXiv:1108.2701 [hep-ph].
+[54] David Krohn, Jesse Thaler, and Lian-Tao Wang, “Jet
+Trimming,” JHEP 02, 084 (2010), arXiv:0912.1342 [hep-
+ph].
+[55] Stephen D. Ellis, Christopher K. Vermilion, and
+Jonathan R. Walsh, “Recombination Algorithms and
+Jet Substructure: Pruning as a Tool for Heavy
+Particle Searches,” Phys. Rev. D81, 094023 (2010),
+arXiv:0912.0033 [hep-ph].
+[56] Stephen D. Ellis, Christopher K. Vermilion, and
+Jonathan R. Walsh, “Techniques for improved heavy par-
+ticle searches with jet substructure,” Phys. Rev. D80,
+051501 (2009), arXiv:0903.5081 [hep-ph].
+[57] Mrinal Dasgupta, Alessandro Fregoso, Simone Marzani,
+and Gavin P. Salam, “Towards an understanding of jet
+substructure,” JHEP 09, 029 (2013), arXiv:1307.0007
+[hep-ph].
+[58] Andrew J. Larkoski, Simone Marzani, Gregory Soyez,
+and Jesse Thaler, “Soft Drop,” JHEP 05, 146 (2014),
+arXiv:1402.2657 [hep-ph].
+[59] “Fastjet contrib,” https://fastjet.hepforge.org/
+contrib/.
+[60] F. Topsoe, “Some inequalities for information divergence
+and related measures of discrimination,” IEEE Transac-
+tions on Information Theory 46, 1602–1609 (2000).
+[61] Philippe Gras, Stefan Hche, Deepak Kar, Andrew
+Larkoski, Leif Lnnblad, Simon Pltzer, Andrzej Sidmok,
+Peter Skands, Gregory Soyez, and Jesse Thaler, “Sys-
+tematics of quark/gluon tagging,” JHEP 07, 091 (2017),
+arXiv:1704.03878 [hep-ph].
+[62] Samuel Bright-Thonney and Benjamin Nachman, “Inves-
+tigating the Topology Dependence of Quark and Gluon
+Jets,” JHEP 03, 098 (2019), arXiv:1810.05653 [hep-ph].
+[63] Benjamin Nachman and Chase Shimmin, “AI Safety for
+High Energy Physics,” (2019), arXiv:1910.08606 [hep-
+ph].
+[64] Benjamin Nachman, “A guide for deploying Deep Learn-
+ing in LHC searches: How to achieve optimality and ac-
+count for uncertainty,” (2019), arXiv:1909.03081 [hep-
+ph].
+[65] Patrick T. Komiske, Eric M. Metodiev, and Jesse Thaler,
+“Metric Space of Collider Events,” Phys. Rev. Lett. 123,
+041801 (2019), arXiv:1902.02346 [hep-ph].
+[66] Patrick T. Komiske, Radha Mastandrea, Eric M.
+Metodiev, Preksha Naik, and Jesse Thaler, “Exploring
+the Space of Jets with CMS Open Data,” Phys. Rev. D
+101, 034009 (2020), arXiv:1908.08542 [hep-ph].
+[67] B. Nachman, M. Urbanek, W. A. de Jong, and C. Bauer,
+“Unfolding Quantum Computer Readout Noise,” (2019),
+arXiv:1910.01969 [quant-ph].
+[68] Anders Andreassen, Patrick T. Komiske, Eric M.
+Metodiev, Benjamin Nachman, and Jesse Thaler, “Om-
+nifold,” https://github.com/ericmetodiev/OmniFold
+(2019).
+[69] Anders Andreassen, Patrick Komiske, Eric Metodiev,
+Benjamin Nachman, and Jesse Thaler, “Pythia/Herwig
++ Delphes Jet Datasets for OmniFold Unfolding,” Zen-
+odo (2019), 10.5281/zenodo.3548091.
+[70] Xiaoli Chen, S¨ unje Dallmeier-Tiessen, Robin Dasler, Se-
+bastian Feger, Pamﬁlos Fokianos, Jose Benito Gonzalez,
+Harri Hirvonsalo, Dinos Kousidis, Artemis Lavasa, Salva-
+tore Mele, Diego Rodriguez Rodriguez, TiborˇSimko, Tim
+Smith, Ana Trisovic, Anna Trzcinska, Ioannis Tsanakt-
+sidis, Markus Zimmermann, Kyle Cranmer, Lukas Hein-
+rich, Gordon Watts, Michael Hildreth, Lara Lloret Igle-
+sias, Kati Lassila-Perini, and Sebastian Neubert, “Open
+is not enough,” Nature Physics 15, 113–119 (2019).
