@@ -22,8 +22,8 @@ This script does the three things once, writes a new file, and records exactly
 what it did. Consumers stay dumb: point ``--prior`` at the output.
 
     python scripts/prior_build/materialize_eval_prior.py \
-        --in  data/priors/upsilon_unified_bare_tms10.hdf5 \
-        --out data/priors/upsilon_unified_bare_tms10_eval_legacyWindow.hdf5 \
+        --in  data/upsilon_unified_bare_tms10.hdf5 \
+        --out data/upsilon_unified_bare_tms10_eval_legacyWindow.hdf5 \
         --window legacy --signal-fraction-from \
         data/cms_upsilon_mumu_mg5py8_ckkwl_8tev_inclusive_0j1j_fiducial_8p5_11p5_1M.hdf5
 

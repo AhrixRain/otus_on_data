@@ -283,6 +283,78 @@ before proposing any new experiment.
   dry-run + smoke green, preflights removed). 180 epochs, 30,960 updates, 830,536
   parameters, ~3.2 GiB. Pre-declared readout and kill condition in the config
   header. **This is the only thing running.**
+- **artifact-measured + source-verified (2026-10-04, later the same day).** The
+  run was stopped at **global epoch 144** on the user's instruction (the arm is
+  to be redeployed on a Linux server *next* time), then **resumed in place**.
+  `--resume` resolves `<run>/last_model.pt` (`run_joint.py:606`), whose recorded
+  state was **global 140 / stage 3 / stage_epoch 40** — validations are every 5
+  epochs and history.json logs every epoch, so 141-144 were lost, not the whole
+  segment. The resume path skips completed stages, restarts the matching stage at
+  `stage_epoch + 1`, and **restores the AdamW moments**
+  (`joint_trainer.py:815-817`); the log confirms
+  `Resume: runH_stage3_stochastic_tail stage-best score restored as 4.65235`.
+  **A `--dry-run --resume` preflight is NOT possible**: dry-run rewrites the
+  output directory to `*_dryrun` and rebuilds the manifest from the
+  1000-sample splits, so both the checkpoint lookup and the
+  `joint_contract_sha256` guard fail for reasons that do not exist in the real
+  run. The guard must be validated by launching for real and reading the log.
+  Resumed 2026-10-04, local epoch 41/80 (global 141), train_loss 1.30,
+  log `logs/Run_H_kneeKernel_resume.log`. ~40 epochs to go. The resume
+  **truncates `history.json` to the checkpoint's epoch and re-runs from there**:
+  the file now holds epochs 1-143 with no duplicate `global_epoch` entries, so the
+  four epochs (141-144) that ran after the last validation were re-run rather than
+  kept — expected, and the reason a resumed run's history is internally
+  consistent instead of carrying duplicate rows. (Note for future probes:
+  `history.json` rows do **not** carry a `train_loss` key; the per-epoch loss is
+  only in the log.)
+
+### 2026-10-04 - Session 77, prior layout flattened into data/ (and the two-resolver hazard)
+
+**source-verified (what changed).** The three unified priors were copied from
+`data/legacy/priors/` to `data/`, and the four joint configs that referenced them
+were repointed from `legacy/priors/<name>` to the bare `<name>`:
+`runH_A2frozen`, `runH_A2floor`, `unifiedP1`, `unifiedP1_components`. Reason: the
+validation host stages `data/` flat, and the server run died in
+`cms_data.file_fingerprint` on the old path. **Copied, not moved** - every existing
+checkpoint embeds the OLD absolute path in its own config, and
+`scripts_joint/rescore_validation.py` resolves the config from the checkpoint, so
+the originals must stay for old runs to remain re-scorable.
+
+**source-verified (two resolvers that need not agree).**
+`cms_data.data_cache_metadata` fingerprints the CONFIGURED path with **no
+fallback**; `fixed_z_noise_budget.resolve_prior_path` tries
+`data/<configured>` -> `data/legacy/<basename>` -> `data/<basename>`. The
+2026-10-04 server failure came from the first. When they resolve differently the
+run loads one prior while fingerprinting another, so the new checker reports a
+disagreement as a **failure**, not a pass.
+
+**artifact-measured (the contract consequence - this one bites).**
+`contract_sha256` is `_json_hash(identity)` over `regions.<name>`, and only
+`data_cache` is popped (`joint_data.py:299-305`); `data_contract` embeds
+`file_fingerprint` (absolute path + size + mtime). **Repointing a prior path
+therefore changes the contract digest**: `Run_H_kneeKernel` can no longer be
+re-scored with `run_joint.py --evaluate-only` or `--resume` (the guard at
+`run_joint.py:617` rejects it). It **can** still be re-scored with
+`scripts_joint/rescore_validation.py`, which reads the config from the checkpoint
+and still finds the legacy copy. No run in flight is affected: a running process
+resolved its config at startup.
+
+**source-verified (new tool).** `scripts_joint/check_data_layout.py` (read-only)
+resolves each config's `cms_root_file` and every region prior with **both**
+resolvers, checks the HDF5 datasets the loader needs (`FDL/zData`, plus
+`FDL/component_id` and `FDL/weight` when `prior_components.enabled`), and exits
+non-zero on a missing file, a missing dataset or a resolver disagreement.
+Flags: `--run <ID>`, `--config`, `--all`, `--json`. artifact-measured:
+`--all` = **34 configs, 0 problems** on this host.
+
+**Verification.** 91 focused tests OK, 2 skipped (`test_joint_runa`,
+`test_a1_a2_a0_noise`, `test_cms_loss`, `test_kernel_knee`). The region cache is
+invalidated for the four changed configs (the key hashes the prior path), so the
+next run on them rebuilds the cache once - expected, not a fault.
+
+**proposal (not done).** The originals under `data/legacy/priors/` are now a
+second copy (225 MB). They are load-bearing for old checkpoints, so do not delete
+them without checking which runs still need re-scoring.
 
 ## 2. Established findings that still matter
 
@@ -407,6 +479,48 @@ It reproduces the committed aggregate numbers and adds the component split.
   remainder rms 0.0142 / 0.0077.
 - Mass shape skew: truth z +10.89, detector x +9.82, encoder +8.87 (ppzee sample
   is right-tailed at ~91 GeV).
+
+### 3.6 Prior component widths, measured (2026-10-04, artifact-measured)
+
+*Added because a question about "are we training on a smeared prior?" produced a
+wrong answer from filenames alone. Measured per `FDL/component_id` with the
+region's own mass window; `robust` = (q84-q16)/2.*
+
+| file | component | n | std [MeV] | robust [MeV] | weights |
+|---|---|---|---|---|---|
+| `jpsi_unified_bare_tms10.hdf5` (moved to data/ root) | 0 (jpsi) | 717,904 | 30.53 | **0.35** | ESS/N 0.982 |
+| " | 3 (continuum) | 933,788 | 172.26 | 202.44 | 0.985 |
+| `cms_jpsi_..._1M_reweighted.hdf5` (data/ root) | 0 | 850,000 | 6.48 | **0.20** | none |
+| " | 1 | 150,000 | 34.69 | 41.02 | none |
+| `legacy/cms_jpsi_ab_smeared.hdf5` | (unlabelled) | 943,231 | 26.25 | **27.73** | none |
+| `z_unified_bare_tms22p8.hdf5` (moved to data/ root) | 3 | 668,278 | 4864.7 | 2792.7 | 1.029 |
+| `cms_dymumu_..._70_110_1M.hdf5` (data/ root) | (unlabelled) | 1,000,000 | 4670.8 | 2654.0 | none |
+| `upsilon_prior_continuumReweighted.hdf5` | 0/1/2 (1S/2S/3S) | 131,611 / 39,484 / 25,761 | 110 / 166 / 189 | 3.4 / 4.2 / 5.6 | none |
+
+**Read.** The **signal** components of the priors the joint configs point at are
+narrow (0.35 MeV robust), so the A2 -> D3b -> kneeKernel line does **not** train
+on a smeared prior. The only smeared file on disk is
+`cms_jpsi_ab_smeared.hdf5` (27.73 MeV), the A/B arm behind the documented caveat
+that Run E's success depended on pre-smearing. **The root-level
+`..._1M_reweighted.hdf5` is ALSO narrow (0.20 MeV) and must not be called
+smeared**; what distinguishes it is that it was 4-D reweighted to CMS kinematics
+(ref-cache lost, ESS 63k/1M) and carries no `weight`/`component_id` labels for
+the loader.
+
+**Why the config cannot use the root-level Z file.** Measured, the two Z samples
+are nearly the same distribution (std 4864.7 vs 4670.8 MeV; robust 2792.7 vs
+2654.0). The blocker is the data contract, not the physics:
+`prior_components.enabled: true` with `resample_if_ess_ge_0p5` makes the loader
+require `FDL/component_id` **and** `FDL/weight`, and the root-level Z file has
+neither. Substituting it would be a contract change, not a free swap.
+
+**TMS, and why these versions.** source-verified,
+`docs/unified_prior_method.md` section 5: the merging scale is set per region by
+`TMS = max(10 GeV, M/4)` -> J/psi 10.0, Upsilon 10.0, Z **22.8**. The recovered
+original cards used `Merging:TMS = 5.0` everywhere; section 5 states that
+Upsilon and Z show real TMS sensitivity because the bulk of their fiducial
+samples sits near or below TMS. The unified priors were regenerated at the
+per-region value, which is why the filenames carry `_tms10` / `_tms22p8`.
 
 ## 4. Next plans (agreed 2026-09-08)
 

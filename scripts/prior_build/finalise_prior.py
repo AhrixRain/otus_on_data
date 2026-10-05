@@ -21,7 +21,7 @@ baked in.
 Usage:
     python scripts/prior_build/finalise_prior.py --region z \\
         --component continuum:3:~/mg5work/converted/prod_z_continuum.hdf5 \\
-        --out data/priors/z_unified_bare_tms22p8.hdf5
+        --out data/z_unified_bare_tms22p8.hdf5
 """
 
 from __future__ import annotations

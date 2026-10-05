@@ -67,8 +67,8 @@ Usage
         --truth-variant bare \
         --gen-pt-min 2.0 --gen-eta-max 2.6 \
         --gen-mass-min 2.787 --gen-mass-max 3.407 \
-        --out data/priors/jpsi_unified.hdf5 \
-        --manifest data/priors/jpsi_unified.json \
+        --out data/jpsi_unified.hdf5 \
+        --manifest data/jpsi_unified.json \
         --attr region=jpsi --attr merging_tms_gev=10.0
 """
 
