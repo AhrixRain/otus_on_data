@@ -54,7 +54,11 @@ for _directory in (
     if str(_directory) not in sys.path:
         sys.path.insert(0, str(_directory))
 
-from cms_data import LEGACY_JPSI_PRIOR_RELATIVE, load_config  # noqa: E402
+from cms_data import (  # noqa: E402
+    LEGACY_JPSI_PRIOR_RELATIVE,
+    load_config,
+    resolve_legacy_prior_path,
+)
 from joint_data import resolve_joint_config  # noqa: E402
 from fixed_z_noise_budget import resolve_prior_path  # noqa: E402
 
@@ -177,8 +181,18 @@ def check_config(path: Path) -> dict:
             legacy_value = str(
                 component_spec.get("legacy_prior_file", LEGACY_JPSI_PRIOR_RELATIVE)
             )
-            legacy_target = primary(legacy_value)
-            legacy_exists = legacy_target.exists()
+            # Resolve with the SAME helper the mixer uses, so the report can
+            # never disagree with what would actually be opened. The helper is
+            # layout-independent: data/<configured>, data/legacy/<name>, then
+            # data/<name>.
+            try:
+                legacy_target = resolve_legacy_prior_path(legacy_value, data_root)
+                legacy_exists = True
+                legacy_error = None
+            except FileNotFoundError as error:
+                legacy_target = primary(legacy_value)
+                legacy_exists = False
+                legacy_error = str(error)
             entry["rows"].append(
                 {
                     "item": f"legacy-mix:{region}",
@@ -190,10 +204,7 @@ def check_config(path: Path) -> dict:
                 }
             )
             if not legacy_exists:
-                entry["problems"].append(
-                    f"region {region!r}: signal_fraction_source=legacy_prior_effective needs "
-                    f"{legacy_target}"
-                )
+                entry["problems"].append(f"region {region!r}: {legacy_error}")
             else:
                 try:
                     import h5py

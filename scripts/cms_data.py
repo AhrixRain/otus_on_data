@@ -1021,6 +1021,34 @@ def read_prior_component_arrays(theory_prior_file: Path):
     return z_data[:, :8], component_id, weights, attrs, has_weight_dataset
 
 
+def resolve_legacy_prior_path(configured, data_root) -> Path:
+    """Locate the legacy J/psi prior used only for its FDL composition attributes.
+
+    Deliberately layout-independent. The authoring checkout kept this file under
+    `data/legacy/`; the validation host stages `data/` flat. Neither layout
+    may be assumed, so the configured path is tried under `data_root` first and
+    then by basename under `data_root/legacy` and `data_root` - the same
+    order `fixed_z_noise_budget.resolve_prior_path` uses for the training
+    priors, so the two dependencies behave alike.
+
+    An absolute configured path is returned unchanged. When nothing matches, the
+    error lists every candidate rather than only the first, because the whole
+    point of this function is that the file's location is not fixed.
+    """
+    path = Path(configured)
+    if path.is_absolute():
+        return path
+    root = Path(data_root)
+    candidates = [root / path, root / "legacy" / path.name, root / path.name]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        "legacy J/psi prior for signal_fraction_source=legacy_prior_effective "
+        "not found; tried: " + ", ".join(str(candidate) for candidate in candidates)
+    )
+
+
 def legacy_jpsi_effective_fraction(legacy_prior_file: Path):
     """Measure the legacy J/psi prior's effective signal fraction.
 
@@ -1172,9 +1200,9 @@ def mix_prior_components(
         effective_source = "single_component"
         legacy_report = None
     elif source == "legacy_prior_effective":
-        legacy_path = Path(spec.get("legacy_prior_file", LEGACY_JPSI_PRIOR_RELATIVE))
-        if not legacy_path.is_absolute():
-            legacy_path = Path(data_root) / legacy_path
+        legacy_path = resolve_legacy_prior_path(
+            spec.get("legacy_prior_file", LEGACY_JPSI_PRIOR_RELATIVE), data_root
+        )
         fraction, legacy_report = legacy_jpsi_effective_fraction(legacy_path)
         effective_source = "legacy_prior_effective"
     elif source is None:
