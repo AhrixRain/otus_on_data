@@ -3192,3 +3192,36 @@ ETA ~5 h. Stage-1 train loss 4.41 -> 3.40 over the first four logged epochs.
 **Next session: read `history.json` and run the pre-declared readout; do not
 start a second GPU job while it runs.**
 
+### 2026-10-05 - Session 79, the third data dependency, and the checker now covers it
+
+**artifact-measured (server, third attempt).** With the repo fast-forwarded to `a9c2933` and the
+three priors staged at `data/`, `check_data_layout.py --run H_kneeKernel` went green (0
+problems) and the dry-run cleared the cache fingerprint and entered `load_and_split`. It then
+died inside `mix_prior_components -> legacy_jpsi_effective_fraction`:
+`data/legacy/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5` not found.
+
+**source-verified (why).** With `signal_fraction_source: legacy_prior_effective` the mixer opens
+a SECOND file purely to read its FDL composition attributes (`frac_signal_post_filter`,
+`n_signal`, `n_continuum`) and never uses its events, resolved as
+`spec.get("legacy_prior_file", LEGACY_JPSI_PRIOR_RELATIVE)` under `data_root`
+(`cms_data.py:1174-1178`). The constant is
+`Path("legacy/cms_jpsi_mumu_mg5_8tev_mixed_ptj5.hdf5")` (`cms_data.py:902`) and it is the
+**only** such constant in the repo. **2.91 MB.** A config that never names the file still needs it
+on disk.
+
+**source-verified (checker fixed).** `check_data_layout.py` now resolves that dependency too,
+importing `LEGACY_JPSI_PRIOR_RELATIVE` rather than duplicating the string, and it additionally
+checks that the file carries either `component_id` or the legacy composition attributes -
+otherwise the effective fraction cannot be derived even when the file exists. Local run now
+reports a `legacy-mix:jpsi` row.
+
+**lesson, and it is the third time.** Three distinct data dependencies have now bitten on a fresh
+host, in order: (1) the training prior, (2) the CMS ROOT file, (3) this attribute-only file that
+no config names. `check_data_layout.py` is the answer to that class of failure: run it before any
+dry-run on a new host, and when a new implicit dependency is found, add it there rather than to
+the runbook.
+
+**note on this file's own layout (proposal).** Sessions 77 and 78 were appended next to the
+sections they amend (§1.8 and §3.6) instead of into this log; the content is dated and correct but
+the log is no longer a single contiguous sequence. Relocating them is a pure move.
+

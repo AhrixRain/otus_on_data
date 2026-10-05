@@ -54,7 +54,7 @@ for _directory in (
     if str(_directory) not in sys.path:
         sys.path.insert(0, str(_directory))
 
-from cms_data import load_config  # noqa: E402
+from cms_data import LEGACY_JPSI_PRIOR_RELATIVE, load_config  # noqa: E402
 from joint_data import resolve_joint_config  # noqa: E402
 from fixed_z_noise_budget import resolve_prior_path  # noqa: E402
 
@@ -164,6 +164,56 @@ def check_config(path: Path) -> dict:
                         f"(prior_components.enabled={components_enabled})"
                     )
         entry["rows"].append(row)
+
+        # A second, easily-missed dependency: with signal_fraction_source
+        # legacy_prior_effective the mixer opens ANOTHER file, only to read its
+        # FDL composition attributes. It defaults to a module constant, so a
+        # config that never mentions the file still needs it on disk.
+        component_spec = (config.get("prior_components") or {}).get(region) or {}
+        if (
+            isinstance(component_spec, dict)
+            and component_spec.get("signal_fraction_source") == "legacy_prior_effective"
+        ):
+            legacy_value = str(
+                component_spec.get("legacy_prior_file", LEGACY_JPSI_PRIOR_RELATIVE)
+            )
+            legacy_target = primary(legacy_value)
+            legacy_exists = legacy_target.exists()
+            entry["rows"].append(
+                {
+                    "item": f"legacy-mix:{region}",
+                    "configured": legacy_value,
+                    "resolved": str(legacy_target),
+                    "exists": legacy_exists,
+                    "size": human(legacy_target.stat().st_size) if legacy_exists else "-",
+                    "note": "read for its FDL composition attributes only",
+                }
+            )
+            if not legacy_exists:
+                entry["problems"].append(
+                    f"region {region!r}: signal_fraction_source=legacy_prior_effective needs "
+                    f"{legacy_target}"
+                )
+            else:
+                try:
+                    import h5py
+
+                    with h5py.File(legacy_target, "r") as handle:
+                        group = handle["FDL"] if "FDL" in handle else handle
+                        attrs = dict(group.attrs)
+                        has_component = "component_id" in group
+                    if not has_component and not any(
+                        key in attrs
+                        for key in ("n_signal", "n_continuum", "frac_signal_post_filter")
+                    ):
+                        entry["problems"].append(
+                            f"region {region!r}: {legacy_target.name} carries neither "
+                            "component_id nor the legacy composition attributes"
+                        )
+                except Exception as error:  # noqa: BLE001
+                    entry["problems"].append(
+                        f"region {region!r}: {legacy_target.name} unreadable: {error}"
+                    )
     return entry
 
 
