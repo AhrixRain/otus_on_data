@@ -356,6 +356,71 @@ next run on them rebuilds the cache once - expected, not a fault.
 second copy (225 MB). They are load-bearing for old checkpoints, so do not delete
 them without checking which runs still need re-scoring.
 
+### 2026-10-05 - Session 78, Run_H_kneeKernel read out: the calibration landed, the width did not
+
+**artifact-measured (execution).** `Run_H_kneeKernel` finished: 180/180 epochs, exit 0,
+`joint_evaluation.json` written 00:34, `history.json` 180 rows, peak CUDA 3.20 GiB,
+~81 s/epoch in stage 3. Upsilon was never opened. The resume carried stage 3 from local
+epoch 41 to 80 (global 141 -> 180).
+
+**artifact-measured (selection; lower is better).** `joint_selection.selection_score`:
+stage-1 best ep20 **4.3126** (jpsi 4.313, z 0.783) < stage-2 best ep75 4.362 < stage-3
+best ep165 4.464 < last ep180 4.816. The selected checkpoint is the **stage-1
+deterministic warmup**, and the stochastic stages degrade monotonically - the pattern
+every stochastic arm here has shown. D3b's stage scores were 4.337 / 4.551 / **3.886**,
+so **D3b's best beats anything this arm produced**.
+
+**artifact-measured (Axis R - the knee calibration works).** `response_scorecard`, 8
+checkpoints: jpsi within-z robust **29.9 MeV against a required 30.0 (ratio 0.996)**,
+`sigma_noise_only` 33.2 MeV; z within-z robust 2048.4 against 2537.6 (0.807). Gate R =
+**PASS**, `degenerate=False`, `identified=True`. The kernel lands exactly on target.
+
+**artifact-measured (the physics readout FAILS as pre-declared).**
+`d3b_readout_probe` on four checkpoints: zero-noise mean-map spread
+18.4 / 22.8 / 20.5 / 19.9 MeV and **native total 43.7 / 42.9 / 40.8 / 39.8 MeV**
+(stage1best / stage2best / stage3best / last). D3b was 17.6 and 38.8. The pre-declared
+band was **28-35 MeV**, so the kill condition fires **on its letter**.
+
+**hypothesis, now measured (the band was wrong; the kernel attribution was not).** The
+band was sqrt(17.6^2 + 30.0^2) = 34.8, which mixes a **robust** kernel target (30.0) with
+a **std** decode. The estimator-consistent std quadrature is
+sqrt(20.5^2 + 33.2^2) = **39.0**, and that is what was measured (39.8-40.8). The channel's
+robust width is 29.9 but its **std is 33.2**, because the kernel shape is a Gaussian core
+plus a 25% Student-t tail, while the CMS data has std 28.03 **below** its robust 29.97.
+Matching the robust denominator with a tail-heavy kernel therefore **overshoots the std by
+~19%**. The D3b attribution survives; my numeric prediction failed for the
+estimator-mismatch reason `docs/calibration_target_2026-10-04.md` keeps warning about.
+
+**artifact-measured (Axis C: jpsi still fails, Z is at gate).** jpsi native slice ratio
+median **24.1**, max 43.9 (gates 3 / 10); zero-noise median 31.9. D3b was 18.6-23.4 /
+33.6-51.4, so jpsi conditional closure is unchanged to slightly worse. **z native median
+3.15, max 5.50 - essentially AT the gate**, so the Z conditional closure is solved. Gate
+line: `R=PASS C=FAIL degenerate=False identified=True`; the scorecard rejects
+`last_model` and ranks the stage-1 checkpoint first.
+
+**artifact-measured (OOD, report-only; continuum-reweighted prior, native multipliers,
+400k events).** Per-state medians minus the CMS fit, 1S/2S/3S: stage1best (selected)
+**+71 / +57 / +58**; stage2best -148 / -187 / -195; stage3best -91 / -124 / -130; last
+-60 / -90 / -92 MeV. Against D3b (+40 / +28 / +31) and A2frozen stage-3
+(+20.5 / +4.1 / +6.0) the selected checkpoint is **worse**, even though its channel
+amplitude is now correct - so the OOD peak shift is not driven by the channel amplitude
+either.
+
+**conclusion.** S2' did **not** produce the M2 positive result. What it established:
+1. the knee law is a genuine single-law calibration - it hits its target in both training
+   regions, and read-only it is what made a single law possible at all (I2);
+2. once the amplitude is calibrated, the decoded J/psi width is governed by the kernel's
+   **shape** (the core/tail ratio) and by the ~20 MeV the mean map still carries, **not**
+   by the amplitude;
+3. Z conditional closure is at gate; J/psi is not;
+4. the in-domain selection score and the OOD peak shift are both worse than D3b, so the
+   knee kernel is not an improvement on the shipped one at equal training budget.
+**Next lever, in order:** the kernel `tail_ratio` (0.25) - the single number that
+separates the robust and the std widths - then the mean map's ~20 MeV residual. Do not
+spend another arm on the amplitude. **And write the next arm's pre-declared criteria in ONE
+estimator**: this arm failed its own readout only because the prediction mixed robust and
+std.
+
 ## 2. Established findings that still matter
 
 1. **The J/psi success depended on the pre-smeared prior.** artifact-measured A/B: smeared arm 34/35 gate passes, narrow arm 0/35; only the prior file differed. The identity map passes every strict J/psi latent target on the smeared prior.
