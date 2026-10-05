@@ -3225,3 +3225,54 @@ the runbook.
 sections they amend (§1.8 and §3.6) instead of into this log; the content is dated and correct but
 the log is no longer a single contiguous sequence. Relocating them is a pure move.
 
+### 2026-10-05 - Session 80, the std-denominator grid, and two bugs in my own fitter
+
+**source-verified (why another grid).** Session 78's readout showed the knee kernel hitting
+its design target (within-z robust 29.9 against a required 30.0) while the decoded J/psi
+width did not move (43.7-39.8 MeV against D3b's 38.8; pre-declared band 28-35). The cause is
+an estimator mismatch in **my own fit**: \`kernel_knee_fit.py\` solved on the **robust**
+within-z estimator (reading F, 30.02 MeV) while the physics readout is a **std**. Measured at
+the robust_F solution the channel's std is 34.87 MeV against its robust 30.64 - a Gaussian
+core plus a 25% Student-t tail has std > robust, while the CMS data has std 28.03 **below**
+its robust 29.97. Calibrating on the robust width therefore leaves the std width ~19% high.
+
+**source-verified (three defects fixed in the fitter).**
+1. \`--metric {robust,std}\` added; the solve had hardcoded \`["robust"]\`.
+2. **The intercept was missing.** The response model is
+   \`w = w_low + c1*(p1-low) + c2*p2\`, but the solve used \`c1*p1 + c2*p2 = target\`,
+   dropping \`-w_low + c1*low\`. With the robust target the error was small enough to look
+   like a rounding residual; with the std targets it pinned the solution ~10% low and no
+   amount of re-centring fixed it.
+3. A target-residual fixed point (\`--corrections\`, default 2) plus Newton re-centring
+   (\`--iterations\`, default 3), because the response is only locally linear.
+Also fixed a shadowing bug: a local \`base\` (a width) silently overwrote the kernel spec
+dict \`base\`.
+
+**artifact-measured (all three fits land; knee 20 GeV).** std_E (targets 23.81 / 2.884) ->
+J/psi 0.02434 (1.022x), Z 2.9321 (1.017x); std_A (28.06 / 2.884) -> 0.02866 (1.021x),
+2.8994 (1.005x); robust_F (30.02 / 2.538, the shipped kneeKernel spec) -> 1.021x / 1.008x,
+reproducing the shipped kernel to three digits. Upsilon std predictions: std_E 1S
+0.0628 GeV (0.744x the 84.42 MeV reference), std_A 0.0748 (0.886x).
+
+**proposal, launched as a four-arm main-effects grid on ONE HPC3 GPU.** Each run peaks at
+3.27 GiB of ~96 GiB and the pipeline is launch-bound rather than compute-bound, so extra
+arms on the same card are nearly free until the GPU saturates: \`kneeStd\` (std E, tail 0.25 -
+the estimator fix alone), \`kneeStdA\` (std A 28.06, tail 0.25 - the target axis),
+\`kneeStdTail10\` (std E, tail 0.10) and \`kneeStdTail00\` (std E, tail 0.0), the last two a
+dose-response on the shape axis. Configs \`configs_joint/cms_Joint_runH_kneeStd*.yaml\` extend
+kneeKernel; the kernel spec and, for the tail arms, \`tail_ratio\` are the only changes. All
+four dry-run green. Launcher \`scripts_joint/run_grid.sh\` carries SBATCH directives at the
+top, so the same file runs interactively or under \`sbatch\`.
+
+**prediction, now in ONE estimator.** Channel std 24.34 MeV (E arms) with the map at the D3b
+17.6-20.5 MeV band -> decoded std 30-36 MeV, i.e. 1.07-1.28x the 28.03 MeV data std, against
+1.42x now. **Kill:** if the decoded std does not fall below ~36 MeV while the within-z std is
+demonstrably at its target, the estimator was never binding and the mean map's ~20 MeV
+residual is, which points at the pT-resolved map constraint (P3 redesign, I6).
+
+**not done, and why.** The seed replicate was dropped from this grid:
+\`run_joint.py:494-495\` seeds numpy and torch from \`config["seed"]\`, and
+\`data_cache_metadata\` puts the seed **in the cache key** (\`cms_data.py:551\`), so varying it
+changes the locked split and forces a 2.1 GB cache rebuild. A clean replicate needs a
+\`training_seed\` decoupled from the split - recorded as a proposal, not done.
+

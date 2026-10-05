@@ -81,9 +81,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--design-p1", default="0.004,0.011")
     parser.add_argument("--design-p2", type=float, default=6e-4)
     parser.add_argument("--knees", default="0,8,12,16")
+    parser.add_argument(
+        "--corrections",
+        type=int,
+        default=2,
+        help="fixed-point passes on the targets: measure the achieved width and "
+        "push each target by its own residual. The local response model is only "
+        "locally exact, so without this the solve stops ~10%% below target.",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Newton passes; each re-centres the design points on the previous "
+        "solution. One pass is inaccurate when the solution sits outside the "
+        "initial design bracket.",
+    )
     parser.add_argument("--jpsi-target", type=float, default=0.03002)
     parser.add_argument("--z-target", type=float, default=2.538)
     parser.add_argument("--upsilon-reference", type=float, default=0.08442)
+    parser.add_argument(
+        "--metric",
+        choices=("robust", "std"),
+        default="robust",
+        help="which within-z estimator the two training-region constraints are "
+        "solved on. The probe returns both, and they are NOT interchangeable: "
+        "a Gaussian core plus a Student-t tail has std > robust, while the CMS "
+        "data has std < robust.",
+    )
     return parser.parse_args()
 
 
@@ -151,25 +176,85 @@ def main() -> int:
 
     p1_low, p1_high = (float(v) for v in args.design_p1.split(","))
     knees = [float(v) for v in args.knees.split(",")]
+    metric = args.metric
+    print(f"constraint metric: {metric}")
     trials: dict[str, dict] = {}
     for knee in knees:
-        w_low = measure(p1_low, 0.0, knee)
-        w_high = measure(p1_high, 0.0, knee)
-        w_second = measure(p1_low, args.design_p2, knee)
-        rows, targets = [], []
-        for region, target in (("jpsi", args.jpsi_target), ("z", args.z_target)):
-            c_first = (w_high[region]["robust"] - w_low[region]["robust"]) / (
-                p1_high - p1_low
+        # The decode response is near-linear but not linear in (offset, slope), so a
+        # single Newton step lands several percent off whenever the solution sits
+        # outside the initial design bracket - which it does for the std-metric
+        # targets. Re-centre the design on the previous solution and repeat.
+        p1_center = 0.5 * (p1_low + p1_high)
+        p2_center = float(args.design_p2)
+        history: list[dict] = []
+        for iteration in range(max(int(args.iterations), 1)):
+            low = max(p1_center * 0.6, 1e-6)
+            high = max(p1_center * 1.4, low * 1.01)
+            second = max(p2_center, 1e-6)
+            w_low = measure(low, 0.0, knee)
+            w_high = measure(high, 0.0, knee)
+            w_second = measure(low, second, knee)
+            rows, targets, baselines = [], [], []
+            for region, target in (("jpsi", args.jpsi_target), ("z", args.z_target)):
+                baseline = w_low[region][metric]
+                c_first = (w_high[region][metric] - baseline) / (high - low)
+                c_second = (w_second[region][metric] - baseline) / second
+                # Response model w = base + c_first*(p1 - low) + c_second*p2, so the
+                # constraint w = target is c_first*p1 + c_second*p2 =
+                # target - base + c_first*low. Omitting the intercept here lands
+                # ~10% below target and no amount of re-centring fixes it.
+                rows.append([c_first, c_second])
+                baselines.append(baseline)
+                targets.append(target)
+            jacobian = np.asarray(rows, dtype=float)
+
+            def solve_for(absolute_targets):
+                """Solve the local model against absolute width targets."""
+                rhs = np.asarray(
+                    [
+                        absolute_targets[index] - baselines[index] + jacobian[index][0] * low
+                        for index in range(len(absolute_targets))
+                    ]
+                )
+                try:
+                    return np.linalg.solve(jacobian, rhs)
+                except np.linalg.LinAlgError:
+                    return np.linalg.lstsq(jacobian, rhs, rcond=None)[0]
+
+            solution = solve_for(targets)
+            p1_fit = max(float(solution[0]), 0.0)
+            p2_fit = max(float(solution[1]), 0.0)
+            # The local model is only locally exact, so measure what was actually
+            # achieved and push the targets by the residual. Two passes reach <1%.
+            for correction in range(max(int(args.corrections), 0)):
+                achieved = measure(p1_fit, p2_fit, knee)
+                pushed = [
+                    targets[index]
+                    + (targets[index] - achieved[region][metric])
+                    for index, region in enumerate(("jpsi", "z"))
+                ]
+                solution = solve_for(pushed)
+                p1_fit = max(float(solution[0]), 0.0)
+                p2_fit = max(float(solution[1]), 0.0)
+                print(
+                    f"    correction {correction}: offset={p1_fit:.6g} slope={p2_fit:.6g} "
+                    f"(jpsi measured {achieved['jpsi'][metric]:.5g}, z {achieved['z'][metric]:.5g})"
+                )
+            history.append(
+                {
+                    "iteration": iteration,
+                    "design_p1": [low, high],
+                    "design_p2": second,
+                    "offset_p1": p1_fit,
+                    "slope_p2": p2_fit,
+                }
             )
-            c_second = (w_second[region]["robust"] - w_low[region]["robust"]) / args.design_p2
-            rows.append([c_first, c_second])
-            targets.append(target)
-        try:
-            solution = np.linalg.solve(np.asarray(rows, dtype=float), np.asarray(targets))
-        except np.linalg.LinAlgError:
-            solution = np.linalg.lstsq(np.asarray(rows, dtype=float), np.asarray(targets), rcond=None)[0]
-        p1_fit = max(float(solution[0]), 0.0)
-        p2_fit = max(float(solution[1]), 0.0)
+            print(
+                f"  knee={knee:g} iter {iteration}: offset={p1_fit:.6g} slope={p2_fit:.6g} "
+                f"(design p1 {low:.4g}-{high:.4g}, p2 {second:.4g})"
+            )
+            p1_center, p2_center = p1_fit, p2_fit
+
         validation = measure(p1_fit, p2_fit, knee)
         ratios = {}
         for region in ("jpsi", "z", *UPSILON_STATES):
@@ -202,7 +287,7 @@ def main() -> int:
         trials[f"knee_{knee:g}"] = {
             "knee_pt_gev": knee,
             "fit": {"offset_p1": p1_fit, "slope_p2": p2_fit},
-            "design": {"w_low": w_low, "w_high": w_high, "w_second": w_second},
+            "design": history,
             "validation": ratios,
             "score": float(score),
         }

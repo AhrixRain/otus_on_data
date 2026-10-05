@@ -1,0 +1,88 @@
+# Run H kneeStdTail00 - std (E) kernel with tail_ratio 0.0
+#
+# Part of the 2x2 main-effects grid launched 2026-10-05 (four arms in parallel on
+# one HPC3 GPU; each run peaks at 3.27 GiB of a ~96 GiB card, and the pipeline is
+# launch-bound rather than compute-bound - see memory.md Session 78).
+#
+# Controlled change versus H_kneeKernel: THE KERNEL CALIBRATION TARGET, and for the
+# two tail arms the kernel tail_ratio. Everything else is inherited unchanged.
+#
+# Why the target changes. H_kneeKernel's kernel was fitted on the ROBUST (reading F)
+# denominator, 30.02 MeV, while the physics readout is a STD. The probe returns both
+# and they are not interchangeable: a Gaussian core plus a 25% Student-t tail has
+# std > robust (measured 34.87 vs 30.64 at the robust_F solution), whereas the CMS
+# data has std 28.03 BELOW its robust 29.97. So calibrating on the robust width
+# leaves the std width ~19% high, and the decoded J/psi width never moved
+# (43.7-39.8 MeV against D3b's 38.8, pre-declared band 28-35).
+#
+# This arm fits the SAME knee law to a STD denominator instead:
+#   std (reading E)
+# Fitted read-only by scripts_joint/kernel_knee_fit.py --metric std
+# (spec source: outputs/cms_Joint/kernel_knee_fit/std_E/kernel_spec_knee.json).
+# Constraint residuals at the solution: J/psi and Z both within 2.2%.
+#
+# DISCLOSURE. The knee family was chosen in Session 76 with knowledge of the
+# external Upsilon(1S) reference 84.42 MeV; Upsilon was never a fit target here.
+# Upsilon enters only as the read-only transfer prediction below.
+#
+# Pre-declared readout (ALL IN THE STD ESTIMATOR - that is the whole point of this
+# arm; quoting a robust number as the verdict is what went wrong last time).
+#   Mechanism (regression, partly circular by construction): at the best checkpoint
+#     the within-z robust/std pair should be J/psi std ~ 23.8 MeV and Z std ~ 2.88
+#     GeV for the E arms (28.1 MeV for the A arm), i.e. ratio_std_vs_E in [0.8, 1.25].
+#   Physics, primary: native-noise J/psi z->x decoded mass STD moves from the D3b
+#     38.8 MeV toward the data. Prediction: sqrt(map^2 + channel^2) with
+#     channel 24.34 MeV (E arms) or 28.66 (A arm) and the map at the D3b 17.6-20.5
+#     MeV band -> 30-36 MeV, i.e. 1.07-1.28x the 28.03 MeV data std. Unlike last
+#     time the prediction and the channel are in the SAME estimator.
+#   Mechanism, secondary: zero-noise decoded J/psi mass spread <= 20 MeV (D3b 17.6).
+#   Conditional: A0.4 Axis C native jpsi slice median ratio toward the gate of 3.0
+#     (kneeKernel 24.1; Z already at 3.15).
+#   OOD, report-only: Upsilon 1S std prediction 0.0628 GeV (0.744x the 84.42 MeV reference).
+# Refuted if: the decoded std does not move below ~36 MeV while the within-z std is
+#   demonstrably at its 23.8-28.7 MeV target. Then the estimator was never the
+#   binding issue and the mean map's ~20 MeV residual is, and the next arm is the
+#   pT-resolved map constraint (P3 redesign, memory.md I6).
+extends: cms_Joint_runH_kneeKernel.yaml
+
+run_label: "Run H kneeStdTail00 - std (E) kernel with tail_ratio 0.0"
+run_name: Run_H_kneeStdTail00
+
+model:
+  decoder_noise_overrides:
+    core_sigma_floor_spec:
+      eta_bins: [0, 0.4, 0.8, 1.2, 1.6, 2, 2.4]
+      linear_offset: [0.006066829018887047, 0.006891170223581994, 0.008182080041471954, 0.008985174864845699, 0.009349144435521302, 0.00897668333455716]
+      linear_slope: [0.0010349565924699779, 0.0011755831638778189, 0.001395802923187028, 0.0015328050175664157, 0.0015948955603287838, 0.001531356424697732]
+      knee_pt_gev: 20
+      tail_ratio: 0
+      sigma_cap: 0.25
+      pt_max_gev: 200
+      form: >-
+        sigma_logpT = scale * (offset(eta) + slope(eta) * max(0, pT - knee_pt_gev))
+      provenance:
+        method: >-
+          knee law fitted on the STD within-z estimator (--metric std) by
+          scripts_joint/kernel_knee_fit.py, 3 Newton passes plus 2 residual
+          corrections; J/psi and Z both within 2.2% of their targets
+        source: outputs/cms_Joint/kernel_knee_fit/std_E/kernel_spec_knee.json
+        constraint_metric: std
+        targets_gev: {jpsi: 0.02381, z: 2.884}
+        achieved_std_gev: {jpsi: 0.02434, z: 2.9321}
+        tail_ratio: 0
+        of_arm: kneeKernel
+        differs_from: >-
+          H_kneeKernel in the calibration denominator only (robust 30.02 ->
+          std 23.81 at J/psi), plus tail_ratio 0.25 -> 0
+
+comparison:
+  baseline_run: Run_H_kneeKernel
+  controlled_change: >-
+    The kernel calibration target: the same knee law refitted on the std within-z
+    estimator instead of the robust one, with tail_ratio changed from 0.25 to 0.
+    One axis of a four-arm main-effects grid; the interaction is not measured by
+    this run.
+  not_claimed: >-
+    This arm does not change the loss, the schedule, the architecture, the mean map
+    or the data. It does not fix the Upsilon decoded width, which is dominated by
+    the mean map's pair-pT extrapolation.
